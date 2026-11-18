@@ -29,6 +29,7 @@ Read-only checks:
 | Read block-entity NBT | `data get block <x> <y> <z> [path]` |
 | Read one of the build's entities | `data get entity @e[tag=ashlar.<project>,…,limit=1] [path]` |
 | Count the build's entities | `execute if entity @e[tag=ashlar.<project>,…]` |
+| List the chunks already force-loaded (main world) | `forceload query` |
 
 ## Rules
 
@@ -52,6 +53,18 @@ Read-only checks:
 - Never leave a chunk force-loaded. Every `forceload add` has a matching
   `forceload remove` in the same phase or mode; if a phase stops part way, run
   the remove before reporting.
+- Before a `forceload add`, run `forceload query`. If it lists chunks inside
+  the area, the server owner already keeps them loaded: leave them out of both
+  the add and the remove, and force-load the other chunks one at a time
+  (`forceload add <x> <z>` and later `forceload remove <x> <z>`, with any block
+  column inside each chunk).
+- Console commands act in the server's main world (normally `world`, the
+  overworld). Use them only when the plan's world is that world. For a plan in
+  another world, say at the approval gate that its console steps (entities,
+  block-entity NBT, `place feature`, force-loads) would otherwise land in the
+  main world, and ask whether to run each one as
+  `execute in <dimension> run <command>` (for example `minecraft:the_nether`).
+  Without a yes, skip those steps and tell the user what is missing.
 - A `Test failed` or "No entity was found" from a chunk that is not
   force-loaded and has no player nearby proves nothing: the entities may just
   be unloaded. Repeat the check inside a force-load.

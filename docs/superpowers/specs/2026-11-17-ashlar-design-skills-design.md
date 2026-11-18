@@ -344,6 +344,7 @@ quality_contract:
 | | `data get block <x> <y> <z> [path]` |
 | | `data get entity @e[tag=ashlar.<project>,…,limit=1] [path]` |
 | | `execute if entity @e[tag=ashlar.<project>,…]` |
+| | `forceload query` |
 
 - Never `fill`, `setblock`, `clone`, `give`, `tp`, `gamerule` or any other
   command, and never as a way around a limit.
@@ -351,6 +352,11 @@ quality_contract:
   forceload (Recommended)"): entity commands run inside a paired
   `forceload add`/`forceload remove` over the columns they touch, so they work
   with no player nearby; no chunk is left force-loaded.
+  Console commands act in the server's main world; a plan in another world runs
+  its console steps as `execute in <dimension> run <allowed form>` only after
+  the user agrees at the approval gate, and skips them otherwise. Before a
+  force-load, `forceload query` keeps chunks the server already force-loads out
+  of the pair.
 - Every summoned entity carries `ashlar` and `ashlar.<project>`. The prefix
   keeps the project tag from colliding with other datapacks' tags.
 - Every world-changing command appears in `plan.toon` `commands` and in the

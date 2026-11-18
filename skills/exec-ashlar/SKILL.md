@@ -83,8 +83,8 @@ Run step 5 of `build` on the recorded project and report each check.
 
 Follow the rollback steps in `reference/execution.md`: restore the snapshots
 newest first, remove the project's entities with
-`kill @e[tag=ashlar.<project>]` inside a paired force-load, tell the user what a restore cannot bring
-back, and set the registry status to `rolled-back`.
+`kill @e[tag=ashlar.<project>]` inside a paired force-load, tell the user what
+a restore cannot bring back, and set the registry status to `rolled-back`.
 
 ## Hard rules
 

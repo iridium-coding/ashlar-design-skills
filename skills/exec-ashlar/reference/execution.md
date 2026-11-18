@@ -12,6 +12,8 @@ Before the first write, show the user:
   evicted before the build ends, so those phases cannot be rolled back;
 - every console command, exactly as it will run;
 - every force-load the entity phases add and remove, and which chunks;
+- for a plan outside the server's main world: that its console steps need
+  `execute in <dimension> run`, and whether the user agreed;
 - what a rollback cannot restore: entities, sign text and container contents,
   including any block entities the survey found inside the build area;
 - the players online and how close they are;
@@ -41,8 +43,8 @@ and the registry status to `building`.
      in the area. Exit 3: the file needs more snapshots than allowed; split it
      into smaller phase files. Exit 5: the server failed part way; the report
      lists the pages already written and the snapshot ids.
-   - `commands`: one `mc_command` call per row, in order, exactly as written. A phase with entity commands starts with its
-     `forceload add` row and ends with the matching `forceload remove` row
+   - `commands`: one `mc_command` call per row, in order, exactly as written. A phase with entity
+     commands starts with its `forceload add` row and ends with the matching `forceload remove` row
      (`commands.md`); if the phase stops part way, run the remove before
      reporting.
 4. **Warnings**: every line under `WARNINGS` is an attached block without
@@ -75,7 +77,8 @@ and the registry status to `building`.
 2. Remove the build's entities: `forceload add` over the columns the plan's
    entity phases used, `kill @e[tag=ashlar.<project>]`, confirm with
    `execute if entity @e[tag=ashlar.<project>]` (`Test failed`), then
-   `forceload remove` the same columns.
+   `forceload remove` the same columns. If any of these calls fails, still run
+   the `forceload remove` before reporting.
 3. Tell the user that sign text and container contents inside restored boxes
    are gone, including ones that were there before the build, and which phases'
    snapshots were evicted and could not be restored.

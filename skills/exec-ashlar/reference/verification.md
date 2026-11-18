@@ -51,7 +51,7 @@ blocks with `mc_inspect` where it matters. `mc_render` does not show entities.
 - Entity checks need the entities loaded. Unless a player is near the site,
   run them between `forceload add` and `forceload remove` over the build's
   entity columns (`commands.md`); a failed check outside a force-load proves
-  nothing.
+  nothing. If a check fails part way, still run the `forceload remove`.
 - Count the build's entities: `execute if entity @e[tag=ashlar.<project>]`,
   adding `type=` to count one kind.
 - Block-entity details: `data get block <x> <y> <z>` (signs, banners, lecterns,

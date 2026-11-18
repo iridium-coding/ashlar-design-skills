@@ -43,10 +43,10 @@ and the registry status to `building`.
      in the area. Exit 3: the file needs more snapshots than allowed; split it
      into smaller phase files. Exit 5: the server failed part way; the report
      lists the pages already written and the snapshot ids.
-   - `commands`: one `mc_command` call per row, in order, exactly as written. A phase with entity
-     commands starts with its `forceload add` row and ends with the matching `forceload remove` row
-     (`commands.md`); if the phase stops part way, run the remove before
-     reporting.
+   - `commands`: one `mc_command` call per row, in order, exactly as written.
+     A phase with entity commands starts with its `forceload add` row and ends
+     with the matching `forceload remove` row (`commands.md`); if the phase
+     stops part way, run the remove before reporting.
 4. **Warnings**: every line under `WARNINGS` is an attached block without
    support. Fix them with another `mc_build` call before moving on.
 5. **Look**: `mc_render` top view, plus the facade the phase changed most.

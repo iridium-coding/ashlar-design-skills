@@ -52,7 +52,7 @@ Pick a topology that fits the tier, the site, and the style.
 
 ## Matching layout to site
 
-The `survey-site` site and `environments.md` constrain the topology:
+The site survey and `environments.md` constrain the topology:
 
 - **Flat plains** — any topology; two-story or compound are easy wins.
 - **Mountainside** — terraced compound or tower; carve back into the slope.

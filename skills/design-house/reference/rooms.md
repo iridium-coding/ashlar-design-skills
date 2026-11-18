@@ -3,7 +3,7 @@
 Rooms a player base may contain, grouped by purpose. Each entry gives a
 **minimum useful interior** (W×D×H) and the must-haves. Footprints are
 interior — add wall thickness. Keep any single room within ~60×60×60 so it
-fits one structure file. Offer rooms filtered by tier — do not propose a
+fits one module. Offer rooms filtered by tier — do not propose a
 beacon room to a starter shack.
 
 ## Living

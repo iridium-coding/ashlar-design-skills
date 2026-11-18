@@ -3,6 +3,11 @@
 Building a base into a non-flat site. Each environment has site-prep needs
 (usually a `terrain-shape` pre-build step), structural rules, and hazards.
 
+Ashlar builds only in worlds listed in its `world.allowed-worlds`. Before
+designing a Nether or End base, have the `exec-ashlar` skill check that the
+world is allowed (its survey, step 7); if it is not, say the base cannot be
+built there.
+
 ## Mountainside
 
 - **Terrace the slope** rather than building on a ramp — a series of flat
@@ -78,4 +83,4 @@ water, thick walls in the desert, steep roofs to shed snow).
 ## Always
 
 - Whatever the site, the base still obeys the hard rules: light coverage, two
-  exits, beds only where they will not explode, and rooms inside 64×384×64.
+  exits, beds only where they will not explode, and rooms within Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`).

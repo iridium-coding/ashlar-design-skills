@@ -89,4 +89,4 @@ graph TD
 Never resolve a plan from a blueprint the user has not signed off. If the user
 wants the highest-fidelity preview, the build can be stubbed in-world in wool
 or concrete first — offer this as an option, noting it consumes command
-budget; the actual placement is still a `exec-worker` job.
+budget; the actual placement is the `exec-ashlar` skill's job.

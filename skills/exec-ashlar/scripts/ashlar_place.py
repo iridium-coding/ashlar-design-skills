@@ -22,9 +22,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import queue
 import re
+import subprocess
 import sys
+import threading
+import time
 import tomllib
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -362,6 +368,206 @@ def warnings_of(text: str) -> list[str]:
     return []
 
 
+# ------------------------------------------------------------------- client
+
+class McpClient:
+    """Minimal MCP client for one stdio server process."""
+
+    def __init__(self, entry: ServerEntry, start_timeout: float = 120.0,
+                 call_timeout: float = 600.0) -> None:
+        self.secrets = list(entry.env.values())
+        self.call_timeout = call_timeout
+        self._stderr: deque[str] = deque(maxlen=40)
+        self._lines: queue.Queue[str | None] = queue.Queue()
+        self._next_id = 0
+        try:
+            self.proc = subprocess.Popen(
+                [entry.command, *entry.args], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env={**os.environ, **entry.env}, text=True, encoding="utf-8",
+                bufsize=1)
+        except OSError as exc:
+            raise PlacerError(f"cannot start the MCP server ({exc.__class__.__name__})",
+                              EXIT_SERVER) from None
+        self._out = threading.Thread(target=self._pump_stdout, daemon=True)
+        self._err = threading.Thread(target=self._pump_stderr, daemon=True)
+        self._out.start()
+        self._err.start()
+        try:
+            self._request("initialize", {
+                "protocolVersion": "2025-06-18", "capabilities": {},
+                "clientInfo": {"name": "ashlar-place", "version": "1"}}, start_timeout)
+            self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        except PlacerError:
+            self.close()
+            raise
+
+    def _pump_stdout(self) -> None:
+        assert self.proc.stdout is not None
+        for line in self.proc.stdout:
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def _pump_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        for line in self.proc.stderr:
+            self._stderr.append(line.rstrip("\n"))
+
+    def stderr_tail(self) -> str:
+        return redact("\n".join(self._stderr), self.secrets)
+
+    def _died(self, what: str) -> PlacerError:
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        self._err.join(timeout=2)
+        return PlacerError(f"{what}:\n{self.stderr_tail()}", EXIT_SERVER)
+
+    def _send(self, message: dict[str, Any]) -> None:
+        assert self.proc.stdin is not None
+        try:
+            self.proc.stdin.write(json.dumps(message) + "\n")
+            self.proc.stdin.flush()
+        except OSError:
+            raise self._died("the MCP server exited early") from None
+
+    def _request(self, method: str, params: dict[str, Any],
+                 timeout: float) -> dict[str, Any]:
+        self._next_id += 1
+        request_id = self._next_id
+        self._send({"jsonrpc": "2.0", "id": request_id, "method": method,
+                    "params": params})
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise PlacerError(f"timed out waiting for {method}", EXIT_SERVER)
+            try:
+                line = self._lines.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            if line is None:
+                raise self._died("the MCP server exited")
+            try:
+                message = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(message, dict) or message.get("id") != request_id:
+                continue  # notifications and anything that is not our reply
+            if "error" in message:
+                detail = str((message.get("error") or {}).get("message"))
+                raise PlacerError(f"{method} failed: {redact(detail, self.secrets)}",
+                                  EXIT_SERVER)
+            return message.get("result") or {}
+
+    def call(self, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+        """Call a tool; return its text and whether it reported an error."""
+        result = self._request("tools/call", {"name": tool, "arguments": arguments},
+                               self.call_timeout)
+        text = "\n".join(item.get("text", "") for item in result.get("content") or []
+                         if isinstance(item, dict) and item.get("type") == "text")
+        return redact(text, self.secrets), bool(result.get("isError"))
+
+    def close(self) -> None:
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+
+# --------------------------------------------------------- check and place
+
+def _server(ns: argparse.Namespace) -> ServerEntry:
+    return find_server(ns.server, ns.config, Path.cwd(), Path.home(), dict(os.environ))
+
+
+def cmd_check(ns: argparse.Namespace) -> int:
+    entry = _server(ns)
+    client = McpClient(entry)
+    try:
+        text, is_error = client.call("mc_status", {})
+    finally:
+        client.close()
+    print(f"server entry {ns.server!r} from {entry.source}")
+    print(text)
+    return EXIT_SERVER if is_error else EXIT_OK
+
+
+def _emit(report: dict[str, Any], log: str | None) -> None:
+    text = json.dumps(report, indent=2)
+    print(text)
+    if log:
+        with open(log, "a", encoding="utf-8") as handle:
+            handle.write(text + "\n")
+
+
+def cmd_place(ns: argparse.Namespace) -> int:
+    limits = _limits(ns)
+    path = Path(ns.file)
+    build = load_build(path, limits)
+    _, pages, tiles = plan_summary(build, limits, path)
+    world = ns.world or build.get("world")
+    if ns.world:
+        for page in pages:
+            page.args["world"] = ns.world
+    if ns.snapshot and len(tiles) > ns.max_snapshots:
+        raise PlacerError(f"this file needs {len(tiles)} snapshots (limit "
+                          f"{ns.max_snapshots}); split it into smaller phase files",
+                          EXIT_REFUSED)
+    entry = _server(ns)
+    report: dict[str, Any] = {"file": str(path), "pages_total": len(pages),
+                              "pages_done": 0, "snapshots": [], "warnings": [],
+                              "results": [], "error": None}
+    client = McpClient(entry)
+    try:
+        text, is_error = client.call("mc_players", {})
+        if is_error:
+            raise PlacerError("mc_players failed: " + text, EXIT_SERVER)
+        whole = union([page.box for page in pages])
+        inside = players_inside(parse_players(text), whole, ns.player_margin, world)
+        if inside:
+            raise PlacerError("players inside the build area: " + ", ".join(inside),
+                              EXIT_PLAYER)
+        for i, box in enumerate(tiles if ns.snapshot else [], 1):
+            args: dict[str, Any] = {"action": "create", "from": list(box[:3]),
+                                    "to": list(box[3:]),
+                                    "label": f"{ns.label} {i}/{len(tiles)}"}
+            if world:
+                args["world"] = world
+            text, is_error = client.call("mc_snapshot", args)
+            if is_error:
+                raise PlacerError("mc_snapshot failed: " + text, EXIT_SERVER)
+            report["snapshots"].append(snapshot_id(text))
+        for i, page in enumerate(pages, 1):
+            text, is_error = client.call("mc_build", page.args)
+            if is_error:
+                raise PlacerError(f"mc_build failed on page {i}/{len(pages)}: {text}",
+                                  EXIT_SERVER)
+            report["pages_done"] = i
+            report["warnings"] += warnings_of(text)
+            report["results"].append({"page": i, "result": [
+                line for line in text.splitlines()
+                if line and not line.startswith(("WARNINGS", "  "))][:5]})
+    except PlacerError as exc:
+        report["error"] = str(exc)
+        _emit(report, ns.log)
+        raise
+    finally:
+        client.close()
+    _emit(report, ns.log)
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------- cli
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -387,20 +593,43 @@ def cmd_plan(ns: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _add_server(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--server", default="ashlar",
+                        help="MCP server name in the client config (default ashlar)")
+    parser.add_argument("--config", help="read this config file instead")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ashlar_place.py",
         description="Send generated Minecraft geometry through Ashlar.")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    check = sub.add_parser("check", help="connect and run mc_status")
+    _add_server(check)
+
     plan = sub.add_parser("plan", help="validate a phase file offline")
     plan.add_argument("file")
     _add_limits(plan)
+
+    place = sub.add_parser("place", help="snapshot and place a phase file")
+    place.add_argument("file")
+    _add_limits(place)
+    _add_server(place)
+    choice = place.add_mutually_exclusive_group(required=True)
+    choice.add_argument("--snapshot", action="store_true")
+    choice.add_argument("--no-snapshot", action="store_true")
+    place.add_argument("--label", default="ashlar_place")
+    place.add_argument("--world")
+    place.add_argument("--player-margin", type=int, default=2)
+    place.add_argument("--max-snapshots", type=int, default=15)
+    place.add_argument("--log")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
-    handlers = {"plan": cmd_plan}
+    handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place}
     try:
         return handlers[ns.cmd](ns)
     except PlacerError as exc:

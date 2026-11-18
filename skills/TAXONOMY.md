@@ -43,6 +43,7 @@ orchestration model and the no-trivial routing rule are in
 | exec-worker | exec | 3 | haiku / fork | Executes plan.toon via the harness (was worker) |
 | exec-inspect | exec | 3 | sonnet / fork | Verifies each phase + seam check (GATE C; was inspector) |
 | exec-reflect | exec | 3 | sonnet / fork | Drafts process lessons (was philosopher) |
+| exec-ashlar | exec | 3 | inherit / inline | Surveys, builds, verifies and rolls back plans through the Ashlar MCP (ashlar-design-skills fork) |
 | setup-fabric | setup | — | inherit / inline | Install Minecraft + Fabric (setup stack) |
 | setup-mod | setup | — | inherit / inline | Install the MCP mod + Fabric API (was install-mcp-mod) |
 | setup-server | setup | — | inherit / inline | Configure & launch the MCP server (was setup-mcp-server) |

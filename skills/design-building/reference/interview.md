@@ -1,9 +1,12 @@
 # The adaptive interview
 
 Pin down the design without over-asking. Every branch ends with the **three
-core questions** plus a name. Ask in small grouped batches (use
-`AskUserQuestion` for the multiple-choice ones), skip what is already settled,
-and record answers in `requirements.md`.
+core questions** plus a name. Ask in small grouped batches, skip what is already
+settled, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Step 1 — classify the target
 
@@ -60,7 +63,7 @@ Then: **project name** (the registry slug).
 
 ## After the answers
 
-- Invoke `survey-site` for site context; note a `pre-build terraform` step if the
+- Run the `exec-ashlar` skill's site survey (`survey <project>`) for site context; note a `pre-build terraform` step if the
   site needs shaping.
 - Compute and state the fill-volume estimate.
 - Render preview blueprints (`blueprints.md`), show the user, iterate, and

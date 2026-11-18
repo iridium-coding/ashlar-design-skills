@@ -80,9 +80,9 @@ weathering after the clean geometry, never instead of it.
 
 ## Java Edition notes
 
-Compose with `block_fill_region`, `block_set_state`, `block_clone_region`, and
-`structure_save_from_world` / `structure_load_to_world` — there is no WorldEdit
-mod in this setup. `/data` commands are available via `command_execute` for NBT
-manipulation on block entities and entities. Lean on structure modules
-(`modules.md`) for anything repeated. Keep each `block_fill_region` within the
-32,768-block vanilla volume limit; split larger fills across calls.
+Compose with `mc_build`: fills (modes `replace`, `keep`, `outline`, `hollow`,
+`walls`, with an optional `filter`), single blocks with exact states, sign text
+and lettering. Stamp a module (`modules.md`) for anything repeated. There is no
+WorldEdit in this setup. Block-entity NBT goes through the allowlisted
+`data merge block` (`../exec-ashlar/reference/commands.md`). Keep each call
+within Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`).

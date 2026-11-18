@@ -57,7 +57,7 @@ explicitly approves. Only then resolve to `plan.toon`.
 
 ## Validation checklist
 
-Before handing off, and again for the `exec-reflect` afterwards, check the
+Before handing off, and again with the `exec-ashlar` skill's verification after the build, check the
 build against these failure modes:
 
 - **Missing a signature feature** — reject; the build is not the building.
@@ -73,8 +73,9 @@ build against these failure modes:
   behind it.
 - **No interior light coverage** — spawnable dark cells.
 - **Floating structure** — buttresses with no abutment, unsupported mass.
-- **Exceeds the Y range, or a fill over 32,768, or a structure over
-  64×384×64** — scale down, pre-tile, or split.
+- **Exceeds the Y range, or a single call over Ashlar's limits
+  (`../exec-ashlar/reference/tools-and-limits.md`)** — scale down, pre-tile, or
+  split.
 - **A furnished hero room invisible from outside** — add an opening or move it.
 
 A failed signature or symmetry check is a correction to make, not a cosmetic

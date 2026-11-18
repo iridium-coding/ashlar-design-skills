@@ -19,7 +19,7 @@ profession, one workstation within 16h/4v.
 ## Profession buildings & workstations
 
 One villager per workstation. Java Edition workstation blocks (use the full
-`minecraft:` id when placing with `block_set_state`):
+`minecraft:` id when placing with `mc_build`):
 
 | Profession | Workstation | Java block id | Building note |
 | ---------- | ----------- | ------------- | ------------- |
@@ -84,19 +84,17 @@ uses them, otherwise purely decorative.
 
 ## Java-exclusive: seeding building chests with loot tables
 
-Rather than hand-picking chest contents item by item, use `loot_table_generate`
-to produce a believable set of items from a vanilla loot table, then slot them
-in with `inventory_set_slot`.
+Rather than hand-picking chest contents item by item, give the container a loot
+table with the allowlisted `data merge block`; the game rolls the contents the
+first time a player opens it.
 
 ```
-# 1. Generate loot from the matching village loot table
-loot_table_generate("minecraft:chests/village/village_weaponsmith")
-→ iron_ingot×5, obsidian×4, apple×3, iron_sword×1   (example — rolls are random)
+# Give the chest the matching village loot table
+data merge block <x> <y> <z> {LootTable:"minecraft:chests/village/village_weaponsmith"}
 
-# 2. Place each result into the chest at the building's position
-inventory_set_slot(pos=<chest_pos>, slot=0, item={id:"minecraft:iron_sword",count:1})
-inventory_set_slot(pos=<chest_pos>, slot=1, item={id:"minecraft:iron_ingot",count:5})
-# … continue for each item returned
+# Or slot specific items by hand with the allowlisted `item replace block`
+item replace block <x> <y> <z> container.0 with minecraft:iron_sword 1
+item replace block <x> <y> <z> container.1 with minecraft:iron_ingot 5
 ```
 
 Vanilla village chest loot-table ids follow the pattern

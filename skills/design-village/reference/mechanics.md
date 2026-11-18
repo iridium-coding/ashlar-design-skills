@@ -81,7 +81,7 @@ Practical design rules:
   over it.
 - A player house sitting on top of the village center blocks golem spawns —
   keep it **≥16 blocks** away from the average-bed center.
-- For **day-one defense**, spawn one golem manually with `entity_summon` near
+- For **day-one defense**, spawn one golem manually with the allowlisted `summon` command near
   the bell on a clear surface. Tell the user a *naturally respawning* golem
   still needs the full conditions above.
 
@@ -139,7 +139,7 @@ A **breeding-ready** village design therefore needs:
 - The spawn check runs at dawn (once per in-game day). One cat attempts to
   spawn per check if the bed-to-cat ratio supports it.
 - To seed cats immediately, spawn `minecraft:cat` near the meeting area with
-  `entity_summon`.
+  the allowlisted `summon` command.
 
 ## Wandering traders
 
@@ -153,7 +153,7 @@ A **breeding-ready** village design therefore needs:
 The spawn-then-claim pattern described in `population.md` is the default: the
 game assigns a profession organically when a villager claims its workstation.
 For **specific traders with fixed trade lists** (a named quest merchant, a
-player-economy shop), use the scripted `entity_summon` NBT approach documented
+player-economy shop), use the scripted allowlisted `summon` NBT approach documented
 in `population.md` instead — the two techniques are complementary, not
 exclusive. Most villages mix both: organic workers for atmosphere, scripted
 merchants for deliberate player-facing shops.

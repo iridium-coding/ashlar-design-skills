@@ -53,7 +53,7 @@ placement of the temples, bridges, and tree clumps around the circuit.
   the surface ripples and the reflection breaks. Use `mc_build` with
   `minecraft:water[level=0]` (source block) throughout the basin.
 - Light the floor (sea lanterns / glowstone beneath) for clear, bright water.
-- Keep a basin within the structure and fill caps like any other element;
+- Keep a basin within Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`) like any other element;
   large reflecting pools tile on their symmetry centerline.
 - Water cannot sit in the Nether; not a concern for a normal garden, but flag
   it if a garden is ever planned there.

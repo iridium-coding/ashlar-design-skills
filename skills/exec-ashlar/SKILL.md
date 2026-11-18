@@ -92,8 +92,10 @@ back, and set the registry status to `rolled-back`.
 - `mc_players` before every write phase. If anyone is inside the phase's box
   grown by 2 blocks, stop and tell the user; do not build around them.
 - Snapshots before every write phase (`reference/execution.md`).
-- Console commands only in the forms in `reference/commands.md`, and only the
-  exact commands listed in the approved plan.
+- Console commands only in the forms in `reference/commands.md`. Commands that
+  change the world only as listed in the approved plan's `commands` table; the
+  read-only checks may run whenever surveying or verification needs them, and
+  rollback mode runs its own `kill @e[tag=ashlar.<project>]`.
 - Never place blocks with `mc_command`, and never use it to get around a limit.
 - Stay within Ashlar's limits (`reference/tools-and-limits.md`); split the work
   into more calls or phases instead.

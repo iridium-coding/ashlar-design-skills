@@ -1,8 +1,10 @@
 # Console commands
 
 `mc_command` runs a command with full operator rights. Use only these forms,
-only for what Ashlar's other tools cannot do, and only the exact commands listed
-in the approved plan's `commands` table.
+and only for what Ashlar's other tools cannot do. Commands that change the world
+must be listed exactly in the approved plan's `commands` table. The read-only
+checks may run whenever surveying or verification needs them, and rollback mode
+runs `kill @e[tag=ashlar.<project>]` without a plan row.
 
 ## Allowed forms
 
@@ -39,6 +41,8 @@ Read-only checks:
 - Write commands without a leading `/`.
 - Snapshots do not capture entities or block-entity contents: rollback removes
   entities with `kill` and cannot bring NBT back (`execution.md`).
+- In `plan.toon`, wrap each command in double quotes and escape its inner double
+  quotes as `\"`, because commands contain commas (see `plan-format.md`).
 
 ## Examples
 

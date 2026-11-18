@@ -32,7 +32,7 @@ placements[2]{module,origin,rotation,mirror,phase}:
   small-house-a,104 64 -358,0,none,2
   small-house-a,140 64 -330,90,x,2
 commands[1]{phase,seq,command,purpose}:
-  4,1,summon minecraft:villager 121 65 -333 {Tags:["ashlar","ashlar.oakhollow"]},farmer
+  4,1,"summon minecraft:villager 121 65 -333 {Tags:[\"ashlar\",\"ashlar.oakhollow\"]}",farmer
 acceptance[1]{phase,at,expect}:
   2,107 64 -358,minecraft:spruce_door
 quality_contract:
@@ -56,7 +56,9 @@ quality_contract:
 - `modules` and `placements`: see `modules.md`. `stamp.py` produces each
   phase's file from its placements before the build.
 - `commands`: every console command, in order, exactly as it will run, each
-  matching `commands.md`.
+  matching `commands.md`. Commands contain commas and quotes, so wrap each
+  command in double quotes and escape its inner double quotes as `\"` (TOON
+  quoting).
 - `acceptance`: spot checks, one cell each.
 - `quality_contract`: the property checks below.
 

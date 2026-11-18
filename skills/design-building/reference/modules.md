@@ -8,7 +8,7 @@ becomes tractable, consistent, and fast.
 ## What a module is
 
 A module is **one repeating architectural component**, defined once as a named
-structure and reused. A Gothic cathedral is not a million blocks placed by
+module file and reused. A Gothic cathedral is not a million blocks placed by
 hand — it is:
 
 - 1 flying-buttress module, stamped ~30 times along the nave;
@@ -33,7 +33,8 @@ That is a handful of designed pieces, then placement.
    small set of *variant* modules, not in unique hand-building.
 5. Record every module and its instances in `.minecraft-builder/registry.json`.
 
-A module must fit **64×384×64** (one structure file). Anything larger is split
+A module must stay within Ashlar's limits
+(`../exec-ashlar/reference/tools-and-limits.md`). Anything larger is split
 into several modules joined by an overlap.
 
 ## Module catalog by category

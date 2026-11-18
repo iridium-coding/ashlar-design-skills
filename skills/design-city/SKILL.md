@@ -117,7 +117,7 @@ Then:
   down and tell the user the ratio.
 
 For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
-slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+slots), follow the `exec-ashlar` skill's limits reference
 (`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Process
@@ -143,7 +143,7 @@ slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
    show the user, iterate, and **loop until they approve**.
 10. **Write the plan and hand off** — write `requirements.md`, `plan.toon`, its
     phase files and module files per the `exec-ashlar` skill's
-    `reference/plan-format.md` (`../exec-ashlar/reference/plan-format.md`), and
+    plan format (`../exec-ashlar/reference/plan-format.md`), and
     record the city and its districts in `.minecraft-builder/registry.json`.
 
     **Emit a `quality_contract` block** per that same plan format.

@@ -114,7 +114,7 @@ full recipe, the toolkit, how to view the PNGs in your client, and the
   neck, a limb joint), each its own phase or module, so every phase's
   snapshots stay within Ashlar's per-snapshot cap.
 - For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
-  slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+  slots), follow the `exec-ashlar` skill's limits reference
   (`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Sibling coordination
@@ -161,7 +161,7 @@ whichever sibling skill runs next can use it.
    accent geometry. They are a late decoration phase, like armor stands.
 6. **Coordinate siblings** — note in the plan any cliff, pedestal, or plinth a sibling skill owns and the shared anchor where it meets your figure (see Hand-off).
 7. **Design into the plan** — write `plan.toon`, its phase files and module
-   files per the `exec-ashlar` skill's `reference/plan-format.md`
+   files per the `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`). A pixel-art grid or a voxelized
    form is a **generated grid**: write it as a phase file (a fills list) with a
    script, never as thousands of hand-written entries, and send it with the

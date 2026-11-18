@@ -99,7 +99,7 @@ skill.
    show the user, revise, **loop until they approve**.
 8. **Write the plan and hand off** — `requirements.md`, `plan.toon` with its
    phase and module files per the `exec-ashlar` skill's
-   `reference/plan-format.md` (`../exec-ashlar/reference/plan-format.md`), and
+   plan format (`../exec-ashlar/reference/plan-format.md`), and
    the registry entry.
 
    **Emit a `quality_contract` block** per that same plan format.
@@ -130,7 +130,7 @@ Read the file for the step you are on — do not load them all up front:
 | `reference/blueprints.md` | Rendering modes and the validation checklist. |
 
 For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
-slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+slots), follow the `exec-ashlar` skill's limits reference
 (`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Dependency seams

@@ -93,7 +93,7 @@ skill.
    unapproved layout.
 9. **Write the plan and hand off.** Write `requirements.md`, `plan.toon`, its
    phase files and the building templates as module files, per the
-   `exec-ashlar` skill's `reference/plan-format.md`
+   `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`). Record the village, its
    templates and its population in `.minecraft-builder/registry.json`.
 
@@ -127,7 +127,7 @@ Read the file for the step you are on — do not load them all up front:
 | `reference/blueprints.md` | The three rendering modes and the village legend. |
 
 For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
-slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+slots), follow the `exec-ashlar` skill's limits reference
 (`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## The reuse model

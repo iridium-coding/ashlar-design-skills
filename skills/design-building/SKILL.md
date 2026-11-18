@@ -98,7 +98,7 @@ which to follow, and cite it. See `reference/fictional.md`.
    `reference/modules.md`, applying technique from `reference/techniques.md`
    and furnishing depth from `reference/interiors.md`.
 6. **Resolve to a plan** — write `plan.toon`, its phase files and its module
-   files per the `exec-ashlar` skill's `reference/plan-format.md`
+   files per the `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`), with every repeated element
    defined once in `modules/`.
 
@@ -140,7 +140,7 @@ Read the file for the step you are on — do not load them all up front:
 | `reference/blueprints.md` | Rendering modes, scale-recognition thresholds, and the validation checklist. |
 
 For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
-slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+slots), follow the `exec-ashlar` skill's limits reference
 (`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Hard rules

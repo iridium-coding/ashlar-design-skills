@@ -1,8 +1,11 @@
 # The adaptive interview
 
-Capture the city design without over-asking. Ask in small grouped batches (use
-`AskUserQuestion` for the multiple-choice ones), skip what the request or the
-survey-site already settled, and record answers in `requirements.md`.
+Capture the city design without over-asking. Ask in small grouped batches, skip what the request or the
+site survey already settled, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 
@@ -15,7 +18,7 @@ survey-site already settled, and record answers in `requirements.md`.
 4. **Scope** — the whole city, or named districts? For a large city, which
    districts, and in what build order?
 5. **Site** — anchor coordinates or "near me"; biome, terrain, and water from
-   the survey-site. Flag a site that cannot hold the requested footprint.
+   the site survey. Flag a site that cannot hold the requested footprint.
 6. **Landmarks** — which named buildings to include (each becomes a
    `design-building` handoff)? Which are must-have vs optional?
 7. **Functional districts** — should any residential quarter be a working

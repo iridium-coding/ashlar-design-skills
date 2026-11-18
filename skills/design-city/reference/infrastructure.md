@@ -57,10 +57,10 @@ fire escapes and rooftop water tanks (NYC), washing lines, carts, crates,
 scaffolding. Scatter them with the same anti-uniformity discipline as the
 buildings — clustered and irregular, not evenly spaced.
 
-Street trees must be grown from saplings, never placed or duplicated. On Java
-Edition: place the sapling with `block_set_state`, then force growth with
-`command_execute` running `/place feature minecraft:<tree_type>`, or bone-meal
-via `player_give_item` / `itemstack_drop_at`.
+Street trees must be grown from saplings, never placed or duplicated. Grow
+it with the allowlisted `place feature minecraft:<tree_type> <x> <y> <z>`
+console command (listed in the plan's `commands` table, inside a snapshotted
+box), or place a sapling with `mc_build` and let it grow.
 
 ## Sewers and the underside
 
@@ -73,6 +73,6 @@ adds realism for a city the player will explore.
 A city rarely sits on ready ground. Where the site needs work — leveling a
 district, carving a river or canal, raising a hill for an acropolis, digging a
 moat, creating an island — emit a `pre-build terraform` step so the
-`terrain-shape` skill prepares the site before the `exec-worker` places any block.
+`terrain-shape` skill prepares the site (if it is installed) before any block is placed.
 If the city sits on a *named* natural feature (a famous hill or bay), the
 `terrain-landmark` skill shapes that.

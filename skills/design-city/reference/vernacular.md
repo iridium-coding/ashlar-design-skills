@@ -10,14 +10,16 @@ city and its street blocks.
 1. **Identify the vernacular types** for the city — usually 3–6 (e.g. for
    Haussmann Paris: the apartment block, the corner block, the ground-floor
    shopfront). Most of the city is these.
-2. The `exec-blueprint` builds each type **once** and saves it as a named
-   structure, `mcb:<project>_vern_<type>` (with its variants).
-3. The `exec-worker` **stamps** the type along every block edge the layout calls
-   for, using rotation and mirror for corners and opposite sides.
+2. Define each module **once** as `modules/vern-<type>.json` in local coordinates
+   (`../exec-ashlar/reference/modules.md`), with its variants.
+3. **Stamp** it wherever the layout places it: one `placements` row per instance
+   in `plan.toon`, with `rotation` (0, 90, 180 or 270, clockwise from above) and
+   `mirror` (`none`, `x` for east–west, `z` for north–south). `stamp.py` turns
+   the rows into phase files. Use rotation and mirror for corners and opposite
+   sides.
 4. **Vary every copy** — see "Parametric variation" — so a row reads as
    individual buildings.
-5. Record the types and instances in `mcbuilder:registry` command storage
-   (written with `data_storage_set`, namespace `mcbuilder`, path `registry`).
+5. Record every module and its instances in `.minecraft-builder/registry.json`.
 
 ## Vernacular module types
 

@@ -8,8 +8,8 @@ description: >-
   and defers every named landmark to the design-building skill. Runs an
   adaptive interview, proposes district layouts, and iterates with the user.
   Use when the user wants a city, a city district, a town of 16+ buildings,
-  or a recognizable metropolitan skyline. Part of the minecraft-builder
-  workflow.
+  or a recognizable metropolitan skyline. Builds through Ashlar with the
+  exec-ashlar skill.
 model: opus
 effort: high
 ---
@@ -19,8 +19,8 @@ effort: high
 You design **cities** — by their *urban fabric*, not as a pile of buildings.
 You are an urban planner: you lay out districts, streets, transit, walls, and
 the vernacular building stock between the landmarks. The named landmarks
-themselves are designed by `design-building` — you flag them for the
-orchestrator to route. Your job is the design: interview the user, propose
+themselves are designed by `design-building` — you flag them and run that skill
+for each. Your job is the design: interview the user, propose
 district layouts, iterate until they approve, and write a fully resolved plan.
 
 The quality bar is high. The finished city must feel like a place you can
@@ -38,8 +38,12 @@ Use for a **city or city district** (≈16+ buildings). Do not use for:
 
 ## Connection
 
-If a tool call fails because the MCP server is unreachable, stop and tell
-the user to run the `minecraft-mcp-setup` agent.
+Build tools come from the Ashlar MCP server (`mc_status`, `mc_players`,
+`mc_survey`, `mc_render`, `mc_inspect`, `mc_snapshot`, `mc_restore`,
+`mc_build`, `mc_command`). If one fails because the server is unreachable,
+call `mc_status` once more after a few seconds; if it still fails, stop and
+tell the user. The connection lives in the client's MCP settings, not in a
+skill.
 
 ## Core principles
 
@@ -48,32 +52,46 @@ the user to run the `minecraft-mcp-setup` agent.
    The buildings fill the fabric; they do not define it.
 2. **Reuse vernacular modules.** Like `design-village`, the bulk of a city is
    a small set of **vernacular building types** (a Haussmann block, a
-   brownstone, a Roman insula) repeated. Define each once as a structure,
+   brownstone, a Roman insula) repeated. Define each once as a module,
    stamp it along block edges, and **vary** each copy so a row reads as
    individual buildings, not photocopies. See `reference/vernacular.md`.
 3. **Flag landmarks for `design-building`.** Every *named* building — the
    cathedral, the palace, the famous tower — you flag in a landmark record
-   (see "Landmark records" below) for the orchestrator to route to
-   `design-building`. You never design a landmark's interior yourself.
+   (see "Landmark records" below) and design with the `design-building` skill.
+   You never design a landmark's interior yourself.
 4. **Detail at street level.** The lived-in feel comes from infrastructure and
    street furniture — lamps, signage, fountains, benches, market stalls,
    paving patterns. Plan it in; do not leave bare streets.
 
 ### Java-exclusive: district signage and biome-matched palette
 
-- **District signage and wayfinding** — `text_display` entities (via `spawn` op / `entity_summon`) produce floating district names, street signs, and directional arrows at any scale and color; `block_entity_set_nbt` (`block-nbt` op) sets JSON text components directly on standing, wall, or hanging signs with `is_waxed:1b` to lock them. Both are first-class `plan.toon` ops the `exec-worker` executes.
-- **Biome-matched vernacular palette** — call `level_get_biome_at` on the build site to read the actual biome (temperature, downfall, precipitation). Use the result to: pick roof pitch (steeper in cold/snowy biomes), choose primary stone palette (warm sandstone in desert biomes, mossy variants in jungle/swamp biomes), select vegetation species, and match water-color context. Sample the biome during the survey step so the palette decision is grounded in the world, not guessed.
+- **District signage and wayfinding** — `text_display` entities, summoned with
+  the allowlisted `summon` command (`../exec-ashlar/reference/commands.md`),
+  give floating district names, street signs and directional arrows at any
+  scale and colour. Plain sign text goes on standing, wall or hanging signs
+  through `mc_build`'s `sign` object (`waxed: true` locks it); styled JSON text
+  uses the allowlisted `data merge block`. List every command in the plan's
+  `commands` table.
+- **Biome-matched vernacular palette** — read the site's biome during the
+  survey (the `exec-ashlar` skill tests candidates with the read-only
+  `execute if biome`, or infers it from surface materials). Use it to pick roof
+  pitch (steeper in cold/snowy biomes), choose the primary stone palette (warm
+  sandstone in desert biomes, mossy variants in jungle/swamp biomes), select
+  vegetation species, and match water-colour context, so the palette is
+  grounded in the world, not guessed.
 
 ## Inputs
 
-- **From `survey-site`** (via the orchestrator) — the site: bounding box,
-  biome, elevation, water, existing builds, nearest player.
-- **From `survey-research`** (via the orchestrator) — for a real-world or
-  named-fictional city, a research dossier: signature silhouette, urban
-  pattern, dimensions, palette, era. If this dossier is missing for such a
-  city, return to the orchestrator to run `survey-research` first; cite sources.
+- **From the site survey** — use the `exec-ashlar` skill (`survey <project>`):
+  bounding box, biome when read, elevation, water, existing builds, nearest
+  player.
+- **From `survey-research`** — for a real-world or named-fictional city, a
+  research dossier: signature silhouette, urban pattern, dimensions, palette,
+  era. If it is missing for such a city, run the `survey-research` skill first;
+  cite sources.
 - **From the user** — the adaptive interview (`reference/interview.md`).
-- **From the world** — the `mcbuilder:registry` command storage entry (read with `data_storage_get`), for iteration.
+- **From earlier builds** — `.minecraft-builder/registry.json`
+  (`../exec-ashlar/reference/registry.md`), for iteration.
 
 ## Scale and districting
 
@@ -88,17 +106,19 @@ Java Edition's limits force a districted design. Pick one of three scales:
 
 Then:
 
-- **Decompose the city into districts of ≤256×256 blocks** — each a unit the
-  `exec-blueprint` slices into structure templates (`mcb:<project>_<district>_<element>`).
-- **Pre-tile fills** to ≤32,768 blocks — a 200×200 district has ~40,000 blocks
-  of street paving alone, well over the cap.
+- **Decompose the city into districts of ≤256×256 blocks** — each district is
+  its own set of phases, with its repeated buildings as modules
+  (`modules/<district>-<element>.json`).
+- **Keep each call within Ashlar's limits** — a 200×200 district's street
+  paving alone is ~40,000 blocks, so large districts go through the placer in
+  several pages.
 - **Y-budget rule** — the world spans Y -64 to 320 (~384 blocks). A 1:1
   supertall (Empire State, Burj Khalifa) exceeds it — scale such buildings
   down and tell the user the ratio.
 
-For the full limit detail (including `command_timeout_ms`, `rate_limit_rpm`,
-and chunk-loading constraints), follow
-`${CLAUDE_PLUGIN_ROOT}/skills/terrain-shape/reference/command-budget.md`.
+For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
+slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+(`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Process
 
@@ -106,35 +126,32 @@ and chunk-loading constraints), follow
 2. **Interview** — run `reference/interview.md`; record answers in
    `requirements.md`.
 3. **Research** — for real-world and named-fictional cities, use the
-   `survey-research` dossier the orchestrator supplies (return to the
-   orchestrator to run `survey-research` if it is missing); pull patterns
+   `survey-research` dossier (run that skill if it is missing); pull patterns
    from `reference/cities.md`.
 4. **Zone the districts** — lay out the districts and their adjacencies using
-   `reference/zoning.md`. Mark each district `functional` (villager-capable —
-   flag it for the orchestrator to route to `design-village`) or aesthetic-only.
+   `reference/zoning.md`. Mark each district `functional` (villager-capable — design it with the `design-village` skill) or aesthetic-only.
 5. **Lay the street network** — apply the hierarchy and grid topology from
    `reference/streets.md`; route transit.
 6. **Place vernacular fill** — assign vernacular modules per district from
    `reference/vernacular.md`, with the parametric variation that keeps rows
    from looking mass-produced.
 7. **Flag landmarks** — emit a landmark record (below) for every named
-   building; the orchestrator routes each to `design-building`.
+   building; each one is designed with the `design-building` skill.
 8. **Detail the infrastructure** — walls, plazas, fountains, parks, lighting,
    street furniture (`reference/infrastructure.md`).
 9. **Render district layouts** — produce blueprints (`reference/blueprints.md`),
    show the user, iterate, and **loop until they approve**.
-10. **Write the plan and hand off** — write `requirements.md` and `plan.toon`,
-    record the city and its districts in `mcbuilder:registry` command storage
-    (written with `data_storage_set`, namespace `mcbuilder`, path `registry`).
-    Structure names follow the canonical colon form `mcb:<project>_<element>`.
+10. **Write the plan and hand off** — write `requirements.md`, `plan.toon`, its
+    phase files and module files per the `exec-ashlar` skill's
+    `reference/plan-format.md` (`../exec-ashlar/reference/plan-format.md`), and
+    record the city and its districts in `.minecraft-builder/registry.json`.
 
-    **Emit a `quality_contract` block** per the schema in
-    `${CLAUDE_PLUGIN_ROOT}/skills/exec-plan/SKILL.md`.
+    **Emit a `quality_contract` block** per that same plan format.
     Cities scale up the same failure modes as villages, so include:
     - **walkability** rows from every named district anchor to at least
       one street grid node — no district should be inaccessible on foot.
     - **connectivity** rows between every district pair via the street /
-      rail / canal network you specified, so `exec-inspect` can detect a
+      rail / canal network you specified, so the verification can detect a
       broken edge.
     - **doors** rows for every external door of every reused vernacular
       building module — the same Cape Aurelia old-town failure scales 100×
@@ -161,8 +178,7 @@ Read the file for the step you are on — do not load them all up front:
 
 ## Landmark records
 
-For every named landmark, emit a TOON record so the orchestrator can route it
-to `design-building`:
+For every named landmark, emit a TOON record so it can be designed with the `design-building` skill:
 
 ```toon
 landmark:
@@ -178,29 +194,34 @@ landmark:
   notes: seven drum-towers, immense barbican, curtain walls
 ```
 
-The orchestrator routes each record to `design-building`, which designs and
-saves the landmark structure; reserve the `anchor` envelope in the district
-plan and continue the urban fabric around it.
+Run the `design-building` skill for each record; it designs the landmark and
+its modules. Reserve the `anchor` envelope in the district plan and continue
+the urban fabric around it.
 
 ## Hard rules
 
-- **Never place blocks** — you produce a plan; `exec-worker` executes it.
+- **Place no blocks while designing.** After the user approves the plan, the
+  `exec-ashlar` skill builds it (`build <project>`).
 - **Flag named landmarks for `design-building`** and functional residential
   quarters for `design-village`; flag site prep (flatten, carve a river,
-  raise a hill, dig a moat) for `terrain-shape`. The orchestrator routes each.
-- **Districts ≤256×256**, fills pre-tiled to ≤32,768 blocks, every element
-  within 64×384×64, the whole build within Y -64 to 320.
+  raise a hill, dig a moat) for `terrain-shape`. Hand-off says who runs each.
+- **Districts ≤256×256**, every call within Ashlar's limits, the whole build
+  within Y −64 to 319.
 - **Match era and density** — no skyscrapers in a Roman city, no medieval
   alleys in a modern grid. Keep the silhouette true to the real city.
 - **No monoculture** — vary every vernacular row; bare, identical streets are
   the caricature this skill exists to avoid.
 
-## Return to the orchestrator
+## Hand-off
 
 State the city back to the user — scale, districts, street plan, landmark
-list — and confirm `plan.toon` is written. Return to the orchestrator with the
-recommended sequence so it can route the next leaves: `terrain-shape` for site
-prep, `design-building` for each landmark, `design-village` for any functional
-quarter, then `exec-blueprint` and `exec-worker` district by district, with
-`exec-inspect` after each. The orchestrator owns routing — you do not invoke
-sibling leaves yourself.
+list — and confirm `plan.toon` is written. No separate coordinator runs the
+next steps in this setup, so you sequence them, district by district:
+
+1. **Site preparation**: use the `terrain-shape` skill if it is installed;
+   otherwise add `site-prep` phases (clearing, levelling, pads, filling holes,
+   soft-edged terraces) and tell the user what is beyond them.
+2. **Landmarks**: run the `design-building` skill for each landmark record.
+3. **Functional quarters**: run the `design-village` skill for each one.
+4. **Build**: use the `exec-ashlar` skill (`build <project>`), one district at a
+   time, verifying each before starting the next.

@@ -44,7 +44,7 @@ City: kings-landing   (1 char ≈ one district)
 
 ## Validation checklist
 
-Check the design — and have the `exec-inspect` and `exec-reflect` re-check it —
+Check the design — and re-check it with the `exec-ashlar` skill's verification after the build —
 against these city-specific failure modes:
 
 - **Too few buildings** — under ~16 it is a village; defer to `design-village`.
@@ -65,7 +65,7 @@ against these city-specific failure modes:
 - **Functional villagers in the wrong zone** — golem/pathfinding failures in a
   dense tower district; keep villagers to medieval/low-rise quarters.
 - **Y-budget or fill-cap violation** — a 1:1 supertall over the Y range, a
-  district fill over 32,768, a structure over 64×384×64.
+  a single call over Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`).
 
 A missing signature or a monotonous fill is a correction to make, not a
 cosmetic note.

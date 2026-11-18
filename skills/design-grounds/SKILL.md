@@ -8,7 +8,7 @@ description: >-
   modernist, and other traditions. Geometric and intentional — the deliberate
   counterpart to the naturalistic terrain-shape skill. Use when the user wants
   a garden, park, plaza, courtyard, hedge maze, fountain, or designed grounds.
-  Part of the minecraft-builder workflow.
+  Builds through Ashlar with the exec-ashlar skill.
 model: opus
 effort: high
 ---
@@ -46,8 +46,12 @@ for:
 
 ## Connection
 
-If a tool call fails because the MCP server is unreachable, stop and tell
-the user to run the `minecraft-mcp-setup` agent.
+Build tools come from the Ashlar MCP server (`mc_status`, `mc_players`,
+`mc_survey`, `mc_render`, `mc_inspect`, `mc_snapshot`, `mc_restore`,
+`mc_build`, `mc_command`). If one fails because the server is unreachable,
+call `mc_status` once more after a few seconds; if it still fails, stop and
+tell the user. The connection lives in the client's MCP settings, not in a
+skill.
 
 ## Core principles
 
@@ -62,20 +66,20 @@ the user to run the `minecraft-mcp-setup` agent.
 3. **Keep leaves alive.** Leaves decay unless near a log. Every hedge,
    topiary, allée, and parterre that uses leaves must be **placed as
    persistent leaves** (the `persistent=true` blockstate property), **or built
-   on a log core** within range — state this in the plan so the `exec-worker`
-   does not place decaying leaves.
+   on a log core** within range — state this in the plan so no decaying leaves are placed.
 4. **Reuse the repeating unit.** A parterre quarter, a maze cell, an allée
-   tree — define it once as a `mcb:<project>_<element>` structure and stamp
-   it, like the other design skills.
+   tree — define it once as a module (`modules/<element>.json`) and stamp it,
+   like the other design skills.
 
 ## Inputs
 
 - **From `survey-research`** — for a named garden or tradition, reference
   imagery and cited dimensions; persist the dossier to the project folder.
-- **From `survey-site`** — the site, or a delegated envelope from `design-city`.
+- **From the site survey** — use the `exec-ashlar` skill (`survey <project>`),
+  or a delegated envelope from `design-city`.
 - **From the user** — the adaptive interview (`reference/interview.md`).
-- **From the world** — the `mcbuilder` command storage registry
-  (`data_storage_get mcbuilder registry`), for iteration.
+- **From earlier builds** — `.minecraft-builder/registry.json`
+  (`../exec-ashlar/reference/registry.md`), for iteration.
 
 ## Process
 
@@ -89,16 +93,16 @@ the user to run the `minecraft-mcp-setup` agent.
 5. **Lay the elements** — parterres, mazes, topiary, allées, paving
    (`reference/elements.md`); water features (`reference/water.md`).
 6. **Coordinate dependencies** — note the seams for roofed structures,
-   statuary, animated water, and site grading so the orchestrator can sequence
-   the owning leaves (see below).
+   statuary, animated water, and site grading, so each owning skill runs in
+   the right order (see Hand-off).
 7. **Render and iterate** — produce blueprints (`reference/blueprints.md`),
    show the user, revise, **loop until they approve**.
-8. **Write the plan and return** — `requirements.md`, `plan.toon`, and the
-   registry entry. Structure names follow the canonical colon form
-   `mcb:<project>_<element>`.
+8. **Write the plan and hand off** — `requirements.md`, `plan.toon` with its
+   phase and module files per the `exec-ashlar` skill's
+   `reference/plan-format.md` (`../exec-ashlar/reference/plan-format.md`), and
+   the registry entry.
 
-   **Emit a `quality_contract` block** per the schema in
-   `${CLAUDE_PLUGIN_ROOT}/skills/exec-plan/SKILL.md`.
+   **Emit a `quality_contract` block** per that same plan format.
    For designed outdoor spaces the contract should include:
    - **walkability** rows for every named path (gate → fountain, parterre
      → bench, axis A → axis B). A garden whose paths can't be walked is
@@ -125,16 +129,14 @@ Read the file for the step you are on — do not load them all up front:
 | `reference/interview.md` | The adaptive interview decision tree. |
 | `reference/blueprints.md` | Rendering modes and the validation checklist. |
 
-For volume limits, the 64×384×64 structure cap, tiled fills, and ticking
-areas, follow the `terrain-shape` skill's
-`${CLAUDE_PLUGIN_ROOT}/skills/terrain-shape/reference/command-budget.md`.
+For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
+slots), follow the `exec-ashlar` skill's `reference/tools-and-limits.md`
+(`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Dependency seams
 
 A garden is rarely built alone — this is the most coordination-heavy design
-skill. You are a Tier-3 leaf: you do not call sibling leaves. Name each seam in
-the plan and return it to the orchestrator, which sequences the leaf that owns
-it:
+skill. Name each seam in the plan; Hand-off says how each owning skill is run:
 
 - **Site grading** — `terrain-shape` owns it (a flat datum, a raised belvedere
   hill, a terraced hillside, a lake basin).
@@ -145,34 +147,43 @@ it:
   figures). You place the plinth and the basin.
 - **Animated water** — `system-redstone` owns it (dancing fountains, water
   organs). You design the static basin and channels.
-- **Delegated envelopes** — the orchestrator may hand you a plaza or park
+- **Delegated envelopes** — another design skill may hand you a plaza or park
   envelope (from `design-city`) or the grounds around a building (from
   `design-house` or `design-building`). Honour the given envelope, datum, and
   axis.
 
 ## Hard rules
 
-- **Never place blocks** — you produce a plan; the `exec-worker` executes it.
+- **Place no blocks while designing.** After the user approves the plan, the
+  `exec-ashlar` skill builds it (`build <project>`).
 - **Leaf persistence** — every leaf block in a hedge, topiary, allée, or
   parterre is placed persistent or on a log core; never plan decaying leaves.
-- **Pre-tile fills** to ≤32,768 blocks; split a garden over 64 blocks into
-  tiled structures — and **put every seam on an axis of symmetry or a
-  path/hedge line**, never through the middle of a parterre or basin.
+- **Split large gardens into modules and phases** within Ashlar's limits — and
+  **put every seam on an axis of symmetry or a path/hedge line**, never through
+  the middle of a parterre or basin.
 - **Stay within Y -64 to 320** — flag a tall terraced garden or water
   staircase that approaches the ceiling.
-- **No `/random` or `/data`** — pre-bake any irregular pattern (a maze
+- **No `/random`** — pre-bake any irregular pattern (a maze
   topology, stepping-stone offsets, a naturalistic lake edge) into the design.
+  Console commands only as `../exec-ashlar/reference/commands.md` allows.
 - **Defer** roofed structures, statuary, animated water, and site grading —
-  mark each seam in the plan and let the orchestrator route the owning leaf.
+  mark each seam in the plan; Hand-off says who does each.
 - **Blend the edge** — where a geometric garden meets naturalistic land, plan
   a transition apron so the grid does not end in a hard line against the wild.
 
-## Return
+## Hand-off
 
 State the garden back to the user — tradition, scale, axes, the feature list —
-and confirm `plan.toon` is written, then return to the orchestrator. Include
-the dependency seams so it can sequence the owning leaves — typically
-`terrain-shape` grades the site first, then `design-building` /
-`design-monument` build any structures and statuary, then `exec-blueprint` and
-`exec-worker` lay the garden, with `exec-inspect` after each phase, and
-`system-redstone` animating any water last. The orchestrator owns the ordering.
+and confirm `plan.toon` is written. No separate coordinator runs the next steps
+in this setup, so you sequence the dependency seams, typically:
+
+1. **Grading**: use the `terrain-shape` skill if it is installed; otherwise add
+   a `site-prep` phase that gives a flat, true datum (clearing, levelling,
+   filling holes, soft-edged terraces) and tell the user if the site needs more
+   than that.
+2. **Roofed structures and statuary**: run the `design-building` and
+   `design-monument` skills for them.
+3. **Build the garden**: use the `exec-ashlar` skill (`build <project>`), with
+   verification after each phase.
+4. **Animated water**: use the `system-redstone` skill if it is installed;
+   otherwise leave the static basins and tell the user.

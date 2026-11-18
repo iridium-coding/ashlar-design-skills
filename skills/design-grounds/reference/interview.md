@@ -1,8 +1,11 @@
 # The adaptive interview
 
-Pin down the garden without over-asking. Ask in small grouped batches (use
-`AskUserQuestion` for the multiple-choice ones), skip what is already settled
+Pin down the garden without over-asking. Ask in small grouped batches, skip what is already settled
 by the request or a delegating skill, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 

@@ -1,13 +1,13 @@
 # Garden elements
 
 The constructed pieces of a designed garden. Each is a reusable unit — define
-it once as a `mcb:<project>_<element>` structure and stamp it.
+it once as a module (`modules/<element>.json`) and stamp it.
 
 ## The leaf-persistence rule
 
 Leaves **decay** unless near a log. Every hedge, topiary, parterre
 hedge, and clipped allée built from leaf blocks must be placed as **persistent
-leaves** (blockstate `persistent=true`, set via `block_set_state` properties)
+leaves** (blockstate `persistent=true`, written into the `mc_build` block state)
 or built on a **log core** within range. State this explicitly in the
 plan — a garden whose hedges decay overnight is a failure. This applies to
 every element below that uses leaves.

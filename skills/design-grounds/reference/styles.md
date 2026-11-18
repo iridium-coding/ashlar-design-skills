@@ -90,12 +90,13 @@ blend the structural logic of two, or the garden loses its order.
 
 ## Biome-aware plant and material selection (Java-exclusive)
 
-Before choosing plant species and materials, read the site's actual biome with
-`level_get_biome_at`:
+Before choosing plant species and materials, read the site's actual biome
+during the survey — the `exec-ashlar` skill tests candidates with the
+read-only `execute if biome <x> <y> <z> <biome>`, or infers it from the
+surface materials:
 
 ```
-level_get_biome_at("minecraft:overworld", {x:80,y:64,z:200})
-→ {id:"minecraft:flower_forest", temperature:0.7, downfall:0.8, hasPrecipitation:true}
+execute if biome 80 64 200 minecraft:cherry_grove
 ```
 
 Map the biome id to appropriate plant species and path/wall materials:

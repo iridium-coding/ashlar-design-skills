@@ -54,6 +54,9 @@ rejected before anything changes: split and retry rather than guess.
   before the build.
 - `mc_render` shows blocks, not entities, and map colours are approximate.
 - `mc_render` and `mc_survey` return images you can look at directly.
+- At most 16 operations queue at once. Parallel calls beyond that fail with
+  "operation queue is full": send reads in batches of at most 12, or read a
+  slice or a `columns` listing instead of many single cells.
 
 ## Block-state orientation
 

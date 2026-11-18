@@ -338,6 +338,8 @@ quality_contract:
 | | `item replace block <x> <y> <z> <slot> with <item> [count]` |
 | | `place feature <feature> <x> <y> <z>` (tree growth; inside a snapshotted box) |
 | | `kill @e[tag=ashlar.<project>…]` |
+| | `forceload add <x1> <z1> [<x2> <z2>]` |
+| | `forceload remove <x1> <z1> [<x2> <z2>]` |
 | Read only | `execute if biome <x> <y> <z> <biome>` |
 | | `data get block <x> <y> <z> [path]` |
 | | `data get entity @e[tag=ashlar.<project>,…,limit=1] [path]` |
@@ -345,6 +347,10 @@ quality_contract:
 
 - Never `fill`, `setblock`, `clone`, `give`, `tp`, `gamerule` or any other
   command, and never as a way around a limit.
+- Added 2026-11-18 after the live write test (user decision: "Allow paired
+  forceload (Recommended)"): entity commands run inside a paired
+  `forceload add`/`forceload remove` over the columns they touch, so they work
+  with no player nearby; no chunk is left force-loaded.
 - Every summoned entity carries `ashlar` and `ashlar.<project>`. The prefix
   keeps the project tag from colliding with other datapacks' tags.
 - Every world-changing command appears in `plan.toon` `commands` and in the

@@ -83,7 +83,7 @@ Run step 5 of `build` on the recorded project and report each check.
 
 Follow the rollback steps in `reference/execution.md`: restore the snapshots
 newest first, remove the project's entities with
-`kill @e[tag=ashlar.<project>]`, tell the user what a restore cannot bring
+`kill @e[tag=ashlar.<project>]` inside a paired force-load, tell the user what a restore cannot bring
 back, and set the registry status to `rolled-back`.
 
 ## Hard rules
@@ -96,6 +96,9 @@ back, and set the registry status to `rolled-back`.
   change the world only as listed in the approved plan's `commands` table; the
   read-only checks may run whenever surveying or verification needs them, and
   rollback mode runs its own `kill @e[tag=ashlar.<project>]`.
+- Entity commands run inside a paired `forceload add` / `forceload remove`
+  over the columns they touch (`reference/commands.md`). Never leave a chunk
+  force-loaded.
 - Never place blocks with `mc_command`, and never use it to get around a limit.
 - Stay within Ashlar's limits (`reference/tools-and-limits.md`); split the work
   into more calls or phases instead.

@@ -115,6 +115,10 @@ Stop and report if any of these fails:
 4. Every `placements` row names a module listed in `modules`.
 5. Every `commands` row matches a form in `commands.md`, with the project's
    tags where the form requires them.
-6. `quality_contract` has at least one row, and every door, stair and named
+6. A `commands` phase with entity commands has a `forceload add` row first and
+   the matching `forceload remove` row last. If either is missing, add them
+   over the phase's box columns (its `from`/`to` x and z) and show the added
+   rows at the approval gate.
+7. `quality_contract` has at least one row, and every door, stair and named
    room in the design is covered.
-7. The snapshot slots for the whole build are known.
+8. The snapshot slots for the whole build are known.

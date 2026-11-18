@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Fork note (ashlar-design-skills):** the six `design-*` skills,
+> `survey-research` and the new `exec-ashlar` skill target the **Ashlar** MCP
+> server (`mc_status`, `mc_players`, `mc_survey`, `mc_render`, `mc_inspect`,
+> `mc_snapshot`, `mc_restore`, `mc_build`, `mc_command`), not the
+> `minecraft-java` surface described below, so Ashlar's `mc_*` names are
+> intended in those eight skills. The rest of this file describes Chapman's
+> original skills. Check the eight with
+> `uv run --no-project --with pytest --with pyyaml --with numpy --with pillow pytest tests/ashlar -q`;
+> their text rules are in §7.5 of
+> `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
+
 ## Commands
 
 ```sh

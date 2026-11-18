@@ -49,6 +49,9 @@ orchestration model and the no-trivial routing rule are in
 | setup-server | setup | — | inherit / inline | Configure & launch the MCP server (was setup-mcp-server) |
 | setup-connect | setup | — | inherit / inline | Register the server with Claude (was connect-claude) |
 
+The ashlar-design-skills fork adds `exec-ashlar` and adapts the six `design-*`
+skills and `survey-research` to build through Ashlar; see the fork's README.
+
 ## Routing table (primary intent → Tier-2 orchestrator)
 
 | Primary intent | Orchestrator |

@@ -2,6 +2,25 @@
   <img src="docs/images/logo.png" width="200" alt="Minecraft Java Fabric MCP — Claude plugin logo">
 </p>
 
+> **This fork** ([iridium-coding/ashlar-design-skills](https://github.com/iridium-coding/ashlar-design-skills))
+> adapts the six `design-*` skills and `survey-research` to build through the
+> [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on a Paper server,
+> and adds the `exec-ashlar` skill. Chapman's other skills are unchanged and not
+> needed. To use the adapted skills in a workspace with Claude Code and Codex,
+> clone this repo into the workspace as `ashlar-design-skills/`, then from the
+> workspace root:
+>
+> ```bash
+> mkdir -p .claude/skills .agents/skills
+> for s in design-building design-city design-grounds design-house design-monument design-village exec-ashlar survey-research; do
+>   ln -sfn "../../ashlar-design-skills/skills/$s" ".claude/skills/$s"
+>   ln -sfn "../../ashlar-design-skills/skills/$s" ".agents/skills/$s"
+> done
+> ```
+>
+> Start Claude Code or Codex from the workspace root. The design and the rules
+> for these skills are in `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
+
 # Minecraft Java — Claude Plugin
 
 A [Claude Code](https://code.claude.com) plugin that gives Claude **agent

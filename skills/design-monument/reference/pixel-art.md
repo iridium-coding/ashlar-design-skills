@@ -20,14 +20,11 @@ grid. The technique is **quantize, grid, lay**.
    better with dithering (alternating two near blocks to suggest an
    in-between tone). Say which you used.
 5. **Lay it as a grid.** A quantized image *is* a block grid — the most direct
-   way to build it is to have the `exec-blueprint` place the grid into a scratch
-   area using `block_fill_region` and `block_set_state`, capture the region
-   with `structure_save_from_world` into a named template
-   (`mcb:<project>_<element>`), clear the scratch, then place the template
-   wherever needed with a single `structure_load_to_world` call. (Alternatively,
-   if a script produces the `.nbt` bytes directly, write them with
-   `structure_file_write` as base64.) Use `fill` / `set` rows in `plan.toon`
-   directly only for a small or simple grid. A flat mural is one block deep.
+   way to build it is to generate the grid as a phase file with a
+   short script — one fill per run of same-colour pixels in a row — and send it
+   with the `exec-ashlar` placer (`via: placer`). If the same art repeats, make
+   it a module and stamp it (`../exec-ashlar/reference/modules.md`). Use
+   hand-written phase-file entries only for a small or simple grid. A flat mural is one block deep.
 
 ## Flat vs. relief
 
@@ -39,9 +36,10 @@ grid. The technique is **quantize, grid, lay**.
 
 ## Scale and tiling
 
-A mural wider or taller than 64 blocks exceeds one structure file — split it
-into tiles on a clean grid line and record the offsets. Keep `fill`/`set`
-runs pre-tiled within the 32,768-block cap (a flat mural rarely approaches it).
+A mural whose box exceeds Ashlar's per-snapshot cap
+(`../exec-ashlar/reference/tools-and-limits.md`) is split into tiles on a clean
+grid line, with the offsets recorded. Its phase file stays well within Ashlar's
+per-call limit (a flat mural rarely approaches it).
 
 ## Text and logos
 

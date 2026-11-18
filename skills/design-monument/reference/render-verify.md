@@ -1,12 +1,10 @@
 # Render-verify: give yourself eyes before you place blocks
 
 The single most valuable habit for any representational or parametric build.
-You **cannot see the world** — `block_get_state` confirms a block id at a
-coordinate, nothing more. It cannot tell you that a vehicle's body is the wrong
-shape, that a silhouette doesn't read, that proportions are off. A wrong **base
-silhouette** cannot be rescued by any amount of front-end detailing, and built
-blind you will not notice until the user does. So build a model you *can* see
-first. A renderer is cheaper than one wrong in-world rebuild.
+`mc_render` shows what you built, but only after the blocks are in the world,
+and every in-world rebuild costs snapshots and time. A wrong **base silhouette**
+cannot be rescued by any amount of front-end detailing. So build a model you can
+see first, offline: a renderer is cheaper than one wrong in-world rebuild.
 
 This applies to: vehicles, creatures, statues, characters, logos, any
 voxelized form, any large figurative mass. It does **not** apply to a flat
@@ -16,11 +14,11 @@ directly.
 ## The loop (offline, seconds per iteration)
 
 1. **Author** the form as a parametric `VoxelModel` (numpy grid + primitives).
-2. **Render** three orthogonal views to PNG and **Read them**.
+2. **Render** three orthogonal views to PNG and **look at them**.
 3. **Compare** to the reference images. Adjust **one parameter at a time**.
 4. **Re-render.** Repeat until the renders genuinely match the references.
-5. **Decompose** to a fills list and **place it** (one batch call).
-6. **Verify** with a scan-render (below) and compare to the references again.
+5. **Decompose** to a fills file and **place it** with the `exec-ashlar` placer.
+6. **Verify** with `mc_render` (below) and compare to the references again.
 
 Different errors surface in different views — always render multiple, never
 just one:
@@ -31,16 +29,23 @@ just one:
   shoulders.
 - **iso** (3/4) — how the masses sit together in three dimensions.
 
+## Looking at the PNGs
+
+- Claude Code: open each PNG with `Read`.
+- Codex: open each PNG with `view_image`.
+- Otherwise: report the model's numbers (`counts()`, extents) and ask the user
+  to open the files.
+
 ## The toolkit
 
-Bundled at `${CLAUDE_PLUGIN_ROOT}/tools/voxel` (numpy + Pillow; if a run
-reports a missing module, tell the user to
-`python -m pip install -r tools/requirements.txt`). Read `tools/README.md` for
-the full API. The shape of an authoring script:
+Bundled in this skill's folder at `tools/voxel/` (numpy + Pillow through `uv`,
+so nothing is installed globally); `tools/voxel/README.md` lists the API. Run an
+authoring script from the workspace root with
+`uv run --no-project --with numpy --with pillow python r1s.py`. Its shape:
 
 ```python
-import os, sys
-sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "tools"))
+import sys
+sys.path.insert(0, "<design-monument>/tools")   # this skill's folder, then tools
 from voxel import Palette, VoxelModel, render_views, write_fills_json
 
 pal = Palette.building()                  # concretes, stone, wood, glass, copper…
@@ -56,62 +61,51 @@ m.box((m.fx(0.2), belt, m.fz(0.15)), (m.fx(0.8), roof, m.fz(0.85)), GLASS)
 render_views(m, "/abs/scratch/r1s")       # r1s_iso.png / r1s_side.png / r1s_front.png
 ```
 
-Then `Read` the three PNGs, judge them against the references, edit the model,
+- Claude Code: `<design-monument>` is `${CLAUDE_SKILL_DIR}`.
+- Codex: `<design-monument>` is the folder holding this skill's `SKILL.md`.
+- Otherwise: use the folder holding this skill's `SKILL.md`.
+
+Then look at the three PNGs, judge them against the references, edit the model,
 and re-run. Author the shape from **anchors and primitives** (`ellipsoid`,
 `cylinder`/cone, `line3d` spine, `mirror_x` for symmetry), not absolute
 coordinates — so you can tune a ratio and see the effect, not chase numbers.
 
 ## Placing the verified model
 
-Once the renders match, decompose and place:
+Once the renders match, decompose:
 
 ```python
 summary = write_fills_json(m, "/abs/scratch/r1s_fills.json", origin=(206, 64, 70))
 ```
 
-`write_fills_json` greedily covers the model with maximal boxes, splits each to
-≤ 32,000 blocks, and writes a list of
-`{"from":[x,y,z], "to":[x,y,z], "block":"…"}` in **world** coordinates.
+`write_fills_json` greedily covers the model with maximal boxes and writes a
+list of `{"from":[x,y,z], "to":[x,y,z], "block":"…"}` in **world** coordinates.
 
-**Place it with the bundled client, not by hand.** A real voxelized form is
-1,000–7,200 fills — far too many to hand-transcribe into a `block_fill_batch`
-tool call reliably (the #1 friction of a long figurative session). Pipe the JSON
-straight to the local server instead:
+**Place it with the placer, not by hand.** A real voxelized form is 1,000–7,200
+fills — far too many to transcribe into a tool call reliably. Add the file as a
+`via: placer` phase in `plan.toon` and let the `exec-ashlar` skill send it:
 
-```sh
-python ${CLAUDE_PLUGIN_ROOT}/tools/voxel/mcp_place.py place /abs/scratch/r1s_fills.json replace
-# --dimension minecraft:the_nether to target another dimension (default overworld)
+```bash
+python3 <exec-ashlar>/scripts/ashlar_place.py plan /abs/scratch/r1s_fills.json
+python3 <exec-ashlar>/scripts/ashlar_place.py place /abs/scratch/r1s_fills.json --snapshot --label "<project> figure"
 ```
 
-`mcp_place.py` is a stdlib-only JSON-RPC client: it reads the server URL/auth
-from `~/.claude.json` (`mcpServers["minecraft-java"]`, no auth on single-player),
-does the MCP handshake, and POSTs the fills as `block_fill_batch` calls. **`block_fill_batch`
-is capped at 8192 entries per call** — the client pages a longer list into
-successive calls automatically, so you don't have to. Run `mcp_place.py test`
-first to confirm the handshake.
+`<exec-ashlar>` is the `exec-ashlar` skill's folder (`../exec-ashlar` from this
+skill's folder). The placer checks for players, snapshots the area, and pages
+the fills into `mc_build` calls within Ashlar's limits. If it needs more
+snapshots than allowed, split the model along an anatomy seam into separate
+fills files and phases. The script and the model `.npy` are the **reusable
+artifact** for a large parametric form; record them in the registry.
 
-Only fall back to enumerating the fills as individual `block_fill_region` calls
-for a **tiny** model (a few dozen boxes), or if the connected server lacks
-`block_fill_batch` — the boxes are already capped, so they place safely either
-way, just slower. The script + the model `.npy` are the **reusable artifact**
-for a large parametric form (it can't be one structure template — templates cap
-at ~64×384×64); record them in the registry.
-
-## Verify the built result — scan-render
+## Verify the built result
 
 After placing, confirm fidelity *visually*, not by spot-checking coordinates:
-
-- **Native (preferred):** call **`block_render_region`** on the placed bounding
-  box — the mod renders the actual blocks (real map colours) to a PNG you Read.
-  One call, no raw block data in your context.
-- **Fallback** (if that tool is absent): scan the region back with **paged**
-  `block_scan_region` (never a raw full-volume dump — it can blow the context
-  limit), rebuild a `VoxelModel` from the result, and `render_views` it. Use
-  `block_scan_summary` for a quick solid-count / material check.
-
-Compare the scan-render to the references. A matching solid-voxel count between
-the model and the scan is strong block-for-block evidence; a matching *picture*
-is the real proof the build reads as its subject.
+render the placed bounding box with `mc_render` from the sides that matter
+(`north`, `south`, `east`, `west`, y limited to the figure) and from the `top`.
+Use `mc_inspect` stats for a quick solid-count and material check. A matching
+count of non-air blocks between the model and the build is strong
+block-for-block evidence; a matching *picture* is the real proof the build
+reads as its subject.
 
 ## Imported meshes are not authoritative
 
@@ -132,4 +126,4 @@ character on the first try where hand-authoring took ~6 rebuilds). See
 When the piece shares a scene with another subject (a figure beside a vehicle),
 **pin the scale relationship before authoring** — fix the ratio (e.g. figure
 height ≈ vehicle roof height) up front, so you don't discover a 4× mismatch
-after both are built. See exec-plan's scale-pinning rule.
+after both are built. Record the ratio in `requirements.md`.

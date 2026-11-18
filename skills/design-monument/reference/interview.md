@@ -1,8 +1,11 @@
 # The adaptive interview
 
-Pin down the piece without over-asking. Ask in small grouped batches (use
-`AskUserQuestion` for the multiple-choice ones), skip what is already clear,
-and record answers in `requirements.md`.
+Pin down the piece without over-asking. Ask in small grouped batches, skip
+what is already clear, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 
@@ -17,7 +20,7 @@ and record answers in `requirements.md`.
    Java-envelope conversation (Y -64 to 320; scale down, or split the base off).
 4. **Pose / composition** — for a figure or creature: standing, seated,
    coiled, winged, in motion. For a mural: wall-mounted or floor.
-5. **Site & anchor** — anchor coordinates from the survey-site; standalone, on a
+5. **Site & anchor** — anchor coordinates from the site survey; standalone, on a
    building, on a hill, against a cliff, on a base wall.
 6. **Solid or shell** — solid (small pieces) or hollow shell (large pieces);
    never habitable.

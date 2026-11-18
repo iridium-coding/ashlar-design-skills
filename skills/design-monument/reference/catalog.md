@@ -30,7 +30,7 @@ For every piece, resolve:
 - **Palette** — the Minecraft blocks and any gradient (see `palettes.md`).
 - **Pose / composition** — standing, seated, coiled, in motion.
 - **Sibling seams** — what is a cliff, a pedestal, a plinth.
-- **Tile plan** — the split into ≤64×384×64 structures along anatomy seams.
+- **Tile plan** — the split into tiles (phases or modules) along anatomy seams, each within Ashlar's limits.
 
 ## Real-world monuments
 

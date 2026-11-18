@@ -1,7 +1,7 @@
 # Display entities — block_display / item_display / text_display
 
 **This is the single biggest Java-exclusive build-art technique. Bedrock has
-nothing like it.** A display entity is summoned with `entity_summon` (entity
+nothing like it.** A display entity is summoned with the allowlisted `summon` command (entity
 type `minecraft:block_display`, `minecraft:item_display`, or
 `minecraft:text_display`) carrying NBT that controls how it is rendered. They
 have **no hitbox, no collision, and do not tick** — they are purely visual. Use
@@ -18,8 +18,8 @@ them for things voxel blocks and armor stands cannot do:
 
 Place display entities in a **late decoration phase**, like armor stands, after
 the blockwork is built so fills do not disturb them. Tag every one
-(`Tags:["mcb_deco"]`) so it can be found again with `entity_query` and adjusted
-with `entity_set_nbt`.
+(`Tags:["ashlar","ashlar.<project>"]`) so it can be counted with
+`execute if entity`, adjusted with `data merge entity`, and removed by tag.
 
 > **Version note (verify before relying on edge cases).** All examples below
 > are verified live on **26.1.2**; this mod also supports **1.21.11**, **26.1.1**,
@@ -28,8 +28,8 @@ with `entity_set_nbt`.
 > `glow_color_override`, the `text_display` text/background fields) has been
 > stable since 1.19.4 and is reliable on both. Item-`components` SNBT inside an
 > `item_display`'s shown item is the format that *does* drift across versions —
-> if you embed a custom item, round-trip it with `itemstack_describe` on the
-> running version (`server_get_status` reports the version). Pass `include_values: true` (optionally `component_filter`) to read the component JSON, not just `componentKeys`. Do not assert a
+> if you embed a custom item, read the entity back with `data get entity` on the
+> running version (`mc_status` reports the version). Do not assert a
 > component shape blindly.
 
 ## The transformation block — common to all three
@@ -89,9 +89,9 @@ rotations (set as `left_rotation`, leave `right_rotation` identity):
 | 45° about Z (a tilt) | `[0f,0f,0.3827f,0.9239f]` |
 
 `0.7071` ≈ sin/cos of 45° (= √½); `0.3827`/`0.9239` ≈ sin/cos of 22.5° (the
-half-angle of a 45° rotation). **Because the agent cannot see the world**, do
+half-angle of a 45° rotation). **Because `mc_render` shows blocks, not entities**, do
 not trust a hand-computed quaternion blindly: **summon one test display, ask the
-user to glance at it (or read it back with `entity_get_nbt`), and confirm the
+user to glance at it (or read it back with `data get entity`), and confirm the
 orientation before stamping a row of them.** For a compound tilt, prefer
 composing two single-axis rotations (one in `left_rotation`, one in
 `right_rotation`) over hand-multiplying quaternions.
@@ -99,7 +99,7 @@ composing two single-axis rotations (one in `left_rotation`, one in
 ### Animation (optional) — interpolation fields
 
 A transformation can be animated smoothly instead of snapping. Set the new
-`transformation` with `entity_set_nbt`, and on the same entity set:
+`transformation` with `data merge entity`, and on the same entity set:
 
 - `start_interpolation:0` — tick offset at which the interpolation begins
   (`0` = next tick).
@@ -107,16 +107,8 @@ A transformation can be animated smoothly instead of snapping. Set the new
   new transformation.
 - `teleport_duration:N` — ticks to interpolate position changes from teleports.
 
-This is the non-redstone way to make displays drift, spin, pulse, or grow. To
-loop an animation, drive the `entity_set_nbt` updates from a `schedule_function`
-that re-schedules itself (see the datapack-functions note in exec-plan /
-engineer references) — that requires the build to ship a small datapack, so
-treat looping animation as an advanced option and note the datapack requirement
-in `plan.toon`. **Verify functions actually execute first** — the mod can refuse
-to run them (`/function` → "should not run", `/reload` → `successCount 0`); a
-looping animation that depends on an inert `schedule_function` will simply sit
-still. If functions don't run in this world, keep the display static (or animate
-it only via live, repeated `entity_set_nbt` calls while a session is active).
+This is the non-redstone way to make displays drift, spin, pulse, or grow.
+Ashlar cannot run or schedule datapack functions, so looping animations are out of reach. Keep displays static, or, only if the user asks, re-apply allowlisted `data merge entity` updates by hand while the session is open.
 
 ## text_display — 3D floating text and logos
 
@@ -124,12 +116,12 @@ Floating text/logos at any size and color, optionally with a backing panel.
 Verified example:
 
 ```
-entity_summon("minecraft:text_display", pos, nbt='{
+summon minecraft:text_display <x> <y> <z> {
   text:"{\"text\":\"GRAND HALL\",\"color\":\"gold\",\"bold\":true}",
   billboard:"center", line_width:200, background:1073741824,
   transformation:{scale:[2f,2f,2f],left_rotation:[0f,0f,0f,1f],
     right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f]},
-  Tags:["mcb_deco"]}')
+  Tags:["ashlar","ashlar.<project>"]}
 ```
 
 Fields specific to `text_display`:
@@ -167,12 +159,12 @@ the workhorse for **detail below 1-block resolution, impossible angles, and
 giant single-block forms**. Verified example (a glowing, gold, thin-tall pillar):
 
 ```
-entity_summon("minecraft:block_display", pos, nbt='{
+summon minecraft:block_display <x> <y> <z> {
   block_state:{Name:"minecraft:gold_block"},
   brightness:{block:15,sky:15}, glow_color_override:16766720, Glowing:1b,
   transformation:{scale:[0.5f,3f,0.5f],left_rotation:[0f,0f,0f,1f],
     right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f]},
-  Tags:["mcb_deco"]}')
+  Tags:["ashlar","ashlar.<project>"]}
 ```
 
 Fields specific to `block_display`:
@@ -213,12 +205,12 @@ pose — for **museum exhibits, pedestal trophies, and held props** at a scale a
 freedom no item frame allows.
 
 ```
-entity_summon("minecraft:item_display", pos, nbt='{
+summon minecraft:item_display <x> <y> <z> {
   item:{id:"minecraft:diamond",count:1},
   item_display:"fixed",
   transformation:{scale:[1.5f,1.5f,1.5f],left_rotation:[0f,0f,0f,1f],
     right_rotation:[0f,0f,0f,1f],translation:[0f,0f,0f]},
-  Tags:["mcb_deco"]}')
+  Tags:["ashlar","ashlar.<project>"]}
 ```
 
 Fields specific to `item_display`:
@@ -253,7 +245,7 @@ an armor stand.
   piece, **summon one representative display first and propose an explicit user
   visual checkpoint** ("I've placed one test logo / one tilted facet — does the
   orientation and size look right?") before stamping the full set. Read state
-  back with `entity_get_nbt` to confirm the NBT applied, but a read confirms the
+  back with `data get entity` to confirm the NBT applied, but a read confirms the
   fields, not how it *looks*.
 - **Entity count has a cost.** Displays are cheap (they don't tick) but not free;
   use them for *accent and detail*, not as a replacement for bulk blockwork. A
@@ -261,12 +253,13 @@ an armor stand.
 
 ## In the plan
 
-- Summon every display with `entity_summon` at the **decoration phase**, passing
-  all NBT in the `nbt` argument, and tag it `Tags:["mcb_deco"]`.
+- Summon every display with the allowlisted `summon` at the **decoration
+  phase**, passing all NBT in the command's NBT compound, and tag it
+  `Tags:["ashlar","ashlar.<project>"]`.
 - For a row or grid of identical displays (e.g. a logo band, a facet array),
-  list each summon with its position and per-instance `transformation` in
-  `plan.toon` — there is no fill primitive for entities.
+  list each summon with its position and per-instance `transformation` as
+  `commands` rows in `plan.toon` — there is no fill primitive for entities.
 - Add a `quality_contract` checkpoint that names the **user visual confirmation**
   for orientation/scale on the first placed display before the rest are stamped.
-- Use `entity_set_nbt` to adjust a placed display's `transformation`, `text`, or
+- Use the allowlisted `data merge entity` to adjust a placed display's `transformation`, `text`, or
   `glow_color_override` after the fact (and to drive interpolated animation).

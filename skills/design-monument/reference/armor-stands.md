@@ -24,18 +24,18 @@ decoration phase**, after the monument's blockwork is built.
   - `HandItems:[{…},{…}]` — items in the main-hand and off-hand slots.
   - `ArmorItems:[feet,legs,chest,head]` — equipment in armour slots (order
     is feet → head).
-  - `Tags:["mcb_deco"]` — a tag so stands can be found and adjusted later.
+  - `Tags:["ashlar","ashlar.<project>"]` — tags so stands can be found and adjusted later.
 - A mob head in the helmet slot is a common detailing trick.
 
 ## In the plan
 
-- Spawn armor stands with the **`entity_summon`** tool
-  (`entity_type: "minecraft:armor_stand"`) at the decoration phase, passing
-  all SNBT in the `nbt` argument.
-- Tag them (`Tags:["mcb_deco"]`) so they can be located with `entity_query`
-  and adjusted.
-- Use `entity_set_nbt` if a spawned stand's pose or equipment needs changing
-  after the fact.
+- Spawn armor stands with the allowlisted
+  `summon minecraft:armor_stand <x> <y> <z> {…}` at the decoration phase,
+  passing all SNBT in the command's NBT compound.
+- Tag them (`Tags:["ashlar","ashlar.<project>"]`) so they can be counted with
+  `execute if entity` and removed by tag.
+- Use the allowlisted `data merge entity` if a spawned stand's pose or
+  equipment needs changing after the fact.
 
 ## Useful pose recipes
 

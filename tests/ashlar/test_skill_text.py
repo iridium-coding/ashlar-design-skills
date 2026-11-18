@@ -26,7 +26,7 @@ CHAPMAN_TOOLS = [
     "schedule_function", "loot_table_generate", "mcp_place",
 ]
 FORBIDDEN = [
-    re.compile(r"\b(?:" + "|".join(CHAPMAN_TOOLS) + r")\b"),
+    re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(CHAPMAN_TOOLS) + r")\b"),
     re.compile(r"CLAUDE_PLUGIN_ROOT"),
     re.compile(r"minecraft-mcp-setup"),
     re.compile(r"\bexec-(?:plan|blueprint|worker|inspect|reflect)\b"),
@@ -124,6 +124,7 @@ def test_leftovers_detects_tools_but_not_minecraft_ids() -> None:
     assert leftovers('"entity_tag": "ashlar.demo"') == []
     assert leftovers("run exec-worker\nnothing\nthe Orchestrator") == [
         (1, "exec-worker"), (3, "Orchestrator")]
+    assert leftovers("allowed-tools: mcp__minecraft-java__block_set_state") == [(1, "block_set_state")]
 
 
 def test_labelled_lines_allow_client_names() -> None:

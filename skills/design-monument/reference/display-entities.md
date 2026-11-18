@@ -22,11 +22,10 @@ the blockwork is built so fills do not disturb them. Tag every one
 `execute if entity`, adjusted with `data merge entity`, and removed by tag.
 
 > **Version note (verify before relying on edge cases).** All examples below
-> are verified live on **26.1.2**; this mod also supports **1.21.11**, **26.1.1**,
-> **26.2** and **26.3**. The
+> are verified live on **26.1.2**. The
 > display-entity NBT (`transformation`, `billboard`, `brightness`,
 > `glow_color_override`, the `text_display` text/background fields) has been
-> stable since 1.19.4 and is reliable on both. Item-`components` SNBT inside an
+> stable since 1.19.4 and is reliable on both 1.21.x and 26.x. Item-`components` SNBT inside an
 > `item_display`'s shown item is the format that *does* drift across versions —
 > if you embed a custom item, read the entity back with `data get entity` on the
 > running version (`mc_status` reports the version). Do not assert a

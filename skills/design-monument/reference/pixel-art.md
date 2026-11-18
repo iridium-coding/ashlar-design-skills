@@ -49,7 +49,7 @@ per-call limit (a flat mural rarely approaches it).
 - **3D extruded text** — give letters depth (3–6 blocks) for a freestanding
   sign; pitch or bevel the faces for a logo.
 - **Hillside letters** (a Hollywood-sign style) — tall freestanding letters on
-  a slope, each its own structure, spaced along the contour.
+  a slope, each its own module, spaced along the contour.
 - **Logos** — treat as pixel art with a tight palette; a simple flat logo is
   often cleaner than a relief one.
 - **Banners** — for small heraldic devices, layered banner patterns can carry

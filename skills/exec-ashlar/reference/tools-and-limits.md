@@ -49,6 +49,13 @@ rejected before anything changes: split and retry rather than guess.
   redstone wire to their neighbours.
 - Attached blocks without support (torches, ladders, signs, doors, carpets…)
   come back under `WARNINGS`; fix them before calling a phase done.
+- Fill modes: `replace` (default) overwrites everything; `keep` fills only air;
+  `outline` places the 1-block shell on all six faces; `hollow` places that
+  shell and clears the inside; `walls` places only the four vertical sides (a
+  1-high `walls` fill is a ring) and leaves the inside untouched, so clear
+  natural terrain inside with an air fill first. `filter` restricts a fill to
+  cells matching a block state (`filter: "minecraft:air"` builds only into empty
+  space; unspecified properties are wildcards).
 - Snapshots do not keep sign text, container contents or entities. A restore
   empties signs and containers in its box, including ones that were there
   before the build.
@@ -77,5 +84,9 @@ From `mc_build`'s own rules:
   `wall_torch[facing=<away from the wall>]` in the air block beside it.
 - Signs: put the text in the `sign` object of a `blocks` entry (`front`/`back`,
   up to 4 lines of 64 characters, `color`, `glowing`, `waxed`), in the air
-  block in front of the wall for wall signs.
+  block in front of the wall for wall signs. `sign` is
+  `{"front": ["line 1", "line 2"], "back": [...], "color": "black",
+  "glowing": false, "waxed": true}`: `front`/`back` are arrays of up to 4
+  strings, `color`, `glowing` and `waxed` apply to the whole sign, and the
+  entry's block must be a sign.
 - Leaves that must not decay: `persistent=true`.

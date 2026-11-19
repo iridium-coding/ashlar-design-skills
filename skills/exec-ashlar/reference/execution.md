@@ -7,11 +7,17 @@ Before the first write, show the user:
 - the project, world and bounding box;
 - the phases in order, each with its cell count, its `via`, and the snapshot
   tiles it needs;
-- the total snapshot slots needed. Ashlar keeps 20 for the whole server. If the
-  build needs more than 15, say that the oldest phases' snapshots will be
-  evicted before the build ends, so those phases cannot be rolled back;
-- every console command, exactly as it will run;
-- every force-load the entity phases add and remove, and which chunks;
+- the total snapshot slots needed, and what they evict. Call `mc_snapshot` with
+  `action: "list"` and count the stored snapshots. If stored + needed is more
+  than 20, the oldest (stored + needed - 20) snapshots are evicted, oldest
+  first. Name each one (id, label, age), say they belong to other builds'
+  rollback points, and offer to split the build, wait, or accept. Also, if the
+  build needs more than 15 slots, say that its own oldest phases' snapshots
+  will be evicted before the build ends, so those phases cannot be rolled back;
+- any other registry project whose `bbox` overlaps this build's box (a build
+  over another build overwrites it);
+- every console command, exactly as it will run, with the `minecraft:` prefix;
+- every force-load the `commands` phases add and remove, and which chunks;
 - for a plan outside the server's main world: that its console steps need
   `execute in <dimension> run`, and whether the user agreed;
 - what a rollback cannot restore: entities, sign text and container contents,
@@ -43,10 +49,11 @@ and the registry status to `building`.
      in the area. Exit 3: the file needs more snapshots than allowed; split it
      into smaller phase files. Exit 5: the server failed part way; the report
      lists the pages already written and the snapshot ids.
-   - `commands`: one `mc_command` call per row, in order, exactly as written.
-     A phase with entity commands starts with its `forceload add` row and ends
-     with the matching `forceload remove` row (`commands.md`); if the phase
-     stops part way, run the remove before reporting.
+   - `commands`: one `mc_command` call per row, in order, exactly as written,
+     with the `minecraft:` prefix added. A phase with console commands that name
+     a position or an entity starts with its `forceload add` row and ends with
+     the matching `forceload remove` row (`commands.md`); if the phase stops
+     part way, run the remove before reporting.
 4. **Warnings**: every line under `WARNINGS` is an attached block without
    support. Fix them with another `mc_build` call before moving on.
 5. **Look**: `mc_render` top view, plus the facade the phase changed most.
@@ -58,7 +65,8 @@ and the registry status to `building`.
   signs, doors, carpets, banners) once what they attach to exists.
 - Later phases never undo earlier ones.
 - Block-entity data (`data merge block`, `item replace block`) comes after its
-  block exists.
+  block exists, and runs inside a paired `forceload add` / `forceload remove`
+  over its columns.
 - Entities (`summon`) come last, after all blockwork, so fills do not disturb
   them, inside a paired `forceload add` / `forceload remove` over their
   columns.

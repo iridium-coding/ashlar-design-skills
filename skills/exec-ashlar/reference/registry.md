@@ -48,7 +48,22 @@ so there is one history.
 - `status` goes `planned` → `building` → `built`, or `rolled-back`.
 - Write the entry when the plan is written (`planned`), after every phase
   (append the phase with its snapshot ids), and at the end.
+- Update the registry by **read, change, write**: read the whole file
+  immediately before each write, add or replace only `projects.<project>`, keep
+  every other project and key exactly as read, and write the full file back.
+  Never rebuild the file from this project alone.
+- If the file does not exist when you read it, create it as
+  `{"version": 1, "projects": {}}` and add your entry. If a write fails or the
+  file changed meanwhile, read again and redo the change.
 - `citations` holds the sources for replicas, so the build can be checked
   against them.
-- If the file does not exist, create it as `{"version": 1, "projects": {}}`.
+- A project may carry extra keys the design skill needs (for example `rooms`,
+  `districts`, `population`, `shared_anchors`); keep unknown keys when
+  updating.
 - Never store server addresses or tokens.
+
+Design skills may add keys such as `rooms` (design-house), `districts`
+(design-city), `population` (design-village: planned villagers) and
+`shared_anchors` (design-monument sibling seams); executors ignore them. A
+planned entry may have `"modules": []` and `"phases": []`. `updated` is the
+current UTC time if you can read it, otherwise the date.

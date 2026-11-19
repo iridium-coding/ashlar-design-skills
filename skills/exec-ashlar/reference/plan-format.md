@@ -34,31 +34,40 @@ placements[2]{module,origin,rotation,mirror,phase}:
 commands[1]{phase,seq,command,purpose}:
   4,1,"summon minecraft:villager 121 65 -333 {Tags:[\"ashlar\",\"ashlar.oakhollow\"]}",farmer
 acceptance[1]{phase,at,expect}:
-  2,107 64 -358,minecraft:spruce_door
+  2,107 65 -358,minecraft:spruce_door
 quality_contract:
   walkability[1]{from,to,note}:
-    121 64 -340,107 64 -356,bell to house A door
+    121 65 -340,107 65 -356,bell to house A door
 ```
 
 - `plan`: `project` (kebab-case), `skill` (the design skill that wrote it),
   `world` (omit for the server's default world), `anchor`, a `bbox` covering
-  every phase, a one-line `summary`, and `approved` (`no` until the user
-  approves at the gate, then the date).
+  every phase, a one-line `summary`, `notes` (optional list of one-line
+  statements: seams, persistence rules, hand-offs), and `approved` (`no` until
+  the user approves at the gate, then the date).
 - `phases`: one row per phase, in build order. `blocks` is the cell count from
   `ashlar_place.py plan`; `from`/`to` is the phase's box; `via` is one of:
   - `mcp`: you send the phase file with your own `mc_build` call. Only for
     files with at most 200 entries. Lettering (`text`) must be in an `mcp`
-    phase because the placer does not accept it.
+    phase because the placer does not accept it. A phase of fills and blocks
+    you wrote by hand uses `mcp`; a phase with more than 200 entries, or any
+    stamped module phase, uses `placer`.
   - `placer`: `python3 <skill>/scripts/ashlar_place.py place <file> --snapshot …`,
     for anything larger or generated.
   - `commands`: a phase made only of `commands` rows; `file` is `-`.
+
+  For a module-based phase that has not been stamped yet, write the intended
+  `file` path and a hand estimate in `blocks`; `build` step 1 stamps it and step
+  2 replaces the estimate with the placer's cell count.
 - `materials`: the palette by role.
 - `modules` and `placements`: see `modules.md`. `stamp.py` produces each
   phase's file from its placements before the build.
-- `commands`: every console command, in order, exactly as it will run, each
-  matching `commands.md`. Commands contain commas and quotes, so wrap each
-  command in double quotes and escape its inner double quotes as `\"` (TOON
-  quoting).
+- `commands`: every console command, in order, exactly as it will run (the
+  `minecraft:` prefix may be omitted; `commands.md`), each matching
+  `commands.md`. Commands contain commas and quotes, so wrap each command in
+  double quotes and escape its inner double quotes as `\"` (TOON quoting). A
+  table with no rows (`commands`, `modules`, `placements`) may be omitted; write
+  `commands[0]:` only if you want it explicit.
 - `acceptance`: spot checks, one cell each.
 - `quality_contract`: the property checks below.
 
@@ -69,8 +78,8 @@ coordinates:
 
 ```json
 {
-  "fills": [{"from": [104, 63, -358], "to": [112, 63, -352], "block": "minecraft:cobblestone"}],
-  "blocks": [{"pos": [107, 64, -358], "block": "minecraft:spruce_door[facing=north,half=lower,hinge=left]"}],
+  "fills": [{"from": [104, 64, -358], "to": [112, 64, -352], "block": "minecraft:cobblestone"}],
+  "blocks": [{"pos": [107, 65, -358], "block": "minecraft:spruce_door[facing=north,half=lower,hinge=left]"}],
   "liquids": "static",
   "connect": true
 }
@@ -80,14 +89,18 @@ coordinates:
   `world`. No `snapshot` key: snapshots are taken separately.
 - Block strings carry the `minecraft:` namespace and full block states.
 - A bare fills list (`[{"from", "to", "block"}, …]`) is also accepted by the
-  placer; the voxel toolkit writes that form.
+  placer; the `design-monument` voxel toolkit
+  (`../design-monument/tools/voxel/`) writes that form.
 - Order: `mc_build` places all fills in order, then text, then blocks.
   Anything that must come after a block placement goes in a later phase.
 
 ## quality_contract rows
 
-Use every row type that applies. Each is checked after the build
-(`verification.md`); a failing row fails the build.
+Use every row type that applies. A row type with nothing to check (no stairs:
+no `headroom`; one district: no inter-district `connectivity`) is omitted; the
+plan still needs at least one row, and every door, stair and named room
+covered. Each is checked after the build (`verification.md`); a failing row
+fails the build.
 
 | Row | Fields | Passes when |
 | --- | --- | --- |
@@ -103,6 +116,22 @@ Coordinates in rows are `x y z` triples; regions are two corners. If you cannot
 write a row because you do not know the answer (is this door reachable?), the
 plan is not finished.
 
+Row coordinates: `walkability`, `doors` and `connectivity` points are the
+**feet cell** (the air cell a player stands in, one above the floor block);
+`acceptance` is the exact cell holding the block named. For `headroom`,
+`silhouette` and `edge_irregularity` only the x/z of the corners matter (the
+check reads the columns); give y at the floor. `block_mix_ratios` regions are
+full boxes.
+
+In a TOON row, write a list inside one cell with `|` (for example palette
+`minecraft:oak_planks|minecraft:spruce_planks|minecraft:stone_bricks`); never a
+comma. Write a `via` route as waypoints joined by ` > ` (for example
+`121 65 -340 > 118 65 -348 > 107 65 -356`); the check follows it as a polyline.
+Write a `silhouette`'s `sample_count` evenly spaced columns along the region's
+longer horizontal side, and use the population variance of the top y.
+`doors.facing` is the door block's own `facing` value; the check walks both
+sides along that axis.
+
 ## Validation (start of `build`)
 
 Stop and report if any of these fails:
@@ -115,11 +144,15 @@ Stop and report if any of these fails:
 4. Every `placements` row names a module listed in `modules`.
 5. Every `commands` row matches a form in `commands.md`, with the project's
    tags where the form requires them.
-6. A `commands` phase with entity commands has a `forceload add` row first and
-   the matching `forceload remove` row last. This is the one check that
-   repairs instead of stopping: if either row is missing, add them over the
-   phase's box columns (its `from`/`to` x and z), one pair per tile of at most
-   256 chunks, and show the added rows at the approval gate.
+6. A `commands` phase with any console command that names a position or an
+   entity (`commands.md`) has a `forceload add` row first and the matching
+   `forceload remove` row last. A `commands` phase's `from`/`to` is the box
+   around its entities and positions (used for the `mc_players` check and the
+   force-load columns). This is the one check that repairs instead of
+   stopping: if either row is missing, add them over the phase's box columns
+   (its `from`/`to` x and z), one pair per tile of at most 256 chunks, and show
+   the added rows at the approval gate. Do not add `forceload query` to the
+   table; the builder runs it itself.
 7. `quality_contract` has at least one row, and every door, stair and named
    room in the design is covered.
 8. The snapshot slots for the whole build are known.

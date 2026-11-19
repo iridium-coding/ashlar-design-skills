@@ -28,7 +28,8 @@ the minimum corner at `[0, 0, 0]`:
   inside it.
 - Build each module with its front facing north (toward −z), so placement
   rotations read naturally.
-- Modules may not contain `text`; put lettering in its own `mcp` phase.
+- Modules may not contain `text`; put lettering in its own `mcp` phase. A block
+  entry with a `sign` object is allowed in a module.
 - Palette variants are separate module files (`small-house-a-birch.json`).
 
 ## Placement convention

@@ -64,7 +64,9 @@ that asked for it.
    Report problems and stop; fix nothing silently.
 2. **Size the run.** For each phase file, run
    `python3 <skill>/scripts/ashlar_place.py plan <phase file>` and note its
-   box, cells, pages and snapshot tiles. Add up the snapshot slots.
+   box, cells, pages and snapshot tiles. Add up the snapshot slots. Then call
+   `mc_snapshot` with `action: "list"` so the gate can say which existing
+   snapshots would be evicted.
 3. **Approval gate** (`reference/execution.md`): show the summary and wait for
    an explicit yes. Then set `approved:` in `plan.toon` to today's date.
 4. **Build each phase in order** (`reference/execution.md`): player check,
@@ -96,8 +98,9 @@ a restore cannot bring back, and set the registry status to `rolled-back`.
   change the world only as listed in the approved plan's `commands` table; the
   read-only checks may run whenever surveying or verification needs them, and
   rollback mode runs its own `kill @e[tag=ashlar.<project>]`.
-- Entity commands run inside a paired `forceload add` / `forceload remove`
-  over the columns they touch (`reference/commands.md`). Never leave a chunk
+- Console commands that name a position or an entity run inside a paired
+  `forceload add` / `forceload remove` over the columns they touch, and with
+  the `minecraft:` prefix (`reference/commands.md`). Never leave a chunk
   force-loaded.
 - Never place blocks with `mc_command`, and never use it to get around a limit.
 - Stay within Ashlar's limits (`reference/tools-and-limits.md`); split the work

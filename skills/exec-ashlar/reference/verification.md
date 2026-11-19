@@ -15,6 +15,12 @@ top, without the `minecraft:` prefix:
 At most 1,024 columns per call. For a route, inspect a one-block-wide box along
 it, split into pieces for long routes.
 
+Row coordinates: `walkability`, `doors` and `connectivity` points are the feet
+cell (the air cell a player stands in, one above the floor block); `acceptance`
+is the exact cell holding the block named. For `headroom`, `silhouette` and
+`edge_irregularity` only the x/z of the corners matter (the check reads the
+columns); the y is at the floor. `block_mix_ratios` regions are full boxes.
+
 A cell is **walkable** when the block under the feet is solid (or a slab,
 stair, path, farmland, or carpet on a solid block) and the two cells above are
 air or passable (open doors, signs, torches, pressure plates, carpet, rails,
@@ -29,7 +35,7 @@ flowers, grass).
 | `doors{at,facing,clearance_blocks}` | Inspect the cells on both sides of the door along `facing` for `clearance_blocks` blocks; each must be walkable |
 | `headroom{over_region_a,over_region_b,min_clear}` | Inspect columns over the region; above each walking surface there must be at least `min_clear` clear cells |
 | `block_mix_ratios{region_a,region_b,palette,max_single_ratio}` | `mc_inspect` stats over the region; drop air; the largest block's share must not exceed `max_single_ratio`, and every palette member must appear |
-| `silhouette{region_a,region_b,sample_count,min_y_variance}` | `mc_survey` with `matrix: true` over the region's x/z (or columns at `sample_count` evenly spaced points); the variance of the top y values must be at least `min_y_variance` |
+| `silhouette{region_a,region_b,sample_count,min_y_variance}` | `mc_survey` with `matrix: true` over the region's x/z (or `sample_count` evenly spaced columns along the region's longer horizontal side); the population variance of the top y values must be at least `min_y_variance` |
 | `connectivity{site_a,site_b,via}` | Follow the route the plan names for `via` as a polyline and check it like `walkability` |
 | `edge_irregularity{edge_name,from,to,max_collinear_run}` | `mc_survey` matrix along the edge; the longest run holding the same x (or z) must not exceed `max_collinear_run` |
 
@@ -48,14 +54,15 @@ blocks with `mc_inspect` where it matters. `mc_render` does not show entities.
 
 ## Entities and NBT
 
-- Entity checks need the entities loaded. Unless a player is near the site,
-  run them between `forceload add` and `forceload remove` over the build's
-  entity columns (`commands.md`); a failed check outside a force-load proves
-  nothing. If a check fails part way, still run the `forceload remove`.
+- Entity and block-entity checks need the chunks loaded. Unless a player is
+  near the site, run them between `forceload add` and `forceload remove` over
+  the build's columns (`commands.md`); a failed check outside a force-load
+  proves nothing. If a check fails part way, still run the `forceload remove`.
 - Count the build's entities: `execute if entity @e[tag=ashlar.<project>]`,
   adding `type=` to count one kind.
 - Block-entity details: `data get block <x> <y> <z>` (signs, banners, lecterns,
-  containers).
+  containers). It also needs the chunk loaded ("That position is not loaded"
+  otherwise), so run it inside the same force-load unless a player is near.
 - Villagers: after a short wait, read each one's memories with
   `data get entity @e[tag=ashlar.<project>,tag=ashlar.<project>.<name>,limit=1] Brain.memories` and
   confirm `minecraft:home` (its bed) and `minecraft:job_site` are set.

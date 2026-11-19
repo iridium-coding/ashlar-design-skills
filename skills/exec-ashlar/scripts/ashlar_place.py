@@ -16,9 +16,28 @@ A phase file is an `mc_build` arguments object (`fills`, `blocks`, `liquids`,
 `connect`, `world`) or a bare list of fills. Exit codes: 0 ok, 2 invalid input,
 3 refused by a limit or snapshot rule, 4 player in the area (or an unreadable
 player list), 5 server error. Nothing printed ever contains a value from the
-server entry's `env`.
+server entry's `env` (or a secret-looking command-line argument): replies are
+parsed as received and redacted only when printed, logged or put in a message.
+
+Config lookup order: `~/.claude.json`, then `./.mcp.json`, then
+`~/.codex/config.toml`. The workspace's own `.mcp.json` is trusted: an entry
+named like the server is launched as written, with no approval prompt.
 """
 from __future__ import annotations
+
+import sys
+
+
+def require_python(version: tuple[int, ...] | None = None) -> None:
+    """Exit cleanly, with one line on stderr, on Python older than 3.11."""
+    if tuple(version if version is not None else sys.version_info[:2]) < (3, 11):
+        print("ashlar_place.py needs Python 3.11 or newer; run it with `uv run "
+              "--no-project --python 3.11 python ashlar_place.py ...`",
+              file=sys.stderr)
+        raise SystemExit(2)
+
+
+require_python()
 
 import argparse
 import json
@@ -26,12 +45,11 @@ import os
 import queue
 import re
 import subprocess
-import sys
 import threading
 import time
 import tomllib
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +92,7 @@ class Page:
 class ServerEntry:
     command: str
     args: list[str]
-    env: dict[str, str]
+    env: dict[str, str] = field(repr=False)
     source: str
 
 
@@ -134,6 +152,26 @@ def find_server(name: str, config: str | None, cwd: Path, home: Path,
         )
     raise PlacerError(f"no MCP server named {name!r} in: "
                       + ", ".join(str(c) for c in candidates), EXIT_INPUT)
+
+
+_SECRET_FLAG = re.compile(r"token|key|secret|password", re.IGNORECASE)
+
+
+def secrets_of(entry: ServerEntry) -> list[str]:
+    """Values to hide: every env value and the value of a secret-looking flag."""
+    secrets = list(entry.env.values())
+    args = entry.args
+    for i, arg in enumerate(args):
+        if not arg.startswith("-"):
+            continue
+        name, equals, value = arg.lstrip("-").partition("=")
+        if not _SECRET_FLAG.search(name):
+            continue
+        if equals:
+            secrets.append(value)
+        elif i + 1 < len(args):
+            secrets.append(args[i + 1])
+    return secrets
 
 
 def redact(text: str, secrets: list[str]) -> str:
@@ -328,6 +366,9 @@ SNAPSHOT_ID = re.compile(r"^Snapshot (\S+) created")
 
 def parse_players(text: str) -> list[tuple[str, str, int, int, int]]:
     """Parse mc_players text; refuse anything unexpected."""
+    if not text.strip():
+        raise PlacerError("could not read the player list (empty mc_players "
+                          "reply); refusing to build", EXIT_PLAYER)
     if text.strip() == "No players online.":
         return []
     players = []
@@ -352,11 +393,27 @@ def players_inside(players: list[tuple[str, str, int, int, int]], box: Box,
             and z1 - margin <= z <= z2 + margin]
 
 
-def snapshot_id(text: str) -> str:
+def snapshot_id(text: str, secrets: list[str] | None = None) -> str:
     match = SNAPSHOT_ID.match(text.strip())
     if not match:
-        raise PlacerError("unexpected mc_snapshot reply: " + text[:200], EXIT_SERVER)
+        raise PlacerError("unexpected mc_snapshot reply: "
+                          + redact(text[:200], secrets or []), EXIT_SERVER)
     return match.group(1)
+
+
+def result_lines(text: str) -> list[str]:
+    """Reply lines for the report: keep indented detail, drop WARNINGS blocks."""
+    kept, in_warnings = [], False
+    for line in text.splitlines():
+        if line.startswith("WARNINGS"):
+            in_warnings = True
+        elif in_warnings and line.startswith("  "):
+            pass
+        else:
+            in_warnings = False
+            if line.strip():
+                kept.append(line)
+    return kept[:10]
 
 
 def warnings_of(text: str) -> list[str]:
@@ -375,7 +432,7 @@ class McpClient:
 
     def __init__(self, entry: ServerEntry, start_timeout: float = 120.0,
                  call_timeout: float = 600.0) -> None:
-        self.secrets = list(entry.env.values())
+        self.secrets = secrets_of(entry)
         self.call_timeout = call_timeout
         self._stderr: deque[str] = deque(maxlen=40)
         self._lines: queue.Queue[str | None] = queue.Queue()
@@ -385,7 +442,7 @@ class McpClient:
                 [entry.command, *entry.args], stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 env={**os.environ, **entry.env}, text=True, encoding="utf-8",
-                bufsize=1)
+                errors="replace", bufsize=1)
         except OSError as exc:
             raise PlacerError(f"cannot start the MCP server ({exc.__class__.__name__})",
                               EXIT_SERVER) from None
@@ -413,8 +470,11 @@ class McpClient:
         for line in self.proc.stderr:
             self._stderr.append(line.rstrip("\n"))
 
+    def redact(self, text: str) -> str:
+        return redact(text, self.secrets)
+
     def stderr_tail(self) -> str:
-        return redact("\n".join(self._stderr), self.secrets)
+        return self.redact("\n".join(self._stderr))
 
     def _died(self, what: str) -> PlacerError:
         try:
@@ -453,21 +513,25 @@ class McpClient:
                 message = json.loads(line)
             except ValueError:
                 continue
-            if not isinstance(message, dict) or message.get("id") != request_id:
-                continue  # notifications and anything that is not our reply
+            if (not isinstance(message, dict) or "method" in message
+                    or message.get("id") != request_id):
+                continue  # server requests, notifications, anything not our reply
             if "error" in message:
                 detail = str((message.get("error") or {}).get("message"))
-                raise PlacerError(f"{method} failed: {redact(detail, self.secrets)}",
+                raise PlacerError(f"{method} failed: {self.redact(detail)}",
                                   EXIT_SERVER)
             return message.get("result") or {}
 
     def call(self, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
-        """Call a tool; return its text and whether it reported an error."""
+        """Call a tool; return its raw text and whether it reported an error.
+
+        The text is unredacted so it can be parsed; pass it through `redact`
+        before it is printed, logged or put in a message."""
         result = self._request("tools/call", {"name": tool, "arguments": arguments},
                                self.call_timeout)
         text = "\n".join(item.get("text", "") for item in result.get("content") or []
                          if isinstance(item, dict) and item.get("type") == "text")
-        return redact(text, self.secrets), bool(result.get("isError"))
+        return text, bool(result.get("isError"))
 
     def close(self) -> None:
         try:
@@ -499,7 +563,7 @@ def cmd_check(ns: argparse.Namespace) -> int:
     finally:
         client.close()
     print(f"server entry {ns.server!r} from {entry.source}")
-    print(text)
+    print(client.redact(text))
     return EXIT_SERVER if is_error else EXIT_OK
 
 
@@ -507,8 +571,12 @@ def _emit(report: dict[str, Any], log: str | None) -> None:
     text = json.dumps(report, indent=2)
     print(text)
     if log:
-        with open(log, "a", encoding="utf-8") as handle:
-            handle.write(text + "\n")
+        try:
+            with open(log, "a", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+        except OSError as exc:
+            print(f"ashlar_place: warning: could not write the log "
+                  f"({exc.__class__.__name__}: {exc.strerror})", file=sys.stderr)
 
 
 def cmd_place(ns: argparse.Namespace) -> int:
@@ -532,7 +600,8 @@ def cmd_place(ns: argparse.Namespace) -> int:
     try:
         text, is_error = client.call("mc_players", {})
         if is_error:
-            raise PlacerError("mc_players failed: " + text, EXIT_SERVER)
+            raise PlacerError("mc_players failed: " + client.redact(text),
+                              EXIT_SERVER)
         whole = union([page.box for page in pages])
         inside = players_inside(parse_players(text), whole, ns.player_margin, world)
         if inside:
@@ -546,18 +615,19 @@ def cmd_place(ns: argparse.Namespace) -> int:
                 args["world"] = world
             text, is_error = client.call("mc_snapshot", args)
             if is_error:
-                raise PlacerError("mc_snapshot failed: " + text, EXIT_SERVER)
-            report["snapshots"].append(snapshot_id(text))
+                raise PlacerError("mc_snapshot failed: " + client.redact(text),
+                                  EXIT_SERVER)
+            report["snapshots"].append(
+                client.redact(snapshot_id(text, client.secrets)))
         for i, page in enumerate(pages, 1):
             text, is_error = client.call("mc_build", page.args)
             if is_error:
-                raise PlacerError(f"mc_build failed on page {i}/{len(pages)}: {text}",
-                                  EXIT_SERVER)
+                raise PlacerError(f"mc_build failed on page {i}/{len(pages)}: "
+                                  + client.redact(text), EXIT_SERVER)
             report["pages_done"] = i
-            report["warnings"] += warnings_of(text)
+            report["warnings"] += [client.redact(w) for w in warnings_of(text)]
             report["results"].append({"page": i, "result": [
-                line for line in text.splitlines()
-                if line and not line.startswith(("WARNINGS", "  "))][:5]})
+                client.redact(line) for line in result_lines(text)]})
     except PlacerError as exc:
         report["error"] = str(exc)
         _emit(report, ns.log)

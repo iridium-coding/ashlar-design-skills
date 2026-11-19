@@ -10,13 +10,13 @@ FAKE = Path(__file__).with_name("fake_ashlar_mcp.py")
 URL, TOKEN = "ws://203.0.113.9:8159", "tok-SECRET-123"
 
 
-def config(tmp_path, **fake_env):
+def config(tmp_path, args=(), **fake_env):
     env = {"MC_PLUGIN_URL": URL, "MC_PLUGIN_TOKEN": TOKEN,
            "FAKE_LOG": str(tmp_path / "calls.jsonl"), **fake_env}
     path = tmp_path / "claude.json"
     path.write_text(json.dumps({"mcpServers": {"ashlar": {
-        "type": "stdio", "command": sys.executable, "args": [str(FAKE)], "env": env}}}),
-        encoding="utf-8")
+        "type": "stdio", "command": sys.executable, "args": [str(FAKE), *args],
+        "env": env}}}), encoding="utf-8")
     return path
 
 
@@ -73,8 +73,6 @@ def test_place_snapshots_then_pages_in_order(tmp_path):
 
 
 def test_place_refuses_when_player_inside(tmp_path, monkeypatch):
-    # Passed through the process environment, not the server entry: every entry
-    # env value is redacted from replies, which would blank the player list.
     players = "Alex  world  pos x=5 y=65 z=5  facing north (block in front: 5,65,4)  survival"
     monkeypatch.setenv("FAKE_PLAYERS", players)
     proc = run("place", str(build_file(tmp_path)), "--snapshot",
@@ -119,3 +117,108 @@ def test_place_refuses_too_many_snapshots_before_starting_server(tmp_path):
                "--config", str(config(tmp_path)))
     assert proc.returncode == 3
     assert calls(tmp_path) == []
+
+
+ALEX_HERE = "Alex  {world}  pos x=5 y=65 z=5  facing north (block in front: 5,65,4)  survival"
+
+
+def names(tmp_path):
+    return [c["name"] for c in calls(tmp_path)]
+
+
+def test_empty_player_reply_fails_closed(tmp_path):
+    for reply in ("", "   \n"):
+        (tmp_path / "calls.jsonl").unlink(missing_ok=True)
+        proc = run("place", str(build_file(tmp_path)), "--snapshot",
+                   "--config", str(config(tmp_path, FAKE_PLAYERS=reply)))
+        assert proc.returncode == 4, proc.stderr
+        assert "player list" in proc.stderr
+        assert names(tmp_path) == ["mc_players"]
+
+
+def test_server_request_with_our_id_is_ignored(tmp_path):
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--max-blocks", "1000",
+               "--config", str(config(tmp_path, FAKE_SERVER_REQUEST="1")))
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["pages_done"] == 3
+
+
+def test_snapshot_error_stops_before_any_build(tmp_path):
+    proc = run("place", str(build_file(tmp_path)), "--snapshot",
+               "--config", str(config(tmp_path, FAKE_FAIL_SNAPSHOT="1")))
+    assert proc.returncode == 5
+    assert names(tmp_path) == ["mc_players", "mc_snapshot"]
+    report = json.loads(proc.stdout)
+    assert report["pages_done"] == 0 and "mc_snapshot failed" in report["error"]
+
+
+def test_no_page_is_sent_after_the_failing_one(tmp_path):
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--max-blocks", "1000",
+               "--config", str(config(tmp_path, FAKE_FAIL_BUILD="2")))
+    assert proc.returncode == 5
+    assert names(tmp_path) == ["mc_players", "mc_build", "mc_build"]
+
+
+def test_world_filter_in_place(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_PLAYERS", ALEX_HERE.format(world="nether"))
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--world", "world",
+               "--config", str(config(tmp_path)))
+    assert proc.returncode == 0, proc.stderr
+    assert all(c["arguments"]["world"] == "world"
+               for c in calls(tmp_path) if c["name"] == "mc_build")
+    monkeypatch.setenv("FAKE_PLAYERS", ALEX_HERE.format(world="world"))
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--world", "world",
+               "--config", str(config(tmp_path)))
+    assert proc.returncode == 4 and "Alex" in proc.stderr
+
+
+def test_env_value_equal_to_a_world_name_still_filters(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_PLAYERS", ALEX_HERE.format(world="world"))
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--world", "world",
+               "--config", str(config(tmp_path, SOME_WORLD_NAME="world")))
+    assert proc.returncode == 4, proc.stderr
+    assert "Alex" in proc.stderr
+    assert "world" not in proc.stdout + proc.stderr
+    assert names(tmp_path) == ["mc_players"]
+
+
+def test_report_keeps_indented_detail_but_not_warnings(tmp_path):
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot",
+               "--config", str(config(tmp_path, FAKE_WARN="1")))
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)["results"][0]["result"]
+    assert result == ["Fills: ok", "  detail: 3 cells"]
+
+
+def test_log_write_failure_warns_and_keeps_exit_code(tmp_path):
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--log", str(tmp_path),
+               "--config", str(config(tmp_path)))
+    assert proc.returncode == 0 and "could not write the log" in proc.stderr
+    proc = run("place", str(build_file(tmp_path)), "--no-snapshot", "--log", str(tmp_path),
+               "--config", str(config(tmp_path, FAKE_FAIL_BUILD="1")))
+    assert proc.returncode == 5 and "could not write the log" in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+def test_secret_flag_value_in_args_is_redacted(tmp_path):
+    crash = "import sys; sys.stderr.write('argv ' + ' '.join(sys.argv[1:]) + '\\n'); sys.exit(1)"
+    path = tmp_path / "claude.json"
+    path.write_text(json.dumps({"mcpServers": {"ashlar": {
+        "type": "stdio", "command": sys.executable,
+        "args": ["-c", crash, "--api-key", "flagvalue-777", "--password=hunter2-xyz",
+                 "--port", "8159"]}}}), encoding="utf-8")
+    proc = run("check", "--config", str(path))
+    assert proc.returncode == 5
+    assert "flagvalue-777" not in proc.stderr and "hunter2-xyz" not in proc.stderr
+    assert "8159" in proc.stderr
+
+
+def test_non_utf8_child_output_does_not_break_the_pumps(tmp_path):
+    crash = "import sys; sys.stderr.buffer.write(b'bad \\xff\\xfe bytes\\n'); sys.exit(1)"
+    path = tmp_path / "claude.json"
+    path.write_text(json.dumps({"mcpServers": {"ashlar": {
+        "type": "stdio", "command": sys.executable, "args": ["-c", crash]}}}),
+        encoding="utf-8")
+    proc = run("check", "--config", str(path))
+    assert proc.returncode == 5 and "Traceback" not in proc.stderr
+    assert "bad" in proc.stderr

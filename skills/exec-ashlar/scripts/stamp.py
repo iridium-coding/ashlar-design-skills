@@ -14,10 +14,22 @@ Write `--at=X,Y,Z` with the equals sign so a negative X is not read as an option
 """
 from __future__ import annotations
 
+import sys
+
+
+def require_python(version: tuple[int, ...] | None = None) -> None:
+    """Exit cleanly, with one line on stderr, on Python older than 3.11."""
+    if tuple(version if version is not None else sys.version_info[:2]) < (3, 11):
+        print("stamp.py needs Python 3.11 or newer; run it with `uv run "
+              "--no-project --python 3.11 python stamp.py ...`", file=sys.stderr)
+        raise SystemExit(2)
+
+
+require_python()
+
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -266,7 +278,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     text = json.dumps(result, indent=1)
     if ns.out:
-        Path(ns.out).write_text(text + "\n", encoding="utf-8")
+        try:
+            out = Path(ns.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(text + "\n", encoding="utf-8")
+        except OSError as exc:
+            print(f"stamp: cannot write {ns.out}: {exc.strerror}", file=sys.stderr)
+            return 2
     else:
         print(text)
     return 0

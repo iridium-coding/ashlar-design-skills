@@ -112,3 +112,14 @@ def test_cli_negative_origin(tmp_path):
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout)["blocks"][0]["pos"] == [-10, 64, -5]
+
+
+def test_out_creates_the_parent_folder(tmp_path):
+    module = tmp_path / "m.json"
+    module.write_text(json.dumps({"size": [1, 1, 1], "blocks": [
+        {"pos": [0, 0, 0], "block": "minecraft:torch"}]}), encoding="utf-8")
+    out = tmp_path / "deep" / "phases" / "01-x.json"
+    proc = subprocess.run([sys.executable, str(STAMP), str(module), "--at=0,64,0",
+                           "--out", str(out)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(out.read_text(encoding="utf-8"))["blocks"][0]["pos"] == [0, 64, 0]

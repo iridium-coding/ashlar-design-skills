@@ -4,6 +4,7 @@ import json
 import pytest
 
 import ashlar_place as ap
+import stamp as st
 
 
 def test_expand_variables():
@@ -174,3 +175,39 @@ def test_cli_plan_reports_invalid_input(tmp_path, capsys):
     path.write_text("[]", encoding="utf-8")
     assert ap.main(["plan", str(path)]) == ap.EXIT_INPUT
     assert "nothing to place" in capsys.readouterr().err
+
+
+def test_parse_players_refuses_an_empty_reply():
+    for text in ("", "  \n "):
+        with pytest.raises(ap.PlacerError) as err:
+            ap.parse_players(text)
+        assert err.value.code == ap.EXIT_PLAYER and "player list" in str(err.value)
+
+
+def test_result_lines_keep_detail_and_drop_the_warnings_block():
+    text = "Fills: ok\n  detail 1\nWARNINGS (x):\n  torch at 1,1,1\nBlocks: ok\n  detail 2"
+    assert ap.result_lines(text) == ["Fills: ok", "  detail 1", "Blocks: ok", "  detail 2"]
+
+
+def test_server_entry_repr_hides_env():
+    entry = ap.ServerEntry("cmd", ["a"], {"T": "tok-SECRET-123"}, "x.json")
+    assert "tok-SECRET-123" not in repr(entry)
+
+
+def test_secrets_of_includes_env_and_secret_flag_values():
+    entry = ap.ServerEntry(
+        "cmd", ["--token", "t1-abcd", "--api-key=k2-abcd", "--SECRET", "s3-abcd",
+                "--password", "p4-abcd", "--port", "8159", "plain"],
+        {"U": "ws://x:1"}, "x.json")
+    assert ap.secrets_of(entry) == ["ws://x:1", "t1-abcd", "k2-abcd", "s3-abcd", "p4-abcd"]
+
+
+def test_python_guard_exits_cleanly_on_old_python(capsys):
+    for module in (ap, st):
+        with pytest.raises(SystemExit) as err:
+            module.require_python((3, 10))
+        assert err.value.code == 2
+        message = capsys.readouterr().err
+        assert "needs Python 3.11 or newer" in message and "--python 3.11" in message
+        module.require_python((3, 11))
+        module.require_python()

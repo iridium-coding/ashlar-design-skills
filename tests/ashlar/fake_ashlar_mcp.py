@@ -6,6 +6,9 @@ Environment knobs:
   FAKE_PLAYERS     mc_players reply text (default "No players online.")
   FAKE_FAIL_BUILD  1-based number of the mc_build call that returns isError
   FAKE_WARN        when set, every mc_build reply has a WARNINGS section
+  FAKE_FAIL_SNAPSHOT  when set, mc_snapshot returns isError
+  FAKE_SERVER_REQUEST when set, every request is preceded by a server-initiated
+                      request that reuses the client's id
 Like the real server it logs "connecting to <MC_PLUGIN_URL>" on stderr.
 """
 import json
@@ -31,6 +34,8 @@ def main():
         if "id" not in message:
             continue
         rid, method = message["id"], message.get("method")
+        if os.environ.get("FAKE_SERVER_REQUEST"):
+            send({"jsonrpc": "2.0", "id": rid, "method": "ping"})
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": rid, "result": {
                 "protocolVersion": message["params"]["protocolVersion"],
@@ -52,6 +57,10 @@ def main():
             result = text(os.environ.get("FAKE_PLAYERS", "No players online."))
         elif name == "mc_snapshot":
             snapshots += 1
+            if os.environ.get("FAKE_FAIL_SNAPSHOT"):
+                send({"jsonrpc": "2.0", "id": rid,
+                      "result": text("Error: no room", error=True)})
+                continue
             sid = f"snap-test-{snapshots}"
             result = text(f'Snapshot {sid} created for world "world", volume 1, at now.\n'
                           f'Call mc_restore({{"id":"{sid}"}}) to restore this region later.')
@@ -62,7 +71,7 @@ def main():
             if str(builds) == os.environ.get("FAKE_FAIL_BUILD"):
                 result = text("Error: boom", error=True)
             else:
-                body = "Fills: ok"
+                body = "Fills: ok\n  detail: 3 cells"
                 if os.environ.get("FAKE_WARN"):
                     body += ("\nWARNINGS (blocks that would fall):\n"
                              "  minecraft:torch at 1,64,1 - unsupported")

@@ -1,8 +1,11 @@
 # The adaptive interview
 
-Pin down the garden without over-asking. Ask in small grouped batches (use
-`AskUserQuestion` for the multiple-choice ones), skip what is already settled
+Pin down the garden without over-asking. Ask in small grouped batches, skip what is already settled
 by the request or a delegating skill, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 
@@ -26,7 +29,8 @@ by the request or a delegating skill, and record answers in `requirements.md`.
 7. **Statuary** — any figures or sculptural fountains? (A `design-monument`
    handoff.)
 8. **Terrain prep** — does the site need leveling, a raised belvedere hill, or
-   a terraced slope? (A `terrain-shape` handoff.)
+   a terraced slope? (A `site-prep` phase, or a `terrain-shape` handoff if it is
+   installed.)
 9. **Project name** — the registry slug.
 
 ## Conditional follow-ups
@@ -37,7 +41,8 @@ by the request or a delegating skill, and record answers in `requirements.md`.
   proportions stay exact.
 - A hedge maze → confirm path width, hedge height, and the center reward.
 - A garden meeting wild terrain → ask for the transition apron treatment.
-- Animated water wanted → note the `system-redstone` handoff for the jets; you design
+- Animated water wanted → note the `system-redstone` handoff for the jets (if it
+  is installed); you design
   the static basin.
 - A Japanese stroll garden → there is no axis — gather the sequence of framed
   viewpoints instead.

@@ -10,7 +10,8 @@ resolving a plan:
 
 - **Silhouette views** (`silhouette.txt`) — ASCII front and side elevations,
   one character per block, so the user can check the outline reads as the
-  subject. The silhouette is the single most important thing to get right.
+  subject. Coordinates in `silhouette.txt` and `sections.txt` are absolute. The
+  silhouette is the single most important thing to get right.
 - **Cross-sections** (`sections.txt`) — a few horizontal slices (per Y band)
   showing the form's footprint at different heights — the practical guide for
   a figure or creature.
@@ -31,8 +32,8 @@ resolving a plan:
 
 ## Validation checklist
 
-Check the design — and have the `exec-inspect` and `exec-reflect` re-check the
-build — against these failure modes:
+Check the design — and re-check the build with the `exec-ashlar` skill's
+verification after the build — against these failure modes:
 
 - **The silhouette does not read** as the subject — the core failure. Thicken
   the outline, sharpen the signature features, raise the palette contrast.
@@ -44,8 +45,8 @@ build — against these failure modes:
   gradient reads as a blob, not a sculpture.
 - **Visible tile seams** — a split made through a smooth surface instead of an
   anatomy seam (a joint, a waist, a neck).
-- **Scale exceeds the Y range**, a fill over 32,768, or a structure over
-  64×384×64 — scale down, pre-tile, or split.
+- **Scale exceeds the Y range**, or a single call over Ashlar's limits
+  (`../exec-ashlar/reference/tools-and-limits.md`) — scale down, pre-tile, or split.
 - **Pixel art too small** — fine features lost; upscale until they read.
 - **Accidental interior program** — a monument is solid or a hollow shell; a
   habitable space inside belongs to `design-building`.

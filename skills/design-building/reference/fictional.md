@@ -31,8 +31,9 @@ Representative targets and their signatures:
   each tier, the White Tower crowning the citadel. Palette: calcite + smooth
   quartz, deepslate-tile trim.
 - **Rivendell** — cascading terraces in a river gorge, waterfalls, a narrow
-  stone bridge, hex/oct pavilion roofs with finials. Needs `terrain-shape` to
-  carve the valley. Palette: oak/birch timber, calcite, leaves and vines.
+  stone bridge, hex/oct pavilion roofs with finials. Carve the valley in a
+  `site-prep` phase (or with `terrain-shape`, if it is installed). Palette:
+  oak/birch timber, calcite, leaves and vines.
 - **Helm's Deep** — a curtain wall across a gorge, the Hornburg keep, a
   causeway. A fortress — lean on the curtain-wall and tower modules.
 - **A fairy-tale castle** (Disney/Cinderella style) — slender towers, steep

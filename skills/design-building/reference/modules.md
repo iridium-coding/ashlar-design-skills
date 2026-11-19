@@ -2,13 +2,13 @@
 
 The central technique of this skill: **define modules, do not build brick by
 brick.** A detailed building is overwhelming as one mass and impossible to keep
-within Java's 32,768-block fill limit as a single operation. As a kit of repeated modules it
+manageable as a single operation. As a kit of repeated modules it
 becomes tractable, consistent, and fast.
 
 ## What a module is
 
 A module is **one repeating architectural component**, defined once as a named
-structure and reused. A Gothic cathedral is not a million blocks placed by
+module file and reused. A Gothic cathedral is not a million blocks placed by
 hand — it is:
 
 - 1 flying-buttress module, stamped ~30 times along the nave;
@@ -22,19 +22,19 @@ That is a handful of designed pieces, then placement.
 
 1. **Identify the modules** — scan the building for what repeats: bays, tiers,
    towers, buttresses, window units, roof segments.
-2. The `exec-blueprint` builds each module **once** and saves it as a named
-   structure template with `structure_save_from_world`, using the canonical
-   name `mcb:<project>_<element>` (e.g. `mcb:notredame_buttress`).
-3. The `exec-worker` **stamps** each module wherever the manifest places it with
-   `structure_load_to_world`, using rotation and mirror for corners and
-   opposite faces.
+2. Define each module **once** as `modules/<element>.json` in local coordinates
+   (`../exec-ashlar/reference/modules.md`).
+3. **Stamp** it wherever the layout places it: one `placements` row per instance
+   in `plan.toon`, with `rotation` (0, 90, 180 or 270, clockwise from above) and
+   `mirror` (`none`, `x` for east–west, `z` for north–south). `stamp.py` turns
+   the rows into phase files.
 4. **Vary** to avoid a copy-paste look — alternate two window variants, age
    copper differently per batch, tweak a palette accent. Variation lives in a
    small set of *variant* modules, not in unique hand-building.
-5. Record every module and its instances in `mcbuilder` data storage (written
-   with `data_storage_set`, read with `data_storage_get`).
+5. Record every module and its instances in `.minecraft-builder/registry.json`.
 
-A module must fit **64×384×64** (one structure file). Anything larger is split
+A module must stay within Ashlar's limits
+(`../exec-ashlar/reference/tools-and-limits.md`). Anything larger is split
 into several modules joined by an overlap.
 
 ## Module catalog by category
@@ -71,8 +71,8 @@ Compose a building's manifest from these kinds:
 
 ## Tiling rules
 
-- Keep each module within the 64×384×64 structure cap and each constituent
-  fill within 32,768 blocks (the `exec-worker` runs pre-tiled).
+- Keep each module and each constituent fill within Ashlar's limits (the placer
+  pages larger phase files).
 - Design modules to **align on a grid** so stamped copies meet cleanly — a
   buttress every 8 blocks, a window bay every 6.
 - Where a module meets terrain or another module, design a deliberate seam

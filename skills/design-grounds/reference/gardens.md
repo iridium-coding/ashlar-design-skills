@@ -52,7 +52,8 @@ Representative entries — confirm dimensions with `survey-research`.
 - **An English landscape park** (a Stourhead-type circuit) — a
   designed-irregular lake with classical temples placed around a walking
   circuit, naturalistic tree clumps composed for the view. Needs
-  `terrain-shape` for the lake basin and a belvedere hill; `design-building`
+  `terrain-shape` (if it is installed, otherwise `site-prep` phases) for the
+  lake basin and a belvedere hill; `design-building`
   for the temples.
 - **A civic plaza** (a Place-des-Vosges type) — a paved square framed by
   uniform façades, a central statue or fountain, formal rows of trees.

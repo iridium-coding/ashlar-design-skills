@@ -23,11 +23,11 @@ does **not** replace the render check — see the guardrail at the bottom.
 ## Dependencies
 
 The mesh path needs extras beyond the core toolkit (`numpy` + `pillow`):
-`trimesh`, `scipy`, `networkx`, `lxml`. They live in a **separate** file so the
-core stays light:
+`trimesh`, `scipy`, `networkx`, `lxml`. Add them to the `uv run` only for
+this path, so the core stays light:
 
 ```sh
-python -m pip install -r ${CLAUDE_PLUGIN_ROOT}/tools/requirements-mesh.txt
+uv run --no-project --with numpy --with pillow --with trimesh --with scipy --with networkx --with lxml python my_import.py
 ```
 
 If a run reports `ModuleNotFoundError: trimesh` (or `scipy`/`networkx`/`lxml`),
@@ -41,8 +41,8 @@ pose → label → color → render → `.npy`).
 ```python
 import zipfile, xml.etree.ElementTree as ET
 import numpy as np, trimesh
-import os, sys
-sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "tools"))
+import sys
+sys.path.insert(0, "<design-monument>/tools")   # this skill's folder, then tools (see render-verify.md)
 from voxel import Palette, VoxelModel, render_views, write_fills_json
 
 TARGET_H = 78                                    # desired height in blocks
@@ -82,7 +82,7 @@ render_views(m, "/abs/scratch/import_check")     # READ these before detailing
 ```
 
 Then color by region/height band (see `figures.md` for body/limb labeling) and
-place via `mcp_place.py` exactly as in `render-verify.md`.
+place it with the `exec-ashlar` placer exactly as in `render-verify.md`.
 
 ## .3mf gotchas (all hit in the session — Bambu/Orca slicer files)
 

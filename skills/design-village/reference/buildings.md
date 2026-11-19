@@ -2,7 +2,9 @@
 
 The standard village building types, by function. Reuse a small set of these
 per village — build each as a template once, then stamp it (see the reuse model
-in `SKILL.md`). Footprints are interior W×D; add wall thickness. Every building
+in `SKILL.md`). Footprints are interior W×D; add wall thickness (a 7×7 house is
+about 9×9
+outside). Every building
 a villager lives in needs one bed (2 air above the pillow) and, if it has a
 profession, one workstation within 16h/4v.
 
@@ -19,7 +21,7 @@ profession, one workstation within 16h/4v.
 ## Profession buildings & workstations
 
 One villager per workstation. Java Edition workstation blocks (use the full
-`minecraft:` id when placing with `block_set_state`):
+`minecraft:` id when placing with `mc_build`):
 
 | Profession | Workstation | Java block id | Building note |
 | ---------- | ----------- | ------------- | ------------- |
@@ -59,7 +61,10 @@ A villager with no workstation stays unemployed (use spares for breeding).
   (taiga).
 - **Composter loop** — a farmer throws surplus crops into a composter; a
   hopper-fed composter→chest loop yields bone meal. Keep the composter
-  claimable as the farmer's job site. To size the loop, `content_registry_is_compostable {item_id}` gives the chance one item adds a layer to a composter that already holds compost (an empty composter always takes a layer). `content_registry_set_compostable` does not exist on 26.3.
+  claimable as the farmer's job site. Size the loop from the composter's fill
+  chance: each item adds a layer with
+  the chance its compost rating gives (see the Minecraft Wiki Composter page);
+  an empty composter always takes a layer.
 - **Animal pens** — fenced enclosures, 7×7 minimum, lit, with water and feed:
   cows, pigs, sheep, chickens. Place near the shepherd and butcher.
 
@@ -84,19 +89,17 @@ uses them, otherwise purely decorative.
 
 ## Java-exclusive: seeding building chests with loot tables
 
-Rather than hand-picking chest contents item by item, use `loot_table_generate`
-to produce a believable set of items from a vanilla loot table, then slot them
-in with `inventory_set_slot`.
+Rather than hand-picking chest contents item by item, give the container a loot
+table with the allowlisted `data merge block`; the game rolls the contents the
+first time a player opens it.
 
 ```
-# 1. Generate loot from the matching village loot table
-loot_table_generate("minecraft:chests/village/village_weaponsmith")
-→ iron_ingot×5, obsidian×4, apple×3, iron_sword×1   (example — rolls are random)
+# Give the chest the matching village loot table
+data merge block <x> <y> <z> {LootTable:"minecraft:chests/village/village_weaponsmith"}
 
-# 2. Place each result into the chest at the building's position
-inventory_set_slot(pos=<chest_pos>, slot=0, item={id:"minecraft:iron_sword",count:1})
-inventory_set_slot(pos=<chest_pos>, slot=1, item={id:"minecraft:iron_ingot",count:5})
-# … continue for each item returned
+# Or slot specific items by hand with the allowlisted `item replace block`
+item replace block <x> <y> <z> container.0 with minecraft:iron_sword 1
+item replace block <x> <y> <z> container.1 with minecraft:iron_ingot 5
 ```
 
 Vanilla village chest loot-table ids follow the pattern
@@ -120,7 +123,6 @@ Vanilla village chest loot-table ids follow the pattern
 | Savanna house | `minecraft:chests/village/village_savanna_house` |
 | Snowy house | `minecraft:chests/village/village_snowy_house` |
 
-Use `loot_table_list` to enumerate all available ids on the running server.
-The optional `position` parameter makes the roll biome-aware (affects
-biome-sensitive tables). Rolls are random each call — re-roll if the result
-feels wrong for the building's flavor.
+Use only the table ids listed above (or ids from the Minecraft Wiki Loot table
+page); Ashlar has no tool to list them. The table rolls when a player first
+opens the chest, so the contents cannot be previewed or re-rolled.

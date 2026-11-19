@@ -1,7 +1,8 @@
 # Java Edition village mechanics
 
 The functional contract. A village that ignores these looks fine and does not
-work. All values are **Java Edition** (1.21.x / Fabric) — re-check after a
+work. All values are **Java Edition** (the version `mc_status` reports) —
+re-check after a
 game update. The Minecraft Wiki pages for Village mechanics, Iron Golem, Bell,
 Villager, Raid, and Cat are the source of truth.
 
@@ -57,7 +58,9 @@ golem spawning and raid-gather behavior — always include one.
 ## Iron golems
 
 Java Edition iron golem spawning is **gossip-and-sleep-based**, not a simple
-villager-count threshold.
+villager-count threshold. In this skill, "iron-golem-ready" is the planning rule
+of thumb in `layouts.md` (≥10 villagers and ≥20 beds, so the conditions below
+are met comfortably); the list below is the vanilla mechanism.
 
 A golem spawns naturally when **all** of the following hold:
 
@@ -81,7 +84,7 @@ Practical design rules:
   over it.
 - A player house sitting on top of the village center blocks golem spawns —
   keep it **≥16 blocks** away from the average-bed center.
-- For **day-one defense**, spawn one golem manually with `entity_summon` near
+- For **day-one defense**, spawn one golem manually with the allowlisted `summon` command near
   the bell on a clear surface. Tell the user a *naturally respawning* golem
   still needs the full conditions above.
 
@@ -139,7 +142,7 @@ A **breeding-ready** village design therefore needs:
 - The spawn check runs at dawn (once per in-game day). One cat attempts to
   spawn per check if the bed-to-cat ratio supports it.
 - To seed cats immediately, spawn `minecraft:cat` near the meeting area with
-  `entity_summon`.
+  the allowlisted `summon` command.
 
 ## Wandering traders
 
@@ -153,7 +156,7 @@ A **breeding-ready** village design therefore needs:
 The spawn-then-claim pattern described in `population.md` is the default: the
 game assigns a profession organically when a villager claims its workstation.
 For **specific traders with fixed trade lists** (a named quest merchant, a
-player-economy shop), use the scripted `entity_summon` NBT approach documented
+player-economy shop), use the scripted allowlisted `summon` NBT approach documented
 in `population.md` instead — the two techniques are complementary, not
 exclusive. Most villages mix both: organic workers for atmosphere, scripted
 merchants for deliberate player-facing shops.
@@ -167,7 +170,8 @@ merchants for deliberate player-facing shops.
   mechanical rules are the same as a normal village once repaired.
 - Villagers in Java pathfind up to 3 blocks vertically over a single step, but
   steep slopes (>2 blocks per step) still prevent traversal. Grades steeper
-  than ~2 blocks need `terrain-shape` to level them.
+  than ~2 blocks need a `site-prep` phase (or `terrain-shape`, if installed) to
+  level them.
 - **Villager sleeping and golem spawning require loaded chunks.** Keep the
   village inside a player's view distance or a force-loaded ticking area;
   operations on unloaded chunks will fail or not tick.

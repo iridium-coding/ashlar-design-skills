@@ -2,16 +2,20 @@
 
 Capture what the user wants without grilling them. The interview **scales with
 the tier**: a starter shack gets ~5 questions, a megabase up to ~25. Ask in
-small grouped batches (use `AskUserQuestion` for the multiple-choice ones), not
-one at a time. Skip anything the request, the survey-site, or an earlier answer
-already settled. Record everything in `requirements.md`.
+small grouped batches, not one at a time. Skip anything the request, the site
+survey, or an earlier answer already settled. Record everything in
+`requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 
 1. **Tier** — starter shack / cozy cottage / standard home / estate / mansion /
    castle / megabase. Ask this first; lock it before the rest.
 2. **Site** — anchor coordinates, or "next to me"; biome and terrain come from
-   the survey-site. Surface anything unusual the survey-site flagged (cave, ocean,
+   the site survey. Surface anything unusual the survey flagged (cave, ocean,
    cliff, deep dark).
 3. **Solo or co-op** — if co-op, how many beds, and shared or private rooms?
 4. **Game stage** — early / mid / late / creative. Gates which blocks and
@@ -29,10 +33,11 @@ already settled. Record everything in `requirements.md`.
 12. **Resource ceiling** — limited survival stock, or creative inventory?
 13. **Server rules** — claim sizes, no-grief zones, anything constraining.
 14. **Anchor landmark** — a mountain, lake, or tree to build into or beside?
-15. **Project name** — a slug for the registry and structure files.
+15. **Project name** — a slug for the registry and module files.
 
-**Starter tier** fires only questions 1, 2, 3, 5, 15 — infer the rest from
-sensible defaults and say so.
+**Starter tier** fires only questions 1, 2, 3, 5, 15, plus any conditional
+follow-up whose trigger the user's request already supplies — infer the rest
+from sensible defaults and say so.
 
 ## Conditional follow-ups
 

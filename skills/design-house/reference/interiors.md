@@ -50,7 +50,7 @@ reading as an empty shell.
   hips, dormers; double-stair the roof for visible thickness.
 - **Wall variation** — mix block faces (stone / andesite / diorite / cobble /
   brick; oak / stripped / planks / log). A flat one-block wall is the loudest
-  amateur tell. On 26.3, `block_transform_preview {dimension, position, tool, face?}` dry-runs what an axe, hoe or shovel (any item with a block_transformer component) would turn the block at a position into, without changing the world; it returns `result_block`, `result_properties`, `matched` and `face_blocked`. 26.3+ only.
+  amateur tell. Ashlar cannot preview what an axe, hoe or shovel would turn a block into; use the known vanilla results (stripped logs and wood, scraped or unwaxed copper, dirt path, farmland) directly.
 - **Trim courses** — a contrasting band at floor lines and the roofline.
 - **Windows** — vary them: single panes, full-wall glass, leaded (iron bars
   over panes), stained-glass accents.
@@ -60,82 +60,92 @@ reading as an empty shell.
   craftsmanship; perfect repetition reads as a template.
 - **Grounds and gardens** — for any trees and bushes around the base, **grow
   them from saplings; never place or duplicate a tree.** Plant
-  biome-appropriate saplings with spacing and light, then force growth with
-  bone meal (`player_give_item` / `itemstack_drop_at` + use), or via
-  `command_execute` with `/place feature minecraft:<tree_type>`, or place a
-  sapling with `block_set_state` and apply bone meal via a command. Prefer the
-  sapling + bone-meal path for organic, varied results. Mix flower types and
-  planters; keep paths and bushes irregular (see also the shared terrain
-  core `${CLAUDE_PLUGIN_ROOT}/reference/terrain/weathering.md`).
+  biome-appropriate saplings with spacing and light, then grow them with the
+  allowlisted `place feature minecraft:<tree_type> <x> <y> <z>` console command
+  (listed in the plan's `commands` table, inside a snapshotted box), or place a
+  sapling with `mc_build` and let it grow. Prefer the sapling path for
+  organic, varied results. Mix flower types and planters; keep paths and
+  bushes irregular (see also the `terrain-shape` skill's weathering guidance,
+  if it is installed).
 
 ---
 
 ## Java-exclusive: NBT detailing for a home interior
 
-### Labeled storage with signs (capability A)
+### Labeled storage with signs
 
-Place a `*_sign` beside or above each chest or barrel, then write a label
-with `block_entity_set_nbt`:
+Place a `*_sign` beside or above each chest or barrel, then write a label.
+Write plain sign text with `mc_build`'s `sign` object on the sign's `blocks`
+entry (`front`/`back`, up to 4 lines, `color`, `glowing`, `waxed`):
+
+```json
+{"pos": [<x>, <y>, <z>], "block": "minecraft:oak_wall_sign[facing=south]",
+ "sign": {"front": ["FOOD", "seeds / crops / cooked"], "color": "black", "waxed": true}}
+```
+
+For styled JSON text (per-line colours, bold), use the allowlisted
+`data merge block <x> <y> <z> {front_text:{messages:[…]}}` with the same SNBT
+as below, after the sign block exists:
 
 ```
-block_entity_set_nbt(pos, nbt='{front_text:{messages:[
+data merge block <x> <y> <z> {front_text:{messages:[
   "{\"text\":\"FOOD\",\"color\":\"green\",\"bold\":true}",
   "{\"text\":\"seeds / crops / cooked\"}", "\"\"", "\"\""],
-  has_glowing_text:0b}, is_waxed:1b}')
+  has_glowing_text:0b}, is_waxed:1b}
 ```
 
 `is_waxed:1b` prevents accidental edits. Four lines per face; `back_text`
-follows the same shape for double-sided standing signs. Verify with
-`block_entity_get_nbt` after merging.
+follows the same shape for double-sided standing signs. Verify with the
+read-only `data get block <x> <y> <z>` after merging.
 
-### Lecterns as readable displays (capability A)
+### Lecterns as readable displays
 
-A lectern in a study or library can hold a written book pre-loaded via NBT:
+A lectern in a study or library can hold a written book pre-loaded via NBT,
+using the allowlisted `data merge block`:
 
 ```
-block_entity_set_nbt(pos, nbt='{Book:{id:"minecraft:written_book",count:1,
+data merge block <x> <y> <z> {Book:{id:"minecraft:written_book",count:1,
   components:{"minecraft:written_book_content":{title:"House Rules",
-  author:"Owner",pages:["\"Welcome home.\""]}},Page:0}')
+  author:"Owner",pages:["\"Welcome home.\""]}},Page:0}}
 ```
 
-### Decorated pots as ornaments (capability A)
+### Decorated pots as ornaments
 
 ```
-block_entity_set_nbt(pos, nbt='{sherds:["minecraft:brick",
+data merge block <x> <y> <z> {sherds:["minecraft:brick",
   "minecraft:angler_pottery_sherd","minecraft:brick",
-  "minecraft:arms_up_pottery_sherd"]}')
+  "minecraft:arms_up_pottery_sherd"]}
 ```
 
 Place in entrance alcoves, on fireplaces, or as garden ornaments. Rotate the
 sherd IDs to match the home's style.
 
-### Player-head decor (capability A)
+### Player-head decor
 
 `minecraft:player_head` blocks can be given a named profile for a
 recognizable skin, or a custom base64 texture for fully bespoke ornament
 (a carved knob, a trophy head, a unique nameplate on a door):
 
 ```
-block_entity_set_nbt(pos, nbt='{profile:"Notch"}')
+data merge block <x> <y> <z> {profile:"Notch"}
 ```
 
-### Named and enchanted gear in storage (capability B)
+### Named and enchanted gear in storage
 
-`inventory_set_slot` accepts `components` SNBT to name, enchant, or add lore
-to any item placed into a chest, barrel, or display case:
+The allowlisted `item replace block` accepts item components to name, enchant,
+or add lore to any item placed into a chest, barrel, or display case:
 
 ```
-inventory_set_slot(container_pos, slot=0, item={
-  id:"minecraft:diamond_pickaxe", count:1,
-  components:'{"minecraft:custom_name":"{\"text\":\"Vein Seeker\",
-    \"italic\":false,\"color\":\"gold\"}",
-    "minecraft:enchantments":{"minecraft:fortune":3,
-      "minecraft:efficiency":5,"minecraft:unbreaking":3}}'})
+item replace block <x> <y> <z> container.0 with minecraft:diamond_pickaxe[
+  minecraft:custom_name='{"text":"Vein Seeker","italic":false,"color":"gold"}',
+  minecraft:enchantments={"minecraft:fortune":3,
+    "minecraft:efficiency":5,"minecraft:unbreaking":3}] 1
 ```
 
 **Version note:** the `minecraft:enchantments` component shape changed between
-1.20.5 and 1.21. Verify the exact SNBT with a round-trip (`itemstack_describe`
-or give-then-read) on the running version (`server_get_status`). Pass `include_values: true` (optionally `component_filter: ["minecraft:enchantments"]`) to read the actual component JSON and compare it to the SNBT you wrote; without it only `componentKeys` come back.
+1.20.5 and 1.21. Verify the exact item syntax by reading the container back
+with the read-only `data get block <x> <y> <z> Items`; `mc_status` reports the
+server version.
 
 Use this for a "hero kit" chest near the front door, a trophy sword above the
 fireplace, or a named heirloom in a display case.

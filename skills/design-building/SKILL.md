@@ -8,8 +8,8 @@ description: >-
   technique, and heavy reuse of defined structure modules. Use when the user
   names a building, asks for a recreation or replica, asks for something "in
   the style of", or names an architectural type (cathedral, castle, temple,
-  palace, skyscraper, fortress, monument). Part of the minecraft-builder
-  workflow.
+  palace, skyscraper, fortress, monument). Builds through Ashlar with the
+  exec-ashlar skill.
 model: opus
 effort: high
 ---
@@ -20,7 +20,8 @@ You design **specific buildings** — a named real-world landmark, a building
 from fiction, an original the user describes, or one in a named style. Your job
 is the design: classify the target, research it, compose it from modules,
 propose blueprints, iterate until the user approves, and write a fully resolved
-plan. You do not place blocks — `exec-worker` does.
+plan. You place no blocks while designing; after the user approves the plan,
+the `exec-ashlar` skill builds it.
 
 The standard is high: builds should be **extremely detailed and read as real**,
 using advanced technique. Recognition comes from getting the **signature
@@ -32,18 +33,24 @@ Use for a **specific building or building complex**. Do not use for:
 
 - A village or settlement: `design-village`.
 - A player's own base of operations: `design-house`.
-- Terrain or a natural wonder: `terrain-shape` / `terrain-landmark`.
+- Terrain or a natural wonder: `terrain-shape` / `terrain-landmark`. Those
+  skills may not be installed; if not, say so and offer a `site-prep` phase for
+  light grading only.
 - A statue, sculpture, or other figurative art: `design-monument`.
 
 ## Connection
 
-If a tool call fails because the MCP server is unreachable, stop and tell
-the user to run the `minecraft-mcp-setup` agent.
+Build tools come from the Ashlar MCP server (`mc_status`, `mc_players`,
+`mc_survey`, `mc_render`, `mc_inspect`, `mc_snapshot`, `mc_restore`,
+`mc_build`, `mc_command`). If one fails because the server is unreachable,
+call `mc_status` once more after a few seconds; if it still fails, stop and
+tell the user. The connection lives in the client's MCP settings, not in a
+skill.
 
 ## The three defining choices — ask these first
 
 Before any design work, pin down three decisions; they drive everything
-(module reuse, block volume, structure count, which leaves the orchestrator sequences):
+(module reuse, block volume, and how many modules and phases the build needs):
 
 1. **Source category** — a *real-world* building, a *canonical-fictional* one
    (from a named work), a *user-original* design, or *generative-style* ("in
@@ -62,17 +69,17 @@ A detailed building is overwhelming as a single mass. It is tractable as a
 **kit of modules**: a Gothic cathedral is one flying-buttress module stamped
 30 times, one window-bay module stamped 20 times, two tower modules, one
 spire. Identify the repeating architectural components, define each **once** as
-a structure, and reuse it. This is what makes a richly detailed build feasible
-within Java's limits. See `reference/modules.md`.
+a module, and stamp it wherever it repeats. This is what makes a richly
+detailed build feasible. See `reference/modules.md`.
 
 ## Research — be true to the source
 
-For a **real-world** replica, the orchestrator runs the `survey-research` leaf
-first; require at least **two reputable sources**. Capture verified dimensions,
-signature features, materials, and era. Record the citations in the `mcbuilder`
-data storage registry entry so `exec-reflect` can verify the finished build
-against them. Prefer official building authorities and UNESCO over encyclopedias
-over fan wikis.
+For a **real-world** replica, use the `survey-research` skill first; require at
+least **two reputable sources**. Capture verified dimensions, signature
+features, materials, and era. Record the citations in the project's entry in
+`.minecraft-builder/registry.json` so the finished build can be checked against
+them. Prefer official building authorities and UNESCO over encyclopedias over
+fan wikis.
 
 For a **canonical-fictional** building, resolve the **adaptation conflict
 first** — book vs film vs game vs theme-park versions differ. Ask the user
@@ -81,22 +88,28 @@ which to follow, and cite it. See `reference/fictional.md`.
 ## Process
 
 1. **Classify** the target into one of the four source categories.
-2. **Interview** — ask the three core questions and the branch follow-ups from
-   `reference/interview.md`. Record answers in `requirements.md`.
-3. **Research** — use the `survey-research` findings the orchestrator threaded
-   in for real-world and canonical-fictional targets; pull style data from
-   `reference/styles.md` or `reference/fictional.md`.
-4. **Survey the site** — use the `survey-site` findings; if the site needs
-   shaping (a hilltop, an island, a moat), note a `pre-build terraform` step.
+2. **Interview** — ask the source question, then the three core
+   questions and the branch follow-ups in `reference/interview.md`. Record
+   answers in `requirements.md`.
+3. **Research** — use the `survey-research` skill's findings for real-world and
+   canonical-fictional targets; pull style data from `reference/styles.md` or
+   `reference/fictional.md`.
+4. **Survey the site** — use the `exec-ashlar` skill (`survey <project>`); if
+   the site needs shaping (a hilltop, an island, a moat), plan a `site-prep`
+   phase (see Hand-off). Before choosing a site, check it against the other
+   projects' `bbox`es in `.minecraft-builder/registry.json`; do not place a plan
+   over another build without telling the user.
 5. **Compose the module manifest** — break the building into modules from
    `reference/modules.md`, applying technique from `reference/techniques.md`
    and furnishing depth from `reference/interiors.md`.
-6. **Resolve to a plan** — write pre-tiled phases and steps into `plan.toon`;
-   split any element over 64×384×64 into multiple named structures (canonical
-   colon form `mcb:<project>_<element>`).
+6. **Resolve to a plan** — write `plan.toon`, its phase files and its module
+   files per the `exec-ashlar` skill's plan format
+   (`../exec-ashlar/reference/plan-format.md`), with every repeated element
+   defined once in `modules/`. If a shell is available, stamp module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
 
-   **Emit a `quality_contract` block** per the schema in
-   `${CLAUDE_PLUGIN_ROOT}/skills/exec-plan/SKILL.md`.
+   **Emit a `quality_contract` block** per that same plan format.
    For named buildings the contract should include:
    - **walkability** between every entrance and every named interior space.
    - **doors** rows for every entrance (so it faces walkable air, not a
@@ -110,8 +123,10 @@ which to follow, and cite it. See `reference/fictional.md`.
      roofs) — flat untextured surfaces are the user's repeated complaint.
 7. **Render and iterate** — produce blueprints per `reference/blueprints.md`,
    show the user, revise, and **loop until they approve**.
-8. **Return** — write the plan, register the building, and return to the
-   orchestrator with the summary below.
+8. **Hand off** — write the plan, register the building in
+   `.minecraft-builder/registry.json` (add or update only this project's entry;
+   see `../exec-ashlar/reference/registry.md`), and follow the Hand-off section
+   below.
 
 ## Reference library
 
@@ -133,33 +148,43 @@ Read the file for the step you are on — do not load them all up front:
 | `reference/interview.md` | The adaptive interview — the three core questions and per-branch follow-ups. |
 | `reference/blueprints.md` | Rendering modes, scale-recognition thresholds, and the validation checklist. |
 
-For volume limits, the 64×384×64 structure cap, tiled fills, and ticking
-areas, follow **`${CLAUDE_PLUGIN_ROOT}/skills/terrain-shape/reference/command-budget.md`**.
+For Ashlar's limits (blocks per call, chunk footprint, read volume, snapshot
+slots), follow the `exec-ashlar` skill's limits reference
+(`../exec-ashlar/reference/tools-and-limits.md`).
 
 ## Hard rules
 
-- **Never place blocks** — you produce a plan; `exec-worker` executes it.
-- **Pre-tile fills** to ≤32,768 blocks; **split** any element over 64×384×64
-  into multiple `mcb:<project>_<element>` structures.
-- **Stay within the world's Y range** (-64 to 320). If a 1:1 build would
+- **Place no blocks while designing.** After the user approves the plan, the
+  `exec-ashlar` skill builds it (`build <project>`).
+- **Stay within Ashlar's limits** (`../exec-ashlar/reference/tools-and-limits.md`)
+  and define every repeated element once as a module.
+- **Stay within the world's Y range** (-64 to 319). If a 1:1 build would
   exceed it, scale it down and tell the user the ratio.
 - **Real-world replicas require `survey-research` and ≥2 citations** — no
-  exceptions; record them in the registry.
-- **Ask the three core questions** (source, scale, interior depth) before
+  exceptions; record them in the registry. A real architectural *style*
+  (Romanesque, Gothic) in a new building is generative-style, not a replica: use
+  `reference/styles.md`; `survey-research` is for a named real building.
+- **Ask the source, scale and interior-depth questions** before
   generating any blueprint, and give a fill-volume estimate.
 - **Every signature feature must be present and legible** — a replica missing
   its signatures (Niagara without the horseshoe, Hogwarts made symmetric) is a
   failure. Honour each building's symmetry rule.
-- **Defer site prep to `terrain-shape`** — note a `pre-build terraform` step if
-  the site needs leveling, a hilltop, an island, or a moat.
+- **Plan site prep as its own phase** — a `site-prep` phase (or the
+  `terrain-shape` skill, if it is installed) if the site needs leveling, a
+  hilltop, an island, or a moat. Light grading (about ±1 block, a pad, a few
+  terraces) is a `site-prep` phase either way.
 
-## Return to the orchestrator
+## Hand-off
 
 State the target, the adaptation chosen, the scale, the interior depth, the
-signature features, and the module manifest, and confirm `plan.toon` is
-written. Return this to the orchestrator, and flag the downstream work it
-must sequence: a `pre-build terraform` step (via `terrain-shape`) if site prep
-is needed, `exec-blueprint` to build and save the module structures, then
-`exec-worker` to stamp and assemble them, and `exec-reflect` to verify the
-finished build against the recorded signatures and citations. The orchestrator
-owns routing — do not invoke those leaves yourself.
+signature features and the module manifest, and confirm `plan.toon`, its phase
+files and its module files are written. You sequence the next steps yourself, in
+this order:
+
+1. **Site preparation**, if the site needs it: use the `terrain-shape` skill if
+   it is installed; otherwise add a `site-prep` phase (clearing, levelling,
+   pads, filling holes, soft-edged terraces) and tell the user if the site
+   needs more than that (more than light levelling, a pad and a few terraces).
+2. **Build**: use the `exec-ashlar` skill (`build <project>`). It runs the
+   approval gate, the phased build and the verification, including the
+   recorded signatures and citations.

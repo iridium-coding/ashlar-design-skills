@@ -15,6 +15,9 @@ layout all scale from it. Footprints are W×D×H; counts are approximate.
 | Castle / keep | 60+ wide | 20–35 | ~80,000 | late |
 | Megabase | 100+ wide | 30+ | 250,000+ | end-game |
 
+Pick the tier whose footprint is nearest to the request; a user's word
+("cottage") does not override a stated size.
+
 A tier sets expectations: do not offer a beacon room or a quad-wing layout at
 starter scale, and do not propose a single-room cabin when the user asked for
 a megabase.
@@ -52,7 +55,7 @@ Pick a topology that fits the tier, the site, and the style.
 
 ## Matching layout to site
 
-The `survey-site` site and `environments.md` constrain the topology:
+The site survey and `environments.md` constrain the topology:
 
 - **Flat plains** — any topology; two-story or compound are easy wins.
 - **Mountainside** — terraced compound or tower; carve back into the slope.
@@ -61,5 +64,6 @@ The `survey-site` site and `environments.md` constrain the topology:
 - **Sky** — compact tower or platform cluster with a fall-protected rim.
 - **Small lot / server claim** — tower upward rather than out.
 
-When the site needs reshaping first (levelling, terracing, hollowing), note a
-`pre-build terraform` step so the `terrain-shape` skill runs before the build.
+When the site needs reshaping first (levelling, terracing, hollowing), plan a
+`site-prep` phase (or the `terrain-shape` skill, if it is installed) before the
+build.

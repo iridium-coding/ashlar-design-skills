@@ -2,7 +2,8 @@
 
 Water is the centerpiece of most designed gardens — reflecting it, channeling
 it, terracing it. You design the **static** water; animated water (dancing
-fountains, water organs) is an `system-redstone` handoff.
+fountains, water organs) is an `system-redstone` handoff (if it is
+installed).
 
 ## Reflecting pools
 
@@ -23,7 +24,7 @@ The static basin and pool of a fountain — circular, octagonal, square, or
 lobed. Tiered basins step down in shrinking rings. You design the basin
 geometry, the water-source layout, and the coping; the **figure** on the
 fountain is a `design-monument` handoff, and any **animated jets** are an
-`system-redstone` handoff.
+`system-redstone` handoff (if it is installed).
 
 ## Channels (Mughal acequia)
 
@@ -36,24 +37,25 @@ with stone; punctuate with small jets at the crossings.
 
 The Italian-Renaissance cascade — a series of small stepped basins descending
 a terraced slope, water spilling from each to the next. Each step is a small
-source-block basin with a spill lip. The terracing itself is a `terrain-shape`
-pre-build step; you design the basins on it.
+source-block basin with a spill lip. The terracing itself is a `site-prep` phase
+(or a `terrain-shape` job, if it is installed); you design the basins on it.
 
 ## Designed lakes
 
 The English-landscape lake — *looks* natural but its perimeter is a deliberate
 composed curve (a long sinuous shape that reveals and conceals as you walk the
 circuit), not a freehand wobble and not a geometric pool. The lake basin is a
-`terrain-shape` job; you give it the **exact designed shoreline curve** and the
+`terrain-shape` job (if it is installed; otherwise a `site-prep` phase); you
+give it the **exact designed shoreline curve** and the
 placement of the temples, bridges, and tree clumps around the circuit.
 
 ## Implementation notes
 
 - Still water = source blocks everywhere; the moment a tile is flowing water
-  the surface ripples and the reflection breaks. Use `block_fill_region` with
+  the surface ripples and the reflection breaks. Use `mc_build` with
   `minecraft:water[level=0]` (source block) throughout the basin.
 - Light the floor (sea lanterns / glowstone beneath) for clear, bright water.
-- Keep a basin within the structure and fill caps like any other element;
+- Keep a basin within Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`) like any other element;
   large reflecting pools tile on their symmetry centerline.
 - Water cannot sit in the Nether; not a concern for a normal garden, but flag
   it if a garden is ever planned there.

@@ -1,17 +1,20 @@
 # The adaptive interview
 
 Capture what the user wants without over-asking. A **hamlet** needs ~6
-questions; a **standard village** the full set. Ask in small grouped batches
-(use `AskUserQuestion` for the multiple-choice ones), skip anything already
-settled by the request or the survey-site, and record answers in
+questions; a **standard village** the full set. Ask in small grouped batches, skip anything already
+settled by the request or the site survey, and record answers in
 `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for the multiple-choice questions.
+- Codex: use `request_user_input` for them if it is listed among your tools.
+- Otherwise: ask them in plain text.
 
 ## Question bank
 
 1. **Scale** — hamlet (2–4 buildings) or standard village (5–15)? Ask first;
    lock it.
 2. **Site** — anchor coordinates or "near me"; biome and terrain from the
-   survey-site.
+   site survey.
 3. **Player-house composition** — how does the village relate to the player's
    own base?
    - **A** — built around an existing player house (recommended; if they have
@@ -47,7 +50,8 @@ settled by the request or the survey-site, and record answers in
 - Site near a **pillager outpost** → warn the user that a pillager outpost
   within ~80 blocks can cause frequent Raid Captain spawns, making Bad Omen
   and raids more common; offer to relocate the village or the outpost.
-- Mountainside or uneven site → note a `terrain-shape` pre-build step.
+- Mountainside or uneven site → plan a `site-prep` phase (or `terrain-shape`, if
+  installed).
 - Coastal → ask about a dock and a fisherman.
 - A specific style or real reference named → hand off to `survey-research` for
   imagery before composing.

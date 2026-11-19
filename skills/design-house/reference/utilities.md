@@ -8,23 +8,23 @@ game update.
 
 - **Quasi-connectivity (QC) exists.** Pistons, dispensers, and droppers can be
   powered by a signal directed at the block *above* them. This is intentional
-  Java behaviour; use it if helpful, but be explicit about it in plans so the
-  `system-redstone` knows.
+  Java behaviour; use it if helpful, but be explicit about it in plans so a
+  later `system-redstone` design (if installed) knows.
 - **Observers output a 1-redstone-tick (2-game-tick) pulse.** Java observer
   timing is stable and matches standard tutorials.
 - **0-tick pulses were patched out** (long before 1.21). Do not rely on them.
-- **`block_set_state` placement notifies neighbours** (update flags default to
-  3: notify + sync), so placed redstone dust, comparators, and repeaters
-  receive neighbour updates and most simple clocks self-start. Verify the
-  contraption is actually ticking — some loops still need an initial trigger.
+- **Ashlar places blocks without block updates.** Circuits, clocks and
+  observers do not start on their own after placement. Give every contraption
+  a start lever or button, and tell the user to use it once the build is done.
 - **AFK fishing works on Java** — the standard tripwire-and-trapdoor AFK
   fishing farm is valid. Note it depends on the world not pausing (a player
   must be in range).
 - **Hopper transfer order is deterministic on Java** (first filled slot). Item
   sorters work reliably; the common "stacked" design uses **22** filler items
   in the filter chest (not 20 or 21).
-- If a redstone design is complex, defer the contraption to `system-redstone` and
-  provide the footprint and input/output points.
+- If a redstone design is complex, defer the contraption to `system-redstone` if
+  it is installed (otherwise
+  say it is out of reach) and provide the footprint and input/output points.
 
 ## Storage & item handling
 
@@ -78,14 +78,14 @@ of those do not count.**
 Auto-brewing (dispenser-fed brewing-stand chain), XP storage (a bottling or
 furnace-XP store), an ender-chest network across rooms, a lodestone array for
 compasses, daylight-sensor auto-lighting, and sculk-sensor or
-pressure-plate-triggered doors. For each, give exec-plan a footprint and a
+pressure-plate-triggered doors. For each, give the plan a footprint and a
 material list. Note that sculk sensors are available in 1.19+ and calibrated
 sculk sensors in 1.20+; they work reliably on Java Edition.
 
 ## For the plan
 
-Every utility a base includes becomes rooms and steps in `plan.toon`. Give the
-`exec-plan`/`exec-worker` a concrete block list and footprint — never "add a farm
+Every utility a base includes becomes rooms and phases in `plan.toon`. Give each
+one a concrete block list and footprint — never "add a farm
 here" without the dimensions. A redstone clock or always-loaded contraption
 should carry a brief lag warning for the user.
 
@@ -93,36 +93,41 @@ should carry a brief lag warning for the user.
 
 ## Java-exclusive: labeled storage and seeded starter chests
 
-### Labeling barrels and chests with signs (capability A)
+### Labeling barrels and chests with signs
 
-Place a `*_sign` adjacent to each container, then write its label with
-`block_entity_set_nbt`:
+Place a `*_sign` adjacent to each container, then write its label.
+Write plain sign text with `mc_build`'s `sign` object on the sign's `blocks`
+entry (`front`/`back`, up to 4 lines, `color`, `glowing`, `waxed`):
+
+```json
+{"pos": [<x>, <y>, <z>], "block": "minecraft:oak_wall_sign[facing=south]",
+ "sign": {"front": ["ORES", "coal / iron / gold / diamond"], "color": "black", "waxed": true}}
+```
+
+For styled JSON text (per-line colours, bold), use the allowlisted
+`data merge block <x> <y> <z> {front_text:{messages:[…]}}` with the same SNBT
+as below, after the sign block exists:
 
 ```
-block_entity_set_nbt(pos, nbt='{front_text:{messages:[
+data merge block <x> <y> <z> {front_text:{messages:[
   "{\"text\":\"ORES\",\"color\":\"yellow\",\"bold\":true}",
   "{\"text\":\"coal / iron / gold / diamond\"}", "\"\"", "\"\""],
-  has_glowing_text:0b}, is_waxed:1b}')
+  has_glowing_text:0b}, is_waxed:1b}
 ```
 
 This is faster and more reliable than placing item-frame labels, and the text
 is readable from further away. `is_waxed:1b` prevents accidental edits.
 
-### Seeding starter chests with loot tables (capability E)
+### Seeding starter chests with loot tables
 
-Use `loot_table_generate` to fill a starting chest with believable contents,
-then place the items with `inventory_set_slot`:
+Give the container a loot table with the allowlisted `data merge block`; the
+game rolls the contents the first time a player opens it:
 
 ```
-# 1. Generate a realistic starter loot list
-items = loot_table_generate("minecraft:chests/village/village_weaponsmith")
-
-# 2. Write each item into the chest at pos
-for slot, item in enumerate(items):
-    inventory_set_slot(pos, slot=slot, item=item)
+data merge block <x> <y> <z> {LootTable:"minecraft:chests/village/village_weaponsmith"}
 ```
 
-Useful table IDs for a player home (enumerate all with `loot_table_list`):
+Useful table IDs for a player home:
 - `minecraft:chests/village/village_weaponsmith` — starter weapons and ingots.
 - `minecraft:chests/village/village_toolsmith` — pickaxes, axes, shovels.
 - `minecraft:chests/village/village_fletcher` — bows, arrows, flint.
@@ -132,20 +137,18 @@ Combine loot seeding with component-named hero items (see `interiors.md`
 § "Java-exclusive") to add one named tool or weapon among otherwise random
 loot — the named item stands out immediately.
 
-### Named and enchanted tools in the storage room (capability B)
+### Named and enchanted tools in the storage room
 
-For a storage room's dedicated tool wall or tool chest, use `inventory_set_slot`
-with `components` to pre-place a named, enchanted kit:
+For a storage room's dedicated tool wall or tool chest, use `item replace block`
+with item components to pre-place a named, enchanted kit:
 
 ```
-inventory_set_slot(container_pos, slot=0, item={
-  id:"minecraft:netherite_axe", count:1,
-  components:'{"minecraft:custom_name":"{\"text\":\"Woodsman\",
-    \"italic\":false}",
-    "minecraft:enchantments":{"minecraft:efficiency":5,
-      "minecraft:unbreaking":3,"minecraft:mending":1}}'})
+item replace block <x> <y> <z> container.0 with minecraft:netherite_axe[
+  minecraft:custom_name='{"text":"Woodsman","italic":false}',
+  minecraft:enchantments={"minecraft:efficiency":5,
+    "minecraft:unbreaking":3,"minecraft:mending":1}] 1
 ```
 
 **Version note:** the `minecraft:enchantments` component shape changed between
 1.20.5 and 1.21. Verify with a round-trip read on the running server version
-(`server_get_status`) before finalising the SNBT in `plan.toon`.
+(`mc_status` reports it) before finalising the item syntax in `plan.toon`.

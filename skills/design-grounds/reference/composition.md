@@ -50,8 +50,7 @@ Grade the garden from the building outward, formal to looser:
 ## Scale
 
 - A small garden — a courtyard, a zen garden — builds at **1:1**.
-- A large garden (a real axis over about 200 m: a chateau's grounds, a royal
-  park) builds at **1:4**, or
+- A Tier 2+ garden (a chateau's grounds, a royal park) builds at **1:4**, or
   1:8 for the very largest. Keep the *proportions* exact at the reduced scale;
   surface the ratio to the user.
 

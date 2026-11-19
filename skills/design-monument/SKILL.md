@@ -117,8 +117,8 @@ toolkit, how to view the PNGs in your client, and the
 
 - The world spans Y −64 to 319. Most real monuments fit at 1:1; the very
   tallest (a 240 m statue) do not — offer a reduced scale, or split the base
-  off to a `site-prep` phase or a `design-building` plinth so the figure sits at
-  1:1 on a plinth.
+  off to a `site-prep` phase or a `design-building` plinth, so the figure stays
+  at 1:1.
 - A large monument is built in tiles along natural anatomy seams (a waist, a
   neck, a limb joint), each its own phase or module, so every phase's
   snapshots stay within Ashlar's per-snapshot cap.

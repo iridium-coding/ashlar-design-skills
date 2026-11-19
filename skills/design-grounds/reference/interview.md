@@ -37,8 +37,7 @@ by the request or a delegating skill, and record answers in `requirements.md`.
 
 - A named garden or unfamiliar tradition → invoke `survey-research` for plans and
   dimensions.
-- A large garden (a real axis over about 200 m) → confirm the reduced scale
-  (~1:4) and that the
+- A large garden (Tier 2+) → confirm the reduced scale (~1:4) and that the
   proportions stay exact.
 - A hedge maze → confirm path width, hedge height, and the center reward.
 - A garden meeting wild terrain → ask for the transition apron treatment.

@@ -44,7 +44,7 @@ FORBIDDEN = [
 # Patterns that can wrap across a line break, matched on the whole text.
 WRAPPED_FORBIDDEN = [
     re.compile(r"\benhancement\s+spec\b"),
-    re.compile(r"\bpre-build\s+(?:terraform|step)\b"),
+    re.compile(r"\bpre-build\s+(?:terraform|steps?)\b"),
     re.compile(r"\bseparate\s+coordinator\b"),
     # a world top of 320 (the top block is 319), as "-64 to 320", "Y=320" or "above Y 320"
     re.compile(r"(?:[-\u2212]64\s+to\s+(?:Y\s*=?\s*)?|\bY\s*=?\s*)320\b"),
@@ -169,6 +169,7 @@ def test_leftovers_detects_design_skill_wording() -> None:
     assert leftovers("note a `pre-build terraform` step") == [(1, "pre-build terraform")]
     assert leftovers("note a `pre-build\nterraform` step") == [(1, "pre-build\nterraform")]
     assert leftovers("a terrain-shape pre-build step") == [(1, "pre-build step")]
+    assert leftovers("two pre-build steps") == [(1, "pre-build steps")]
     assert leftovers("plan a `site-prep` phase") == []
     assert leftovers("No separate coordinator runs the next steps") == [
         (1, "separate coordinator")]

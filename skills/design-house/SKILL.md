@@ -91,7 +91,7 @@ skill.
    `.minecraft-builder/<project>/`, per `reference/blueprints.md`:
    - `floorplan.txt` — ASCII top-down, one char per block, per floor;
    - `floorplan.md` — Markdown-table grid, per floor;
-      - `adjacency.mmd` — Mermaid `graph TD` of room-to-room flow (optional when
+   - `adjacency.mmd` — Mermaid `graph TD` of room-to-room flow (optional when
      there is one room).
 
 5. **Iterate with the user.** Show the renderings. Take feedback. Revise and

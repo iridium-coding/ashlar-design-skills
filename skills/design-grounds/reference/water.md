@@ -2,7 +2,8 @@
 
 Water is the centerpiece of most designed gardens — reflecting it, channeling
 it, terracing it. You design the **static** water; animated water (dancing
-fountains, water organs) is an `system-redstone` handoff.
+fountains, water organs) is an `system-redstone` handoff (if it is
+installed).
 
 ## Reflecting pools
 
@@ -23,7 +24,7 @@ The static basin and pool of a fountain — circular, octagonal, square, or
 lobed. Tiered basins step down in shrinking rings. You design the basin
 geometry, the water-source layout, and the coping; the **figure** on the
 fountain is a `design-monument` handoff, and any **animated jets** are an
-`system-redstone` handoff.
+`system-redstone` handoff (if it is installed).
 
 ## Channels (Mughal acequia)
 
@@ -36,15 +37,16 @@ with stone; punctuate with small jets at the crossings.
 
 The Italian-Renaissance cascade — a series of small stepped basins descending
 a terraced slope, water spilling from each to the next. Each step is a small
-source-block basin with a spill lip. The terracing itself is a `terrain-shape`
-pre-build step; you design the basins on it.
+source-block basin with a spill lip. The terracing itself is a `site-prep` phase
+(or a `terrain-shape` job, if it is installed); you design the basins on it.
 
 ## Designed lakes
 
 The English-landscape lake — *looks* natural but its perimeter is a deliberate
 composed curve (a long sinuous shape that reveals and conceals as you walk the
 circuit), not a freehand wobble and not a geometric pool. The lake basin is a
-`terrain-shape` job; you give it the **exact designed shoreline curve** and the
+`terrain-shape` job (if it is installed; otherwise a `site-prep` phase); you
+give it the **exact designed shoreline curve** and the
 placement of the temples, bridges, and tree clumps around the circuit.
 
 ## Implementation notes

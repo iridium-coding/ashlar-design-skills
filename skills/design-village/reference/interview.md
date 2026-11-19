@@ -50,7 +50,8 @@ settled by the request or the site survey, and record answers in
 - Site near a **pillager outpost** → warn the user that a pillager outpost
   within ~80 blocks can cause frequent Raid Captain spawns, making Bad Omen
   and raids more common; offer to relocate the village or the outpost.
-- Mountainside or uneven site → note a `terrain-shape` pre-build step.
+- Mountainside or uneven site → plan a `site-prep` phase (or `terrain-shape`, if
+  installed).
 - Coastal → ask about a dock and a fisherman.
 - A specific style or real reference named → hand off to `survey-research` for
   imagery before composing.

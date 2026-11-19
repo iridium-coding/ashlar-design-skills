@@ -1,7 +1,7 @@
 # Special-site environments
 
 Building a base into a non-flat site. Each environment has site-prep needs
-(usually a `terrain-shape` pre-build step), structural rules, and hazards.
+(usually a `site-prep` phase), structural rules, and hazards.
 
 Ashlar builds only in worlds listed in its `world.allowed-worlds`. Before
 designing a Nether or End base, have the `exec-ashlar` skill check that the
@@ -13,7 +13,7 @@ built there.
 - **Terrace the slope** rather than building on a ramp — a series of flat
   cut shelves linked by stairs. Carve *back into* the mountain for rooms
   rather than cantilevering out.
-- Note a `pre-build terraform` step for the terracing.
+- Plan a `site-prep` phase for the terracing.
 - Add drainage so water from above does not sheet through rooms.
 - A compound-of-pavilions or tower topology fits best.
 

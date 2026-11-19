@@ -12,7 +12,7 @@ credible proportions**, not raw size:
 - A castle needs its towers, curtain wall, and keep in true proportion.
 
 If the user asks for a size below recognition, scale up to the threshold or
-flag it. If 1:1 exceeds the Y range (-64 to 320), scale down and state the
+flag it. If 1:1 exceeds the Y range (-64 to 319), scale down and state the
 ratio.
 
 ## Rendering modes

@@ -38,6 +38,9 @@ logo, giant 3D text, or a large creature. Do not use for:
 - Natural terrain or a natural wonder → `terrain-landmark` / `terrain-shape`.
 - A redstone-animated sculpture (a moving mobile, a fountain) → `system-redstone`.
 
+Those three skills may not be installed; if not, say so and offer a `site-prep`
+phase for light grading only.
+
 ## Connection
 
 Build tools come from the Ashlar MCP server (`mc_status`, `mc_players`,
@@ -88,8 +91,11 @@ iteration happens offline, on a render. The bundled `voxel` toolkit
 renders three orthogonal views to PNG, then decomposes the verified model into
 world fills that the `exec-ashlar` skill's placer sends to the server. After
 building, confirm with `mc_render` facades and a top view — a visual pass, not
-spot-checked coordinates. This is mandatory for representational forms; the
-full recipe, the toolkit, how to view the PNGs in your client, and the
+spot-checked coordinates. This is mandatory for representational forms. A simple
+geometric piece written
+as a few fills (an obelisk, a plinth, a plain column) is exempt: write the fills
+directly and verify with `mc_render` after placing. The full recipe, the
+toolkit, how to view the PNGs in your client, and the
 "imported meshes are not authoritative" guardrail are in
 **`reference/render-verify.md`**.
 
@@ -103,13 +109,16 @@ full recipe, the toolkit, how to view the PNGs in your client, and the
   site, space, and viewing angles.
 - **From the user** — the adaptive interview (`reference/interview.md`).
 - **From earlier builds** — `.minecraft-builder/registry.json`
-  (`../exec-ashlar/reference/registry.md`), for iteration.
+  (`../exec-ashlar/reference/registry.md`), for iteration. Before choosing a
+  site, check it against the other projects'
+  `bbox`es; do not place a plan over another build without telling the user.
 
 ## Scale and the Java envelope
 
 - The world spans Y −64 to 319. Most real monuments fit at 1:1; the very
   tallest (a 240 m statue) do not — offer a reduced scale, or split the base
-  off to `terrain-shape` so the figure sits at 1:1 on a plinth.
+  off to a `site-prep` phase or a `design-building` plinth so the figure sits at
+  1:1 on a plinth.
 - A large monument is built in tiles along natural anatomy seams (a waist, a
   neck, a limb joint), each its own phase or module, so every phase's
   snapshots stay within Ashlar's per-snapshot cap.
@@ -124,12 +133,16 @@ plan — which skill owns each part and where they meet — and sequence them as
 Hand-off describes:
 
 - **Carved into a cliff** (Mt. Rushmore, Bamiyan, Leshan) — `terrain-landmark`
-  (or `terrain-shape`) makes the cliff; you make the figure carved into it.
+  (or `terrain-shape`), if installed, makes the cliff; you make the figure
+  carved into it.
 - **Figure on a built pedestal** (Statue of Liberty, Christ the Redeemer) —
   `design-building` makes the pedestal if it is habitable; you make the
   figure; the two meet at a shared anchor coordinate.
-- **Figure on an earth plinth** — `terrain-shape` raises the plinth.
-- **Animated** (a fountain, a rotating mobile) — `system-redstone` adds the
+- **Figure on an earth plinth** — `terrain-shape` (if installed) raises the
+  plinth;
+  otherwise a `site-prep` phase does.
+- **Animated** (a fountain, a rotating mobile) — `system-redstone` (if
+  installed) adds the
   redstone.
 
 When the seam is a *group* of named masses the terrain sibling raises (several
@@ -137,7 +150,8 @@ buttes, temples, or spires in one formation), specify each as a **distinct mass
 in the heightfield** — separated centers, contrasting profiles (broad mesa vs
 narrow spire vs tri-lobed dome), saddles baked between them, varied summit
 heights — and materialized in one pass. Say so in the plan and hand
-`terrain-shape`/`terrain-landmark` the per-mass centers and profiles. Do not
+`terrain-shape`/`terrain-landmark` (if installed) the per-mass centers and
+profiles. Do not
 let the sibling `np.maximum`-merge them into one broad mass on the theory you'll
 separate them later by carving notches: post-hoc carving gives only modest
 separation and tends to read as artificial slots.
@@ -162,10 +176,17 @@ whichever sibling skill runs next can use it.
 6. **Coordinate siblings** — note in the plan any cliff, pedestal, or plinth a sibling skill owns and the shared anchor where it meets your figure (see Hand-off).
 7. **Design into the plan** — write `plan.toon`, its phase files and module
    files per the `exec-ashlar` skill's plan format
-   (`../exec-ashlar/reference/plan-format.md`). A pixel-art grid or a voxelized
+   (`../exec-ashlar/reference/plan-format.md`). If a shell is available, stamp
+   module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them. A
+   pixel-art grid or a voxelized
    form is a **generated grid**: write it as a phase file (a fills list) with a
-   script, never as thousands of hand-written entries, and send it with the
-   placer (`via: placer`). For a **large parametric form** (a vehicle, a
+   script, never as thousands of hand-written entries (more than 200 entries,
+   the `mcp`
+   phase cap in `plan-format.md`, means a generated grid and `via: placer`), and
+   send it with the placer (`via: placer`). For a **large parametric form** (a
+   vehicle, a
    creature), the reusable artifact is the **authoring script + the model
    `.npy`** (see `reference/render-verify.md`); record their location in the
    registry.
@@ -205,7 +226,9 @@ whichever sibling skill runs next can use it.
    - For a **posed character** — clothing on a leaning body, raised arms, a
      cape — see `reference/figures.md` (body/limb labeling, vertex posing, arc
      garments).
-9. **Hand off** — write the plan, register the monument in `.minecraft-builder/registry.json`, and follow Hand-off below.
+9. **Hand off** — write the plan, register the monument in
+   `.minecraft-builder/registry.json` (add or update only this project's entry;
+   see `../exec-ashlar/reference/registry.md`), and follow Hand-off below.
 
 ## Reference library
 
@@ -246,13 +269,14 @@ Read the file for the step you are on — do not load them all up front:
 ## Hand-off
 
 State the piece back to the user — subject, technique, scale, palette, tile
-plan — and confirm `plan.toon` is written. No separate coordinator runs the
-next steps in this setup, so you sequence them:
+plan — and confirm `plan.toon` is written. You sequence the
+next steps yourself, in this order:
 
 1. **Siblings first**: any cliff, plinth or pedestal. Use the `terrain-shape`
    or `terrain-landmark` skill if it is installed; otherwise add a `site-prep`
    phase (clearing, levelling, pads, filling holes, soft-edged terraces) and
-   tell the user if the site needs more than that. A habitable pedestal goes to
+   tell the user if the site needs more than that (more than light levelling, a
+   pad and a few terraces). A habitable pedestal goes to
    the `design-building` skill. They meet the figure at the recorded anchor.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). Voxelized forms
    go through the placer; armor stands and display entities run last as

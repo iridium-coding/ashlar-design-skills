@@ -6,7 +6,8 @@ description: >-
   hedge mazes, fountains, parterres, topiary, cloister gardens, estate grounds.
   Covers French formal, Italian, English landscape, Mughal, Japanese, Chinese,
   modernist, and other traditions. Geometric and intentional — the deliberate
-  counterpart to the naturalistic terrain-shape skill. Use when the user wants
+  counterpart to the naturalistic terrain-shape skill (a sibling skill that may
+  not be installed). Use when the user wants
   a garden, park, plaza, courtyard, hedge maze, fountain, or designed grounds.
   Builds through Ashlar with the exec-ashlar skill.
 model: opus
@@ -36,13 +37,15 @@ Use for a garden, park, plaza, courtyard, hedge maze, fountain, parterre,
 allée, knot garden, zen garden, or any **designed outdoor space**. Do not use
 for:
 
-- Naturalistic, wild terrain with no design intent → `terrain-shape`.
+- Naturalistic, wild terrain with no design intent → `terrain-shape` (it may
+  not be installed; if not, say so and offer a `site-prep` phase for light
+  grading only).
 - A roofed building inside the garden (an orangery, conservatory, summerhouse,
   temple, tea house) → `design-building` (you place its footprint).
 - Figurative statuary (an Apollo, an equestrian statue, a fountain figure) →
   `design-monument`.
-- Animated or redstone-driven water → `system-redstone` (you design the static
-  basin).
+- Animated or redstone-driven water → `system-redstone`, if it is installed
+  (you design the static basin).
 
 ## Connection
 
@@ -66,7 +69,8 @@ skill.
 3. **Keep leaves alive.** Leaves decay unless near a log. Every hedge,
    topiary, allée, and parterre that uses leaves must be **placed as
    persistent leaves** (the `persistent=true` blockstate property), **or built
-   on a log core** within range — state this in the plan so no decaying leaves are placed.
+   on a log core** within range — state this in the plan's `notes` so no
+   decaying leaves are placed.
 4. **Reuse the repeating unit.** A parterre quarter, a maze cell, an allée
    tree — define it once as a module (`modules/<element>.json`) and stamp it,
    like the other design skills.
@@ -79,7 +83,9 @@ skill.
   or a delegated envelope from `design-city`.
 - **From the user** — the adaptive interview (`reference/interview.md`).
 - **From earlier builds** — `.minecraft-builder/registry.json`
-  (`../exec-ashlar/reference/registry.md`), for iteration.
+  (`../exec-ashlar/reference/registry.md`), for iteration. Before choosing a
+  site, check it against the other projects'
+  `bbox`es; do not place a plan over another build without telling the user.
 
 ## Process
 
@@ -87,8 +93,8 @@ skill.
    record in `requirements.md`.
 2. **Research** — invoke `survey-research` for a named garden or unfamiliar
    tradition; pull the tradition's rules from `reference/styles.md`.
-3. **Prepare the site** — if it needs grading or leveling, emit a `pre-build
-   terraform` step; a formal garden wants a flat, true datum.
+3. **Prepare the site** — if it needs grading or leveling, plan a `site-prep`
+   phase; a formal garden wants a flat, true datum.
 4. **Compose** — lay the axes and zones (`reference/composition.md`).
 5. **Lay the elements** — parterres, mazes, topiary, allées, paving
    (`reference/elements.md`); water features (`reference/water.md`).
@@ -100,7 +106,11 @@ skill.
 8. **Write the plan and hand off** — `requirements.md`, `plan.toon` with its
    phase and module files per the `exec-ashlar` skill's
    plan format (`../exec-ashlar/reference/plan-format.md`), and
-   the registry entry.
+   the registry entry (add or update only this project's entry; see
+   `../exec-ashlar/reference/registry.md`). If a shell is available, stamp
+   module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
 
    **Emit a `quality_contract` block** per that same plan format.
    For designed outdoor spaces the contract should include:
@@ -138,15 +148,17 @@ slots), follow the `exec-ashlar` skill's limits reference
 A garden is rarely built alone — this is the most coordination-heavy design
 skill. Name each seam in the plan; Hand-off says how each owning skill is run:
 
-- **Site grading** — `terrain-shape` owns it (a flat datum, a raised belvedere
-  hill, a terraced hillside, a lake basin).
+- **Site grading** — `terrain-shape` owns it when installed; otherwise a
+  `site-prep` phase (a flat datum, a raised belvedere hill, a terraced
+  hillside, a lake basin).
 - **Roofed structures** — `design-building` owns them (orangery, summerhouse,
   temple, tea house). You place the footprint; it builds the structure. Open
   pergolas and arbors stay with you.
 - **Figurative statuary** — `design-monument` owns it (statues, fountain
   figures). You place the plinth and the basin.
-- **Animated water** — `system-redstone` owns it (dancing fountains, water
-  organs). You design the static basin and channels.
+- **Animated water** — `system-redstone` owns it when installed; otherwise static
+  basins only (dancing fountains, water organs). You design the static basin
+  and channels.
 - **Delegated envelopes** — another design skill may hand you a plaza or park
   envelope (from `design-city`) or the grounds around a building (from
   `design-house` or `design-building`). Honour the given envelope, datum, and
@@ -161,26 +173,27 @@ skill. Name each seam in the plan; Hand-off says how each owning skill is run:
 - **Split large gardens into modules and phases** within Ashlar's limits — and
   **put every seam on an axis of symmetry or a path/hedge line**, never through
   the middle of a parterre or basin.
-- **Stay within Y -64 to 320** — flag a tall terraced garden or water
+- **Stay within Y -64 to 319** — flag a tall terraced garden or water
   staircase that approaches the ceiling.
 - **No `/random`** — pre-bake any irregular pattern (a maze
   topology, stepping-stone offsets, a naturalistic lake edge) into the design.
   Console commands only as `../exec-ashlar/reference/commands.md` allows.
 - **Defer** roofed structures, statuary, animated water, and site grading —
-  mark each seam in the plan; Hand-off says who does each.
+  mark each seam in the plan; Hand-off says who does each. Light grading
+  (about ±1 block, a pad, a few terraces) is a `site-prep` phase either way.
 - **Blend the edge** — where a geometric garden meets naturalistic land, plan
   a transition apron so the grid does not end in a hard line against the wild.
 
 ## Hand-off
 
 State the garden back to the user — tradition, scale, axes, the feature list —
-and confirm `plan.toon` is written. No separate coordinator runs the next steps
-in this setup, so you sequence the dependency seams, typically:
+and confirm `plan.toon` is written. You sequence the next steps yourself, in
+this order, handling the dependency seams:
 
 1. **Grading**: use the `terrain-shape` skill if it is installed; otherwise add
    a `site-prep` phase that gives a flat, true datum (clearing, levelling,
    filling holes, soft-edged terraces) and tell the user if the site needs more
-   than that.
+   than that (more than light levelling, a pad and a few terraces).
 2. **Roofed structures and statuary**: run the `design-building` and
    `design-monument` skills for them.
 3. **Build the garden**: use the `exec-ashlar` skill (`build <project>`), with

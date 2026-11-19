@@ -35,7 +35,7 @@ site survey already settled, and record answers in `requirements.md`.
 - A supertall skyline (modern metropolis) → warn that 1:1 exceeds the world's
   height and confirm the silhouette scale or a reduced ratio.
 - Site needs major shaping (a river, a hill, an island, reclaimed land) → note
-  a `terrain-shape` pre-build step.
+  `site-prep` phases (or `terrain-shape`, if installed).
 - A walled city → ask the wall type and whether the sprawl outside the wall is
   included.
 - A canal city → ask whether canals replace streets entirely (Venice) or

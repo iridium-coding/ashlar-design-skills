@@ -10,7 +10,8 @@ resolving a plan:
 
 - **Silhouette views** (`silhouette.txt`) — ASCII front and side elevations,
   one character per block, so the user can check the outline reads as the
-  subject. The silhouette is the single most important thing to get right.
+  subject. Coordinates in `silhouette.txt` and `sections.txt` are absolute. The
+  silhouette is the single most important thing to get right.
 - **Cross-sections** (`sections.txt`) — a few horizontal slices (per Y band)
   showing the form's footprint at different heights — the practical guide for
   a figure or creature.

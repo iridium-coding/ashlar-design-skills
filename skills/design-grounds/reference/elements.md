@@ -52,7 +52,9 @@ topiary is a `design-monument` handoff.
 - **Bosquet** — a formal block or grove of trees with a clipped outer face,
   often hiding a hidden room, a fountain, or a clearing within.
 - A *naturalistic* clump (in an English-landscape garden) is the exception —
-  grow it from saplings per the `terrain-shape` grow-trees rule.
+  grow it with the allowlisted `place feature minecraft:<tree_type> <x> <y> <z>`
+  console command (listed in the plan's `commands` table, inside a snapshotted
+  box), or place a sapling with `mc_build` and let it grow.
 
 ## Paving
 

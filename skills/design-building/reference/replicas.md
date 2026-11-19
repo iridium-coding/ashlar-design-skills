@@ -35,7 +35,7 @@ For every real-world target, resolve:
 
 ## Scale and the Y range
 
-The world spans Y -64 to 320 — about 384 blocks. Many real buildings do not
+The world spans Y -64 to 319 — about 384 blocks. Many real buildings do not
 fit at 1:1:
 
 - **Fits at 1:1** — most cathedrals, palaces, and low-rise landmarks.

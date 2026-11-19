@@ -16,13 +16,16 @@ tags.
 workstation — not at spawn time.** Do not try to force a profession via SNBT
 at spawn. Use the spawn-then-claim pattern:
 
-1. The workstation block is already placed (a `set` step) inside the building,
+1. The workstation block is already placed (a single block in a phase file)
+   inside the building,
    within the villager's pathfinding range, and ≥2 blocks from any other
    workstation.
 2. Summon `minecraft:villager` inside the building with the allowlisted `summon`. Pass
    a `VillagerData` SNBT tag to set the biome skin type:
-   `{VillagerData:{type:"minecraft:plains",profession:"minecraft:none",level:1},Tags:["ashlar","ashlar.<project>"]}`
-   (swap `plains` for `desert`, `savanna`, `snow`, `swamp`, or `taiga`).
+   `{VillagerData:{type:"minecraft:plains",profession:"minecraft:none",level:1},Tags:["ashlar","ashlar.<project>","ashlar.<project>.farmer1"]}`
+   (swap `plains` for `desert`, `savanna`, `snow`, `swamp`, or `taiga`). Give
+   every villager that verification will read back its own tag,
+   `ashlar.<project>.<name>`, so `data get entity` can select it alone.
 3. The villager pathfinds to the unclaimed workstation during the next daytime
    "seek work" tick and claims it — shown by green sparkle particles. It
    claims a reachable bed the same way.
@@ -83,8 +86,8 @@ summon minecraft:villager <x> <y> <z> {
 - Add `PersistenceRequired:1b` so the villager does not despawn.
 
 The SNBT shape of `Offers` (and item id format) is version-sensitive across
-1.20.x → 1.21.x. Verify the exact format against the running server version
-with `mc_status`, then do a round-trip: summon the villager, read it
+1.20.x → 1.21.x. Check the server version with `mc_status`, then do a
+round-trip: summon the villager, read it
 back with the read-only `data get entity @e[tag=ashlar.<project>,tag=ashlar.<project>.trader1,limit=1] Offers`, and confirm the trades loaded correctly.
 
 To patch trades on an already-spawned villager, use the allowlisted `data merge entity @e[tag=ashlar.<project>,tag=ashlar.<project>.trader1,limit=1]` with the

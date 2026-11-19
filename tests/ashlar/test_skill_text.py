@@ -12,6 +12,7 @@ SKILLS = ["design-building", "design-city", "design-grounds", "design-house",
           "design-monument", "design-village", "exec-ashlar", "survey-research"]
 IDS = [skill.replace("-", "_") for skill in SKILLS]
 CLIENTS_FILE = "skills/exec-ashlar/reference/clients.md"
+VOXEL_TOOLKIT = "skills/design-monument/tools/voxel/"
 
 CHAPMAN_TOOLS = [
     "block_fill_region", "block_set_state", "block_fill_batch", "block_clone_region",
@@ -36,7 +37,20 @@ FORBIDDEN = [
     re.compile(r"\bmcbuilder\b"),
     re.compile(r"\bsurvey\.toon\b"),
     re.compile(r"\borchestrator\b", re.IGNORECASE),
+    re.compile(r"\bloot_table_[a-z_]+"),
+    re.compile(r"\bcontent_registry_[a-z_]+"),
+    re.compile(r"\(capability [A-E]\b"),
 ]
+# Patterns that can wrap across a line break, matched on the whole text.
+WRAPPED_FORBIDDEN = [
+    re.compile(r"\benhancement\s+spec\b"),
+    re.compile(r"\bpre-build\s+(?:terraform|step)\b"),
+    re.compile(r"\bseparate\s+coordinator\b"),
+    # a world top of 320 (the top block is 319), as "-64 to 320", "Y=320" or "above Y 320"
+    re.compile(r"(?:[-\u2212]64\s+to\s+(?:Y\s*=?\s*)?|\bY\s*=?\s*)320\b"),
+]
+# Chapman's Fabric placer is named only in the voxel toolkit's own README.
+FABRIC = re.compile(r"\bFabric\b")
 CLIENT_SPECIFIC = re.compile(
     r"AskUserQuestion|request_user_input|\bview_image\b|\bupdate_plan\b|\bTodoWrite\b"
     r"|\bWebSearch\b|\bWebFetch\b|\$\{CLAUDE_SKILL_DIR\}|\bmcp__")
@@ -44,15 +58,19 @@ LABELLED = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?(?:Claude Code|Codex):")
 NEW_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+")
 
 
-def leftovers(text: str) -> list[tuple[int, str]]:
+def leftovers(text: str, allow_fabric: bool = False) -> list[tuple[int, str]]:
     """(line, match) for every Chapman-pipeline reference in `text`."""
+    patterns = FORBIDDEN if allow_fabric else FORBIDDEN + [FABRIC]
     hits = []
     for number, line in enumerate(text.splitlines(), 1):
-        for pattern in FORBIDDEN:
+        for pattern in patterns:
             match = pattern.search(line)
             if match:
                 hits.append((number, match.group(0)))
-    return hits
+    for pattern in WRAPPED_FORBIDDEN:
+        for match in pattern.finditer(text):
+            hits.append((text.count("\n", 0, match.start()) + 1, match.group(0)))
+    return sorted(hits)
 
 
 def unlabelled_client_names(text: str, skip_lines: int = 0) -> list[tuple[int, str]]:
@@ -90,9 +108,11 @@ def _markdown(skill: str) -> list[Path]:
 
 @pytest.mark.parametrize("skill", SKILLS, ids=IDS)
 def test_no_chapman_leftovers(skill: str) -> None:
-    problems = [f"{path.relative_to(REPO)}:{number}: {hit}"
+    problems = [f"{path.relative_to(REPO)}:{number}: {hit!r}"
                 for path in _markdown(skill)
-                for number, hit in leftovers(path.read_text(encoding="utf-8"))]
+                for number, hit in leftovers(
+                    path.read_text(encoding="utf-8"),
+                    allow_fabric=VOXEL_TOOLKIT in path.relative_to(REPO).as_posix())]
     assert not problems, "Chapman pipeline references left:\n" + "\n".join(problems)
 
 
@@ -135,3 +155,38 @@ def test_labelled_lines_allow_client_names() -> None:
             "Use WebFetch here.\n")
     assert unlabelled_client_names(text) == [(5, "WebFetch")]
     assert unlabelled_client_names("allowed-tools: mcp__ashlar__mc_status\n---\nbody", 2) == []
+
+
+def test_leftovers_detects_design_skill_wording() -> None:
+    assert leftovers("call `loot_table_list` here") == [(1, "loot_table_list")]
+    assert leftovers("`minecraft:chests/village/village_temple` and LootTable") == []
+    assert leftovers("use content_registry_is_compostable") == [
+        (1, "content_registry_is_compostable")]
+    assert leftovers("See the enhancement spec") == [(1, "enhancement spec")]
+    assert leftovers("the enhancement\nspec says") == [(1, "enhancement\nspec")]
+    assert leftovers("### Signs with text (capability A)") == [(1, "(capability A")]
+    assert leftovers("### Signs with text") == []
+    assert leftovers("note a `pre-build terraform` step") == [(1, "pre-build terraform")]
+    assert leftovers("note a `pre-build\nterraform` step") == [(1, "pre-build\nterraform")]
+    assert leftovers("a terrain-shape pre-build step") == [(1, "pre-build step")]
+    assert leftovers("plan a `site-prep` phase") == []
+    assert leftovers("No separate coordinator runs the next steps") == [
+        (1, "separate coordinator")]
+    assert leftovers("No separate\ncoordinator runs") == [(1, "separate\ncoordinator")]
+    assert leftovers("You sequence the next steps yourself, in this order") == []
+
+
+def test_leftovers_fabric_only_in_the_voxel_toolkit() -> None:
+    assert leftovers("(1.21.x / Fabric)") == [(1, "Fabric")]
+    assert leftovers("without its Fabric placer", allow_fabric=True) == []
+    assert leftovers("a woven fabric banner") == []
+
+
+def test_leftovers_world_top_is_319() -> None:
+    assert leftovers("(-64 to 320)") == [(1, "-64 to 320")]
+    assert leftovers("Y -64 to 320 (~384 blocks)") == [(1, "-64 to 320")]
+    assert leftovers("Stay within Y=-64 to Y=320.") == [(1, "-64 to Y=320")]
+    assert leftovers("an element above Y 320.") == [(1, "Y 320")]
+    assert leftovers("Y\u221264 to 320") == [(1, "\u221264 to 320")]
+    assert leftovers("The world spans Y -64 to 319") == []
+    assert leftovers("a 320-block axis, 3200 blocks") == []

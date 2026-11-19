@@ -61,10 +61,10 @@ signature interior space, treat it as a hero room even in hybrid mode.
 ## Java-exclusive: NBT detailing & loot
 
 These techniques let Java builds achieve the signage, named items, and
-believably-stocked rooms that Bedrock's API could not produce. Apply them in
+believably-stocked rooms that need block-entity NBT. Apply them in
 hero rooms; skip them in aesthetic-only shells.
 
-### Signs with text (capability A)
+### Signs with text
 
 Write plain sign text with `mc_build`'s `sign` object on the sign's `blocks`
 entry (`front`/`back`, up to 4 lines, `color`, `glowing`, `waxed`):
@@ -89,7 +89,7 @@ data merge block <x> <y> <z> {front_text:{messages:[
 `back_text` is the same shape. `is_waxed:1b` prevents players editing.
 Verify with the read-only `data get block <x> <y> <z>` after the merge.
 
-### Banners with patterns (capability A)
+### Banners with patterns
 
 Place a `*_banner` block, then:
 
@@ -103,7 +103,7 @@ data merge block <x> <y> <z> {patterns:[
 Up to 6–8 pattern layers read cleanly. Combine with standing banners flanking
 doorways or hanging from balconies for a palace or guild-hall feel.
 
-### Lecterns with books (capability A)
+### Lecterns with books
 
 ```
 data merge block <x> <y> <z> {Book:{id:"minecraft:written_book",count:1,
@@ -115,7 +115,7 @@ data merge block <x> <y> <z> {Book:{id:"minecraft:written_book",count:1,
 Use in libraries, scriptoria, and museum display cases. The lectern must be
 placed first; the NBT merge writes the book into it.
 
-### Decorated pots (capability A)
+### Decorated pots
 
 ```
 data merge block <x> <y> <z> {sherds:["minecraft:brick",
@@ -126,7 +126,7 @@ data merge block <x> <y> <z> {sherds:["minecraft:brick",
 Four faces — cycle sherd IDs to match the room's theme (explorer, warrior,
 scholar, etc.). Good for corridor niches and altar pieces.
 
-### Player-head skulls as signage / decor (capability A)
+### Player-head skulls as signage / decor
 
 Place `minecraft:player_head`, then:
 
@@ -138,7 +138,7 @@ Or supply a custom base64 texture for a fully unique head. Use as
 architectural ornament (gargoyles, corbels, trophy mounts) or nameplates on
 display cases.
 
-### Item frames and paintings (capability C — entity NBT)
+### Item frames and paintings (entity NBT)
 
 Item frames and glow item frames are entities, not block entities; set their
 content via the allowlisted `summon` with NBT, or `data merge entity
@@ -151,10 +151,12 @@ summon minecraft:glow_item_frame <x> <y> <z> {Facing:1,
 ```
 
 `Facing`: 0=down, 1=up, 2=north, 3=south, 4=west, 5=east. Invisible frames
-with displayed items give flush wall-art. See §C of the enhancement spec for
-painting `variant` and armor-stand pose NBT.
+with displayed items give flush wall-art. Painting `variant` and armor-stand
+pose NBT go in the same allowlisted
+`summon` / `data merge entity` forms (`../exec-ashlar/reference/commands.md`);
+see `../design-monument/reference/armor-stands.md` for poses.
 
-### Named and enchanted display items via components (capability B)
+### Named and enchanted display items via components
 
 `item replace block <x> <y> <z> container.N with minecraft:<item>[<components>] <count>`
 accepts components that name, enchant, or add lore to any item — ideal for
@@ -179,7 +181,7 @@ Useful components for interiors:
 - `minecraft:written_book_content` — a completed book placed directly into a
   chest or lectern slot.
 
-### Seeding library and treasure chests with loot tables (capability E)
+### Seeding library and treasure chests with loot tables
 
 Give the container a loot table with the allowlisted `data merge block`; the
 game rolls the contents the first time a player opens it:
@@ -197,5 +199,5 @@ Useful vanilla table IDs:
 
 Loot-seeded chests feel immediately lived-in and read as authentic exploration
 spaces — a library with books already on its shelves, a treasury with real
-treasure. Combine with named items (capability B) to add one or two hero
+treasure. Combine with the named items above to add one or two hero
 artefacts to an otherwise loot-seeded chest.

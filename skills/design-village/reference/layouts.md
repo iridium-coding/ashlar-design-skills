@@ -9,6 +9,8 @@ Lock the tier before anything else.
 | Hamlet | 2–4 | 1–4 | No (below threshold) | a single path |
 | Standard village | 5–15 | 5–20 | Yes when ≥10 villagers + ≥20 beds | a path network |
 
+Farms, plazas and the bell do not count as buildings.
+
 A **hamlet** is intimate: a couple of homes, maybe one or two professions, a
 well or a bell, an organic cluster. A **standard village** has a profession
 roster, a meeting plaza, and a real path network. "Iron-golem-ready" means
@@ -34,7 +36,7 @@ Pick one that fits the site, the scale, and the style:
   rule from `mechanics.md`).
 - **Farm-focused** — fields dominate; a few homes and a barn at the edge.
 - **Mountainside terraced** — buildings on cut shelves linked by stairs; needs
-  a `terrain-shape` pre-build step.
+  a `site-prep` phase (or `terrain-shape`, if installed).
 
 ## Building spacing
 
@@ -56,5 +58,6 @@ Pick one that fits the site, the scale, and the style:
 - **Lighting** — a lantern on a fence post every 6–10 blocks; no spawnable
   dark block within 1 block of a path.
 - **Bridges** — plank decks with fence rails over water or ravines.
-- Paths over slopes steeper than ~2 blocks need `terrain-shape` to grade them,
+- Paths over slopes steeper than ~2 blocks need a `site-prep` phase (or
+  `terrain-shape`, if installed) to grade them,
   or villagers cannot traverse.

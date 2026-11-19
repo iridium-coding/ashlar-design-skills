@@ -2,7 +2,9 @@
 
 The standard village building types, by function. Reuse a small set of these
 per village — build each as a template once, then stamp it (see the reuse model
-in `SKILL.md`). Footprints are interior W×D; add wall thickness. Every building
+in `SKILL.md`). Footprints are interior W×D; add wall thickness (a 7×7 house is
+about 9×9
+outside). Every building
 a villager lives in needs one bed (2 air above the pillow) and, if it has a
 profession, one workstation within 16h/4v.
 
@@ -59,7 +61,10 @@ A villager with no workstation stays unemployed (use spares for breeding).
   (taiga).
 - **Composter loop** — a farmer throws surplus crops into a composter; a
   hopper-fed composter→chest loop yields bone meal. Keep the composter
-  claimable as the farmer's job site. To size the loop, `content_registry_is_compostable {item_id}` gives the chance one item adds a layer to a composter that already holds compost (an empty composter always takes a layer). `content_registry_set_compostable` does not exist on 26.3.
+  claimable as the farmer's job site. Size the loop from the composter's fill
+  chance: each item adds a layer with
+  the chance its compost rating gives (see the Minecraft Wiki Composter page);
+  an empty composter always takes a layer.
 - **Animal pens** — fenced enclosures, 7×7 minimum, lit, with water and feed:
   cows, pigs, sheep, chickens. Place near the shepherd and butcher.
 
@@ -118,7 +123,6 @@ Vanilla village chest loot-table ids follow the pattern
 | Savanna house | `minecraft:chests/village/village_savanna_house` |
 | Snowy house | `minecraft:chests/village/village_snowy_house` |
 
-Use `loot_table_list` to enumerate all available ids on the running server.
-The optional `position` parameter makes the roll biome-aware (affects
-biome-sensitive tables). Rolls are random each call — re-roll if the result
-feels wrong for the building's flavor.
+Use only the table ids listed above (or ids from the Minecraft Wiki Loot table
+page); Ashlar has no tool to list them. The table rolls when a player first
+opens the chest, so the contents cannot be previewed or re-rolled.

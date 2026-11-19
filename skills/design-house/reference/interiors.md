@@ -72,7 +72,7 @@ reading as an empty shell.
 
 ## Java-exclusive: NBT detailing for a home interior
 
-### Labeled storage with signs (capability A)
+### Labeled storage with signs
 
 Place a `*_sign` beside or above each chest or barrel, then write a label.
 Write plain sign text with `mc_build`'s `sign` object on the sign's `blocks`
@@ -98,7 +98,7 @@ data merge block <x> <y> <z> {front_text:{messages:[
 follows the same shape for double-sided standing signs. Verify with the
 read-only `data get block <x> <y> <z>` after merging.
 
-### Lecterns as readable displays (capability A)
+### Lecterns as readable displays
 
 A lectern in a study or library can hold a written book pre-loaded via NBT,
 using the allowlisted `data merge block`:
@@ -109,7 +109,7 @@ data merge block <x> <y> <z> {Book:{id:"minecraft:written_book",count:1,
   author:"Owner",pages:["\"Welcome home.\""]}},Page:0}}
 ```
 
-### Decorated pots as ornaments (capability A)
+### Decorated pots as ornaments
 
 ```
 data merge block <x> <y> <z> {sherds:["minecraft:brick",
@@ -120,7 +120,7 @@ data merge block <x> <y> <z> {sherds:["minecraft:brick",
 Place in entrance alcoves, on fireplaces, or as garden ornaments. Rotate the
 sherd IDs to match the home's style.
 
-### Player-head decor (capability A)
+### Player-head decor
 
 `minecraft:player_head` blocks can be given a named profile for a
 recognizable skin, or a custom base64 texture for fully bespoke ornament
@@ -130,7 +130,7 @@ recognizable skin, or a custom base64 texture for fully bespoke ornament
 data merge block <x> <y> <z> {profile:"Notch"}
 ```
 
-### Named and enchanted gear in storage (capability B)
+### Named and enchanted gear in storage
 
 The allowlisted `item replace block` accepts item components to name, enchant,
 or add lore to any item placed into a chest, barrel, or display case:

@@ -1,7 +1,8 @@
 # Java Edition village mechanics
 
 The functional contract. A village that ignores these looks fine and does not
-work. All values are **Java Edition** (1.21.x / Fabric) — re-check after a
+work. All values are **Java Edition** (the version `mc_status` reports) —
+re-check after a
 game update. The Minecraft Wiki pages for Village mechanics, Iron Golem, Bell,
 Villager, Raid, and Cat are the source of truth.
 
@@ -57,7 +58,9 @@ golem spawning and raid-gather behavior — always include one.
 ## Iron golems
 
 Java Edition iron golem spawning is **gossip-and-sleep-based**, not a simple
-villager-count threshold.
+villager-count threshold. In this skill, "iron-golem-ready" is the planning rule
+of thumb in `layouts.md` (≥10 villagers and ≥20 beds, so the conditions below
+are met comfortably); the list below is the vanilla mechanism.
 
 A golem spawns naturally when **all** of the following hold:
 
@@ -167,7 +170,8 @@ merchants for deliberate player-facing shops.
   mechanical rules are the same as a normal village once repaired.
 - Villagers in Java pathfind up to 3 blocks vertically over a single step, but
   steep slopes (>2 blocks per step) still prevent traversal. Grades steeper
-  than ~2 blocks need `terrain-shape` to level them.
+  than ~2 blocks need a `site-prep` phase (or `terrain-shape`, if installed) to
+  level them.
 - **Villager sleeping and golem spawning require loaded chunks.** Keep the
   village inside a player's view distance or a force-loaded ticking area;
   operations on unloaded chunks will fail or not tick.

@@ -30,7 +30,8 @@ design of each significant green space to a specialist:
 - **Formal gardens, plazas, and designed parks** — geometric parterres,
   squares, civic plazas → the `design-grounds` skill; give it the
   envelope, datum, and axis.
-- **Naturalistic parks** — hand the shaping to `terrain-shape`.
+- **Naturalistic parks** — hand the shaping to `terrain-shape` if it is
+  installed, otherwise to a `site-prep` phase.
 
 Lay out where the green space goes and how big; let the specialist design it.
 
@@ -72,7 +73,8 @@ adds realism for a city the player will explore.
 
 A city rarely sits on ready ground. Where the site needs work — leveling a
 district, carving a river or canal, raising a hill for an acropolis, digging a
-moat, creating an island — emit a `pre-build terraform` step so the
-`terrain-shape` skill prepares the site (if it is installed) before any block is placed.
+moat, creating an island — plan `site-prep` phases (or hand it to the
+`terrain-shape` skill, if it is installed) so the site is prepared before any
+block is placed.
 If the city sits on a *named* natural feature (a famous hill or bay), the
-`terrain-landmark` skill shapes that.
+`terrain-landmark` skill, if it is installed, shapes that.

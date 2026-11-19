@@ -58,8 +58,11 @@ buildings while still sharing the city's discipline:
   signage, shopfront vs. plain ground floor.
 - **Corner variants** — a different module for the corner of a block.
 - **Terminator variants** — the end-of-row condition.
-- Carry 8–12 variant schedules per module; cycle through them along a row,
-  never repeating two adjacent.
+- Carry 8–12 variants per vernacular type, each its own module file (palette,
+  window pattern, a corner and a terminator variant), and vary copies further
+  with `rotation`/`mirror` and a small `details` phase; the stamper has no
+  per-copy parameters. Cycle through the variants along a row, never repeating
+  two adjacent.
 
 ## Regulated uniformity
 

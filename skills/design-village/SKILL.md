@@ -42,7 +42,8 @@ is really one of the following, say so and use the right skill instead:
 - A single player base of operations belongs to `design-house`.
 - A single standalone building belongs to `design-building`.
 - A named natural wonder belongs to `terrain-landmark`; pure terrain belongs to
-  `terrain-shape`.
+  `terrain-shape`. Those skills may not be installed; if not, say so and offer a
+  `site-prep` phase for light grading only.
 
 ## Connection
 
@@ -61,7 +62,9 @@ skill.
 - **From `survey-research`** — references when the user names a specific style.
 - **From the user** — the adaptive interview (`reference/interview.md`).
 - **From earlier builds** — `.minecraft-builder/registry.json`
-  (`../exec-ashlar/reference/registry.md`), for iteration.
+  (`../exec-ashlar/reference/registry.md`), for iteration. Before choosing a
+  site, check it against the other projects'
+  `bbox`es; do not place a plan over another build without telling the user.
 
 ## Process
 
@@ -72,7 +75,8 @@ skill.
    - **Mode A (default, recommended)** — the village is built *around* an
      existing player house; site the bell 30–50 blocks away so the two iron-
      golem volumes do not overlap.
-   - **Mode C** — a pure NPC village, separate from the player's residence.
+   - **Mode C** — a pure NPC village, separate from the player's residence. In
+     Mode C skip the player-house rules (bell distance, ≥16-block clearance).
    - **Mode B** (a village building *is* the player's home) — note the
      bounding box and run the `design-house` skill for that building; treat as
      advanced.
@@ -95,7 +99,11 @@ skill.
    phase files and the building templates as module files, per the
    `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`). Record the village, its
-   templates and its population in `.minecraft-builder/registry.json`.
+   templates and its population in `.minecraft-builder/registry.json` (add or
+   update only this project's entry; see `../exec-ashlar/reference/registry.md`).
+   If a shell is available, stamp module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
 
    **Emit a `quality_contract` block** per that same plan format.
    For villages the contract must include:
@@ -159,7 +167,9 @@ let it grow. Buildings reuse; trees do not.
   approves the plan, the `exec-ashlar` skill builds it.
 - **Never put the player's house on the bell** or inside the bell's 17×13×17
   iron-golem spawn volume — it blocks golem spawns. Keep ≥16 blocks clear.
-- **Every villager building** gets exactly **one bed** (pillow accessible,
+- **Every villager building** (only buildings a villager lives in; unoccupied
+  houses keep their bed and no workstation) gets exactly **one bed** (pillow
+  accessible,
   2 air blocks above it) and **one workstation**, within 16 blocks horizontal
   and 4 vertical of where the villager lives.
 - **Iron-golem-ready villages** need beds, workstations, and enough
@@ -171,20 +181,20 @@ let it grow. Buildings reuse; trees do not.
 - **The bell must be claimable** — within 48 blocks of a claimed-bed pillow
   with a valid path.
 - **Stay within Ashlar's limits** (`../exec-ashlar/reference/tools-and-limits.md`); keep each building one module.
-- **Prepare the site first** — note a `pre-build terraform` step in the plan if
+- **Prepare the site first** — plan a `site-prep` phase if
   the site has slopes over ~2 blocks, needs leveling, or needs water work;
   Hand-off says who does it.
 
 ## Hand-off
 
 State the approved village back in plain language — scale, style, layout,
-building and profession list — and confirm `plan.toon` is written. No separate
-coordinator runs the next steps in this setup, so you sequence them:
+building and profession list — and confirm `plan.toon` is written. You sequence
+the next steps yourself, in this order:
 
 1. **Site preparation**, if needed: use the `terrain-shape` skill if it is
    installed; otherwise add a `site-prep` phase (clearing, levelling, pads,
    filling holes, soft-edged terraces) and tell the user if the site needs
-   more than that.
+   more than that (more than light levelling, a pad and a few terraces).
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). The buildings are
    stamped from the templates first; the population phase (villagers, then
    animals, then any iron golem — see `reference/population.md`) runs last as

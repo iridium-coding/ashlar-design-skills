@@ -34,7 +34,9 @@ Use for a **city or city district** (≈16+ buildings). Do not use for:
 - A single building or landmark → `design-building`.
 - A settlement under ~16 buildings → `design-village`.
 - A player's own base → `design-house`.
-- Terrain or a natural wonder → `terrain-shape` / `terrain-landmark`.
+- Terrain or a natural wonder → `terrain-shape` / `terrain-landmark`. Those
+  skills may not be installed; if not, say so and offer `site-prep` phases for
+  light grading only.
 
 ## Connection
 
@@ -91,7 +93,9 @@ skill.
   cite sources.
 - **From the user** — the adaptive interview (`reference/interview.md`).
 - **From earlier builds** — `.minecraft-builder/registry.json`
-  (`../exec-ashlar/reference/registry.md`), for iteration.
+  (`../exec-ashlar/reference/registry.md`), for iteration. Before choosing a
+  site, check it against the other projects'
+  `bbox`es; do not place a plan over another build without telling the user.
 
 ## Scale and districting
 
@@ -108,11 +112,12 @@ Then:
 
 - **Decompose the city into districts of ≤256×256 blocks** — each district is
   its own set of phases, with its repeated buildings as modules
-  (`modules/<district>-<element>.json`).
+  (`modules/vern-<type>.json` for vernacular types,
+  `modules/<district>-<element>.json` for district-specific elements).
 - **Keep each call within Ashlar's limits** — a 200×200 district's street
   paving alone is ~40,000 blocks, so large districts go through the placer in
   several pages.
-- **Y-budget rule** — the world spans Y -64 to 320 (~384 blocks). A 1:1
+- **Y-budget rule** — the world spans Y -64 to 319 (~384 blocks). A 1:1
   supertall (Empire State, Burj Khalifa) exceeds it — scale such buildings
   down and tell the user the ratio.
 
@@ -144,13 +149,19 @@ slots), follow the `exec-ashlar` skill's limits reference
 10. **Write the plan and hand off** — write `requirements.md`, `plan.toon`, its
     phase files and module files per the `exec-ashlar` skill's
     plan format (`../exec-ashlar/reference/plan-format.md`), and
-    record the city and its districts in `.minecraft-builder/registry.json`.
+    record the city and its districts in `.minecraft-builder/registry.json` (add
+    or
+    update only this project's entry; see `../exec-ashlar/reference/registry.md`).
+    If a shell is available, stamp module phases with
+    `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+    otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
 
     **Emit a `quality_contract` block** per that same plan format.
     Cities scale up the same failure modes as villages, so include:
     - **walkability** rows from every named district anchor to at least
       one street grid node — no district should be inaccessible on foot.
-    - **connectivity** rows between every district pair via the street /
+    - **connectivity** rows between every district pair (skipped for a single
+      district; use gate-to-gate rows) via the street /
       rail / canal network you specified, so the verification can detect a
       broken edge.
     - **doors** rows for every external door of every reused vernacular
@@ -204,7 +215,9 @@ the urban fabric around it.
   `exec-ashlar` skill builds it (`build <project>`).
 - **Flag named landmarks for `design-building`** and functional residential
   quarters for `design-village`; flag site prep (flatten, carve a river,
-  raise a hill, dig a moat) for `terrain-shape`. Hand-off says who runs each.
+  raise a hill, dig a moat) as `site-prep` phases, or for `terrain-shape` if it
+  is installed. Hand-off says who runs each. Light grading (about ±1 block, a
+  pad, a few terraces) is a `site-prep` phase either way.
 - **Districts ≤256×256**, every call within Ashlar's limits, the whole build
   within Y −64 to 319.
 - **Match era and density** — no skyscrapers in a Roman city, no medieval
@@ -215,13 +228,17 @@ the urban fabric around it.
 ## Hand-off
 
 State the city back to the user — scale, districts, street plan, landmark
-list — and confirm `plan.toon` is written. No separate coordinator runs the
-next steps in this setup, so you sequence them, district by district:
+list — and confirm `plan.toon` is written. You sequence the
+next steps yourself, in this order, district by district:
 
 1. **Site preparation**: use the `terrain-shape` skill if it is installed;
    otherwise add `site-prep` phases (clearing, levelling, pads, filling holes,
-   soft-edged terraces) and tell the user what is beyond them.
+   soft-edged terraces) and tell the user what is beyond them (more than light
+   levelling, a pad and a few
+   terraces).
 2. **Landmarks**: run the `design-building` skill for each landmark record.
 3. **Functional quarters**: run the `design-village` skill for each one.
-4. **Build**: use the `exec-ashlar` skill (`build <project>`), one district at a
+4. **Parks and plazas**: run the `design-grounds` skill for each green-space
+   envelope (`reference/infrastructure.md`).
+5. **Build**: use the `exec-ashlar` skill (`build <project>`), one district at a
    time, verifying each before starting the next.

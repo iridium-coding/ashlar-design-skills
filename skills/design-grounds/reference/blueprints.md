@@ -64,7 +64,7 @@ verification after the build — against these failure modes:
 - **A hard edge against the wild** — the geometric garden ending in a straight
   line against naturalistic terrain with no transition apron.
 - **Scale or cap violations** — a single call over Ashlar's limits
-  (`../exec-ashlar/reference/tools-and-limits.md`), an element above Y 320.
+  (`../exec-ashlar/reference/tools-and-limits.md`), an element above Y 319.
 - **An accidental roofed building** — a gazebo or temple built here instead of
   handed to `design-building`.
 

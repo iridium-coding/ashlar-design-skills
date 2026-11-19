@@ -29,18 +29,21 @@ by the request or a delegating skill, and record answers in `requirements.md`.
 7. **Statuary** — any figures or sculptural fountains? (A `design-monument`
    handoff.)
 8. **Terrain prep** — does the site need leveling, a raised belvedere hill, or
-   a terraced slope? (A `terrain-shape` handoff.)
+   a terraced slope? (A `site-prep` phase, or a `terrain-shape` handoff if it is
+   installed.)
 9. **Project name** — the registry slug.
 
 ## Conditional follow-ups
 
 - A named garden or unfamiliar tradition → invoke `survey-research` for plans and
   dimensions.
-- A large garden (Tier 2+) → confirm the reduced scale (~1:4) and that the
+- A large garden (a real axis over about 200 m) → confirm the reduced scale
+  (~1:4) and that the
   proportions stay exact.
 - A hedge maze → confirm path width, hedge height, and the center reward.
 - A garden meeting wild terrain → ask for the transition apron treatment.
-- Animated water wanted → note the `system-redstone` handoff for the jets; you design
+- Animated water wanted → note the `system-redstone` handoff for the jets (if it
+  is installed); you design
   the static basin.
 - A Japanese stroll garden → there is no axis — gather the sequence of framed
   viewpoints instead.

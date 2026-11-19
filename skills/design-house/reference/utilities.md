@@ -8,8 +8,8 @@ game update.
 
 - **Quasi-connectivity (QC) exists.** Pistons, dispensers, and droppers can be
   powered by a signal directed at the block *above* them. This is intentional
-  Java behaviour; use it if helpful, but be explicit about it in plans so the
-  `system-redstone` knows.
+  Java behaviour; use it if helpful, but be explicit about it in plans so a
+  later `system-redstone` design (if installed) knows.
 - **Observers output a 1-redstone-tick (2-game-tick) pulse.** Java observer
   timing is stable and matches standard tutorials.
 - **0-tick pulses were patched out** (long before 1.21). Do not rely on them.
@@ -22,8 +22,9 @@ game update.
 - **Hopper transfer order is deterministic on Java** (first filled slot). Item
   sorters work reliably; the common "stacked" design uses **22** filler items
   in the filter chest (not 20 or 21).
-- If a redstone design is complex, defer the contraption to `system-redstone` and
-  provide the footprint and input/output points.
+- If a redstone design is complex, defer the contraption to `system-redstone` if
+  it is installed (otherwise
+  say it is out of reach) and provide the footprint and input/output points.
 
 ## Storage & item handling
 
@@ -92,7 +93,7 @@ should carry a brief lag warning for the user.
 
 ## Java-exclusive: labeled storage and seeded starter chests
 
-### Labeling barrels and chests with signs (capability A)
+### Labeling barrels and chests with signs
 
 Place a `*_sign` adjacent to each container, then write its label.
 Write plain sign text with `mc_build`'s `sign` object on the sign's `blocks`
@@ -117,7 +118,7 @@ data merge block <x> <y> <z> {front_text:{messages:[
 This is faster and more reliable than placing item-frame labels, and the text
 is readable from further away. `is_waxed:1b` prevents accidental edits.
 
-### Seeding starter chests with loot tables (capability E)
+### Seeding starter chests with loot tables
 
 Give the container a loot table with the allowlisted `data merge block`; the
 game rolls the contents the first time a player opens it:
@@ -136,7 +137,7 @@ Combine loot seeding with component-named hero items (see `interiors.md`
 § "Java-exclusive") to add one named tool or weapon among otherwise random
 loot — the named item stands out immediately.
 
-### Named and enchanted tools in the storage room (capability B)
+### Named and enchanted tools in the storage room
 
 For a storage room's dedicated tool wall or tool chest, use `item replace block`
 with item components to pre-place a named, enchanted kit:

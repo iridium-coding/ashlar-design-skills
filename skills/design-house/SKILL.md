@@ -35,6 +35,9 @@ Do **not** use it for the following — say so, and use the right skill instead:
 - Pure terrain or scenery — belongs to `terrain-shape`.
 - A named natural wonder — belongs to `terrain-landmark`.
 
+These three skills may not be installed; if not, say so and offer a `site-prep`
+phase for light grading only.
+
 ## Connection
 
 Build tools come from the Ashlar MCP server (`mc_status`, `mc_players`,
@@ -55,7 +58,8 @@ skill.
 - **From the user** — everything in the adaptive interview.
 - **From earlier builds** — `.minecraft-builder/registry.json`
   (`../exec-ashlar/reference/registry.md`), in case this base iterates on an
-  existing build.
+  existing build. Before choosing a site, check it against the other projects'
+  `bbox`es; do not place a plan over another build without telling the user.
 
 ## Process
 
@@ -87,7 +91,8 @@ skill.
    `.minecraft-builder/<project>/`, per `reference/blueprints.md`:
    - `floorplan.txt` — ASCII top-down, one char per block, per floor;
    - `floorplan.md` — Markdown-table grid, per floor;
-   - `adjacency.mmd` — Mermaid `graph TD` of room-to-room flow.
+      - `adjacency.mmd` — Mermaid `graph TD` of room-to-room flow (optional when
+     there is one room).
 
 5. **Iterate with the user.** Show the renderings. Take feedback. Revise and
    re-render. **Loop until the user explicitly approves.** This iteration is
@@ -99,7 +104,12 @@ skill.
    files, per the `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`): absolute coordinates, phases,
    and every repeated room or furniture set defined once in `modules/` and
-   stamped. Record the base and its rooms in `.minecraft-builder/registry.json`.
+   stamped. If a shell is available, stamp module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
+   Record the base and its rooms in `.minecraft-builder/registry.json` (add or
+   update only this project's entry; see
+   `../exec-ashlar/reference/registry.md`).
 
    **Emit a `quality_contract` block** per that same plan format.
    For player houses the contract should always include:
@@ -146,13 +156,14 @@ slots), follow the `exec-ashlar` skill's limits reference
 - **Place no blocks while designing.** After the user approves the plan, the
   `exec-ashlar` skill builds it.
 - **Prepare the site first.** If the site must be levelled, a mountainside
-  terraced, or a cave hollowed, note a `pre-build terraform` step in
+  terraced, or a cave hollowed, note a `site-prep` phase in
   `requirements.md`; Hand-off says who does it.
 - **Keep rooms modular.** Keep useful room volume at or under ~60×60×60 and
   split larger rooms along a wall, so each room stays one module.
 - **Resolve everything to absolute coordinates** in the phase files, within
   Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`).
-- **Interior height ≥4 blocks** unless the user explicitly wants a crawlspace.
+- **Interior height ≥4 blocks** of clear cells between floor and ceiling unless
+  the user explicitly wants a crawlspace.
 - **Light coverage everywhere** — no spawnable dark cell in a finished room.
 - **At least two exits**, or a panic room with a bed and a food chest.
 - **A bed in every sleeping space** — and **never** a bed in a room flagged
@@ -163,18 +174,18 @@ slots), follow the `exec-ashlar` skill's limits reference
   tell the user to use it. See `reference/utilities.md` for Java-verified
   designs. For anything more complex, use the `system-redstone` skill if it is
   installed; otherwise say what is out of reach.
-- **Stay within Y=-64 to Y=320.**
+- **Stay within Y=-64 to Y=319.**
 
 ## Hand-off
 
 State the approved design back in plain language — tier, style, room list,
-layout — and confirm `plan.toon` and its phase and module files are written. No
-separate coordinator runs the next steps in this setup, so you sequence them:
+layout — and confirm `plan.toon` and its phase and module files are written. You
+sequence the next steps yourself, in this order:
 
 1. **Site preparation**, if needed: use the `terrain-shape` skill if it is
    installed; otherwise add a `site-prep` phase (clearing, levelling, pads,
    filling holes, soft-edged terraces) and tell the user if the site needs
-   more than that.
+   more than that (more than light levelling, a pad and a few terraces).
 2. **Build**: use the `exec-ashlar` skill (`build <project>`).
 
 The blueprints and the registry entry stay for later iteration.

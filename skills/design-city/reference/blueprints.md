@@ -64,7 +64,7 @@ against these city-specific failure modes:
   without fire escapes, Venice without canals.
 - **Functional villagers in the wrong zone** — golem/pathfinding failures in a
   dense tower district; keep villagers to medieval/low-rise quarters.
-- **Y-budget or fill-cap violation** — a 1:1 supertall over the Y range, a
+- **Y-budget or call-limit violation** — a 1:1 supertall over the Y range, a
   a single call over Ashlar's limits (`../exec-ashlar/reference/tools-and-limits.md`).
 
 A missing signature or a monotonous fill is a correction to make, not a

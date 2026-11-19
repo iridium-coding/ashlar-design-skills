@@ -33,7 +33,9 @@ Use for a **specific building or building complex**. Do not use for:
 
 - A village or settlement: `design-village`.
 - A player's own base of operations: `design-house`.
-- Terrain or a natural wonder: `terrain-shape` / `terrain-landmark`.
+- Terrain or a natural wonder: `terrain-shape` / `terrain-landmark`. Those
+  skills may not be installed; if not, say so and offer a `site-prep` phase for
+  light grading only.
 - A statue, sculpture, or other figurative art: `design-monument`.
 
 ## Connection
@@ -86,21 +88,26 @@ which to follow, and cite it. See `reference/fictional.md`.
 ## Process
 
 1. **Classify** the target into one of the four source categories.
-2. **Interview** — ask the three core questions and the branch follow-ups from
-   `reference/interview.md`. Record answers in `requirements.md`.
+2. **Interview** — ask the source question, then the three core
+   questions and the branch follow-ups in `reference/interview.md`. Record
+   answers in `requirements.md`.
 3. **Research** — use the `survey-research` skill's findings for real-world and
    canonical-fictional targets; pull style data from `reference/styles.md` or
    `reference/fictional.md`.
 4. **Survey the site** — use the `exec-ashlar` skill (`survey <project>`); if
-   the site needs shaping (a hilltop, an island, a moat), note a `pre-build
-   terraform` step (see Hand-off).
+   the site needs shaping (a hilltop, an island, a moat), plan a `site-prep`
+   phase (see Hand-off). Before choosing a site, check it against the other
+   projects' `bbox`es in `.minecraft-builder/registry.json`; do not place a plan
+   over another build without telling the user.
 5. **Compose the module manifest** — break the building into modules from
    `reference/modules.md`, applying technique from `reference/techniques.md`
    and furnishing depth from `reference/interiors.md`.
 6. **Resolve to a plan** — write `plan.toon`, its phase files and its module
    files per the `exec-ashlar` skill's plan format
    (`../exec-ashlar/reference/plan-format.md`), with every repeated element
-   defined once in `modules/`.
+   defined once in `modules/`. If a shell is available, stamp module phases with
+   `../exec-ashlar/scripts/stamp.py` and check with `ashlar_place.py plan`;
+   otherwise leave them for `exec-ashlar build`, which stamps and sizes them.
 
    **Emit a `quality_contract` block** per that same plan format.
    For named buildings the contract should include:
@@ -117,7 +124,9 @@ which to follow, and cite it. See `reference/fictional.md`.
 7. **Render and iterate** — produce blueprints per `reference/blueprints.md`,
    show the user, revise, and **loop until they approve**.
 8. **Hand off** — write the plan, register the building in
-   `.minecraft-builder/registry.json`, and follow the Hand-off section below.
+   `.minecraft-builder/registry.json` (add or update only this project's entry;
+   see `../exec-ashlar/reference/registry.md`), and follow the Hand-off section
+   below.
 
 ## Reference library
 
@@ -149,29 +158,33 @@ slots), follow the `exec-ashlar` skill's limits reference
   `exec-ashlar` skill builds it (`build <project>`).
 - **Stay within Ashlar's limits** (`../exec-ashlar/reference/tools-and-limits.md`)
   and define every repeated element once as a module.
-- **Stay within the world's Y range** (-64 to 320). If a 1:1 build would
+- **Stay within the world's Y range** (-64 to 319). If a 1:1 build would
   exceed it, scale it down and tell the user the ratio.
 - **Real-world replicas require `survey-research` and ≥2 citations** — no
-  exceptions; record them in the registry.
-- **Ask the three core questions** (source, scale, interior depth) before
+  exceptions; record them in the registry. A real architectural *style*
+  (Romanesque, Gothic) in a new building is generative-style, not a replica: use
+  `reference/styles.md`; `survey-research` is for a named real building.
+- **Ask the source, scale and interior-depth questions** before
   generating any blueprint, and give a fill-volume estimate.
 - **Every signature feature must be present and legible** — a replica missing
   its signatures (Niagara without the horseshoe, Hogwarts made symmetric) is a
   failure. Honour each building's symmetry rule.
-- **Defer site prep to `terrain-shape`** — note a `pre-build terraform` step if
-  the site needs leveling, a hilltop, an island, or a moat.
+- **Plan site prep as its own phase** — a `site-prep` phase (or the
+  `terrain-shape` skill, if it is installed) if the site needs leveling, a
+  hilltop, an island, or a moat. Light grading (about ±1 block, a pad, a few
+  terraces) is a `site-prep` phase either way.
 
 ## Hand-off
 
 State the target, the adaptation chosen, the scale, the interior depth, the
 signature features and the module manifest, and confirm `plan.toon`, its phase
-files and its module files are written. No separate coordinator runs the next
-steps in this setup, so you sequence them:
+files and its module files are written. You sequence the next steps yourself, in
+this order:
 
 1. **Site preparation**, if the site needs it: use the `terrain-shape` skill if
    it is installed; otherwise add a `site-prep` phase (clearing, levelling,
    pads, filling holes, soft-edged terraces) and tell the user if the site
-   needs more than that.
+   needs more than that (more than light levelling, a pad and a few terraces).
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). It runs the
    approval gate, the phased build and the verification, including the
    recorded signatures and citations.

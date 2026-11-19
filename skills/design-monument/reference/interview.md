@@ -16,12 +16,15 @@ what is already clear, and record answers in `requirements.md`.
    pop-culture creature, a reproduction of an image, or an original? A named
    subject triggers `survey-research`.
 3. **Scale tier** — small (a few blocks — a yard ornament), medium (10–30 m),
-   large (50–100 m), or extra-large (100 m+). Extra-large triggers the
-   Java-envelope conversation (Y -64 to 320; scale down, or split the base off).
+   large (50–100 m), or extra-large (100 m+); a piece between tiers takes the
+   larger tier's questions. Extra-large triggers the
+   Java-envelope conversation (Y -64 to 319; scale down, or split the base off).
 4. **Pose / composition** — for a figure or creature: standing, seated,
    coiled, winged, in motion. For a mural: wall-mounted or floor.
 5. **Site & anchor** — anchor coordinates from the site survey; standalone, on a
-   building, on a hill, against a cliff, on a base wall.
+   building, on a hill, against a cliff, on a base wall. Inside a given box,
+   choose the anchor at the middle of the flat
+   zone and record it.
 6. **Solid or shell** — solid (small pieces) or hollow shell (large pieces);
    never habitable.
 7. **Palette & finish** — the material look: marble, weathered bronze/copper,
@@ -35,16 +38,17 @@ what is already clear, and record answers in `requirements.md`.
 - A named monument or creature → invoke `survey-research` for dimensions and
   reference images.
 - Extra-large (a 200 m+ statue) → offer a reduced scale, or splitting the
-  pedestal/plinth off to `design-building` / `terrain-shape` so the figure
+  pedestal/plinth off to `design-building` / a `site-prep` phase so the figure
   itself stays 1:1.
 - Carved into a cliff (a Rushmore-style request) → confirm there is a cliff,
-  or hand `terrain-landmark` / `terrain-shape` the job of making one first.
+  or hand `terrain-landmark` / `terrain-shape` (if installed) the job of making
+  one first.
 - A figure on a pedestal → confirm whether the pedestal is habitable (a
   `design-building` handoff) or a plain plinth.
 - Pixel art / a logo → ask for the source image and the wanted block size;
   decide flat or low-relief.
 - An animated piece (a fountain, a moving mobile) → hand the mechanism to the
-  `system-redstone`.
+  `system-redstone` (if installed).
 
 ## Iterate and suggest
 

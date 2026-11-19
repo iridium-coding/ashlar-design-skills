@@ -12,7 +12,8 @@ garden. This file is the **method**, the **entry schema**, and worked examples.
    source.
 2. **Fill the entry schema** (below).
 3. **Resolve scale** — a small zen garden builds at 1:1; a Versailles-class
-   garden does not. Default Tier 2+ gardens to ~1:4, and surface the
+   garden does not. Default a large garden (a real axis over about 200 m) to
+   ~1:4, and surface the
    trade-off to the user.
 4. **Compose, then lay elements** — `composition.md`, `elements.md`,
    `water.md`.
@@ -52,14 +53,17 @@ Representative entries — confirm dimensions with `survey-research`.
 - **An English landscape park** (a Stourhead-type circuit) — a
   designed-irregular lake with classical temples placed around a walking
   circuit, naturalistic tree clumps composed for the view. Needs
-  `terrain-shape` for the lake basin and a belvedere hill; `design-building`
+  `terrain-shape` (if it is installed, otherwise `site-prep` phases) for the
+  lake basin and a belvedere hill; `design-building`
   for the temples.
 - **A civic plaza** (a Place-des-Vosges type) — a paved square framed by
   uniform façades, a central statue or fountain, formal rows of trees.
 
 ## Scale note
 
-Real great gardens are vast — a 3 km axis cannot be built at 1:1. Run Tier 2+
-gardens at 1:4 (or 1:8 for the very largest), keep the *proportions* exact,
+Real great gardens are vast — a 3 km axis cannot be built at 1:1. Run a large
+garden (a real axis
+over about 200 m) at 1:4 (or 1:8 for the very largest), keep the *proportions*
+exact,
 and tell the user the ratio. A small zen or courtyard garden is the rare case
 that fits 1:1.

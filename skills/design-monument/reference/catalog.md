@@ -13,7 +13,7 @@ worked examples across the categories.
    Liberty is quoted at several "heights" depending on what is included) —
    record the figure *and* its source.
 2. **Fill the entry schema** (below).
-3. **Resolve scale** against the Java envelope (SKILL.md — Y -64 to 320).
+3. **Resolve scale** against the Java envelope (SKILL.md — Y -64 to 319).
 4. **Pick the technique** — pixel-art, organic-curve, voxelization — and the
    palette.
 5. **Name the sibling seams** — cliff, pedestal, plinth.
@@ -44,11 +44,13 @@ Representative entries — confirm dimensions with `survey-research`.
   pedestal. The arms-outstretched anatomy is the signature. Palette: smooth
   quartz and calcite.
 - **Great Sphinx** — ~73 m long × ~20 m high, a recumbent lion with a human
-  head. Sandstone palette. The figure is yours; the plateau is `terrain-shape`.
+  head. Sandstone palette. The figure is yours; the plateau is `terrain-shape`
+  (if installed) or a `site-prep` phase.
 - **Easter Island moai** — stylized stone heads/torsos, ~4–10 m. Smooth stone,
   andesite, polished diorite. Good for showing stone-tone gradients at small
   scale; build several, varied.
-- **Mt. Rushmore** — four ~18 m faces. The **cliff is `terrain-landmark`**;
+- **Mt. Rushmore** — four ~18 m faces. The **cliff is `terrain-landmark`** (if
+  installed);
   the **faces are yours**, carved into it. Granite-blend palette.
 - **Memorials** — the Vietnam Veterans Memorial wall (a low angled
   black-stone wall), the Berlin Holocaust Memorial (a field of stelae) — these

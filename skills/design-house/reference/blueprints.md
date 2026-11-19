@@ -25,6 +25,8 @@ v  stairs down     |  - interior partition
 ```
 
 One character = one block. One grid per floor; label each with its Y level.
+The legend is open: add a character for any block you need (crafting table `T`,
+lantern `o`, fence `+`) and state it in the legend.
 
 ## ASCII top-down — example
 

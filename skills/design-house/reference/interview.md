@@ -35,8 +35,9 @@ survey, or an earlier answer already settled. Record everything in
 14. **Anchor landmark** — a mountain, lake, or tree to build into or beside?
 15. **Project name** — a slug for the registry and module files.
 
-**Starter tier** fires only questions 1, 2, 3, 5, 15 — infer the rest from
-sensible defaults and say so.
+**Starter tier** fires only questions 1, 2, 3, 5, 15, plus any conditional
+follow-up whose trigger the user's request already supplies — infer the rest
+from sensible defaults and say so.
 
 ## Conditional follow-ups
 

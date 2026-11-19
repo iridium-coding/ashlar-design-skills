@@ -12,8 +12,9 @@ Before the first write, show the user:
   than 20, the oldest (stored + needed - 20) snapshots are evicted, oldest
   first. Name each one (id, label, age), say they belong to other builds'
   rollback points, and offer to split the build, wait, or accept. Also, if the
-  build needs more than 15 slots, say that its own oldest phases' snapshots
-  will be evicted before the build ends, so those phases cannot be rolled back;
+  build needs more than 20 slots, its own oldest phases' snapshots are evicted
+  before it ends, so those phases cannot be rolled back; say so. Count one slot
+  for each `commands` phase that runs `place feature`;
 - any other registry project whose `bbox` overlaps this build's box (a build
   over another build overwrites it);
 - every console command, exactly as it will run, with the `minecraft:` prefix;
@@ -46,9 +47,11 @@ and the registry status to `building`.
    - `placer`:
      `python3 <skill>/scripts/ashlar_place.py place <file> --snapshot --label "<project> phase <n>" --log .minecraft-builder/<project>/placer.log`,
      adding `--world <name>` when the plan names a world. Exit 4: a player is
-     in the area. Exit 3: the file needs more snapshots than allowed; split it
-     into smaller phase files. Exit 5: the server failed part way; the report
-     lists the pages already written and the snapshot ids.
+     in the area, or the player list could not be read. Exit 2: the phase file
+     is invalid. Exit 3: the file needs more snapshots than allowed, or a
+     shell fill (`outline`, `hollow`, `walls`) is too large to split; split it
+     into smaller phase files or fills. Exit 5: the server failed part way; the
+     report lists the pages already written and the snapshot ids.
    - `commands`: one `mc_command` call per row, in order, exactly as written,
      with the `minecraft:` prefix added. A phase with console commands that name
      a position or an entity starts with its `forceload add` row and ends with
@@ -81,15 +84,20 @@ and the registry status to `building`.
 
 ## Rollback
 
-1. `mc_restore` each recorded snapshot, newest phase first.
+0. `mc_players`. If anyone is inside any box to be restored, grown by 2
+   blocks, stop and tell the user.
+1. Show the user the snapshots to be restored (ids, labels, boxes) and any
+   recorded snapshots that were evicted and cannot be restored. Wait for an
+   explicit yes. Then `mc_restore` each recorded snapshot, newest phase first.
 2. Remove the build's entities: `forceload add` over the columns the plan's
    entity phases used, `kill @e[tag=ashlar.<project>]`, confirm with
    `execute if entity @e[tag=ashlar.<project>]` (`Test failed`), then
    `forceload remove` the same columns. If any of these calls fails, still run
    the `forceload remove` before reporting.
 3. Tell the user that sign text and container contents inside restored boxes
-   are gone, including ones that were there before the build, and which phases'
-   snapshots were evicted and could not be restored.
+   are gone, including ones that were there before the build, which phases'
+   snapshots were evicted and could not be restored, and that entities which
+   wandered outside the force-loaded columns may survive the `kill`.
 4. Set the registry status to `rolled-back`.
 
 ## build-log.md

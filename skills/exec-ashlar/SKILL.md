@@ -37,7 +37,9 @@ Run as `<mode> <project>`. Project names are kebab-case
 
 `scripts/ashlar_place.py` (the placer) and `scripts/stamp.py` (module
 stamping) live in this skill's folder, written `<skill>` below. Run them with
-`python3` from the workspace root, where `.minecraft-builder/` lives.
+`python3` from the workspace root, where `.minecraft-builder/` lives. They
+need Python 3.11 or newer; on an older `python3`, run them as
+`uv run --no-project --python 3.11 python <script> ...`.
 
 - Claude Code: `<skill>` is `${CLAUDE_SKILL_DIR}`.
 - Codex: `<skill>` is the folder holding this `SKILL.md`.
@@ -50,21 +52,37 @@ stamping) live in this skill's folder, written `<skill>` below. Run them with
    MCP settings, not in a skill.
 2. Read `.minecraft-builder/registry.json` if it exists
    (`reference/registry.md`).
+3. Offer the permission step, once per workspace:
+   - Claude Code: the first time this skill runs in a workspace, offer once to
+     add `mcp__ashlar__mc_command` to the `ask` list in the workspace's
+     `.claude/settings.json` permissions, so every console command needs the
+     user's OK; change the settings only on the user's yes.
+   - Codex: the first time, tell the user that `mc_command` runs with operator
+     rights and that Codex's own approval settings decide whether each call
+     needs their OK.
+   - Otherwise: tell the user the same.
 
 ## survey
 
 Follow `reference/survey.md`, write `survey.md`, and return to the design skill
-that asked for it.
+that asked for it. If `<project>` is already in the registry and the user is
+not iterating that same build, stop and ask for another name: a reused name
+overwrites the old entry and shares its entity tag.
 
 ## build
 
 1. **Validate** `.minecraft-builder/<project>/plan.toon` and every phase file
-   against `reference/plan-format.md`. If `placements` rows have no phase file
+   against `reference/plan-format.md`. If `<project>` is already in the
+   registry and the user is not iterating that same build, stop and ask for
+   another name (a reused name overwrites the old entry and shares its entity
+   tag). If `placements` rows have no phase file
    yet, produce it with `<skill>/scripts/stamp.py` (`reference/modules.md`).
    Report problems and stop; fix nothing silently.
 2. **Size the run.** For each phase file, run
    `python3 <skill>/scripts/ashlar_place.py plan <phase file>` and note its
-   box, cells, pages and snapshot tiles. Add up the snapshot slots. Then call
+   box, cells, pages and snapshot tiles. Add up the snapshot slots, counting
+   one more for each `commands` phase that runs `place feature` (its
+   snapshotted box). Then call
    `mc_snapshot` with `action: "list"` so the gate can say which existing
    snapshots would be evicted.
 3. **Approval gate** (`reference/execution.md`): show the summary and wait for
@@ -83,8 +101,11 @@ Run step 5 of `build` on the recorded project and report each check.
 
 ## rollback
 
-Follow the rollback steps in `reference/execution.md`: restore the snapshots
-newest first, remove the project's entities with
+Follow the rollback steps in `reference/execution.md`. First call
+`mc_players`; if anyone is inside any restored box grown by 2 blocks, stop and
+tell the user. Show the user the snapshots to be restored (ids, labels, boxes)
+and any recorded snapshots that were evicted, and wait for an explicit yes.
+Then restore the snapshots newest first, remove the project's entities with
 `kill @e[tag=ashlar.<project>]` inside a paired force-load, tell the user what
 a restore cannot bring back, and set the registry status to `rolled-back`.
 

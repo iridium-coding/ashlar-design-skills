@@ -12,7 +12,10 @@ Run when a design skill asks for `survey <project>`, before it designs.
 2. **Check for overlap.** Read `.minecraft-builder/registry.json`
    (`registry.md`). For every other project that is not `rolled-back`, compare
    its `bbox` with the site's x/z box. If the boxes overlap, say so and name the
-   project; choose another site or ask the user before you design on it.
+   project; choose another site or ask the user before you design on it. If
+   `<project>` itself is already in the registry and the user is not iterating
+   that same build, stop and ask for another name: a reused name overwrites the
+   old entry and shares its entity tag.
 3. **Survey the ground** with `mc_survey` over the site plus a margin of at
    least 16 blocks on every side (around the planned footprint, or around the
    whole site box when the footprint is not chosen yet). Note min/max/median
@@ -23,9 +26,12 @@ Run when a design skill asks for `survey <project>`, before it designs.
    facade views (`north`, `south`, `east`, `west`, y limited to the structure)
    of anything already standing on the site.
 5. **Check existing structures and block entities** with `mc_inspect`
-   (`stats`) over the planned footprint. List any signs, chests, barrels,
-   banners, lecterns, shulker boxes or other block entities: a restore would
-   empty them, so the approval gate must mention them.
+   (`stats`) over the planned footprint to see what is there. Locate signs,
+   chests, barrels, banners, lecterns, shulker boxes and other block entities
+   with `mc_inspect` `columns` (or a `slice`), which give coordinates; `stats`
+   does not. Tile the survey area into reads of at most 200,000 cells each. A
+   restore would empty these block entities, so the approval gate must mention
+   them.
 6. **Biome**, only when the palette depends on it. Infer the biome from the
    surface materials. Run `execute if biome <x> <y> <z> <biome>`
    (`commands.md`) only when a player is near the site: console commands fail

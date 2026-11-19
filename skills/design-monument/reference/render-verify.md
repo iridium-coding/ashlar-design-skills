@@ -82,16 +82,18 @@ summary = write_fills_json(m, "/abs/scratch/r1s_fills.json", origin=(206, 64, 70
 list of `{"from":[x,y,z], "to":[x,y,z], "block":"…"}` in **world** coordinates.
 
 **Place it with the placer, not by hand.** A real voxelized form is 1,000–7,200
-fills — far too many to transcribe into a tool call reliably. Add the file as a
-`via: placer` phase in `plan.toon` and let the `exec-ashlar` skill send it:
+fills — far too many to transcribe into a tool call reliably. Write the fills to
+`.minecraft-builder/<project>/phases/NN-<name>.json`, add the file as a
+`via: placer` phase in `plan.toon`, and check it offline at design time:
 
 ```bash
-python3 <exec-ashlar>/scripts/ashlar_place.py plan /abs/scratch/r1s_fills.json
-python3 <exec-ashlar>/scripts/ashlar_place.py place /abs/scratch/r1s_fills.json --snapshot --label "<project> figure"
+python3 <exec-ashlar>/scripts/ashlar_place.py plan .minecraft-builder/<project>/phases/NN-<name>.json
 ```
 
 `<exec-ashlar>` is the `exec-ashlar` skill's folder (`../exec-ashlar` from this
-skill's folder). The placer checks for players, snapshots the area, and pages
+skill's folder). Do not run `place` at design time: `exec-ashlar build` runs it
+after the user approves the plan at the gate. The placer then checks for
+players, snapshots the area, and pages
 the fills into `mc_build` calls within Ashlar's limits. If it needs more
 snapshots than allowed, split the model along an anatomy seam into separate
 fills files and phases. The script and the model `.npy` are the **reusable

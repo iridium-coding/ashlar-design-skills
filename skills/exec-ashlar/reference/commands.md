@@ -36,6 +36,9 @@ Read-only checks:
 - Never `fill`, `setblock`, `clone`, `give`, `tp`, `gamerule`, `function`,
   `schedule` or any other command, and never use a console command to get
   around one of Ashlar's limits.
+- Never summon command-block minecarts or any entity or block that runs
+  commands, and never set `Command` (or `auto`) NBT: those run with operator
+  rights.
 - Run every console command with the `minecraft:` namespace
   (`minecraft:summon ...`, `minecraft:kill ...`, `minecraft:forceload ...`), so
   a server plugin that registers the same command name cannot take it over (on
@@ -79,7 +82,9 @@ Read-only checks:
   block-entity NBT, `place feature`, force-loads) would otherwise land in the
   main world, and ask whether to run each one as
   `execute in <dimension> run <command>` (for example `minecraft:the_nether`).
-  Without a yes, skip those steps and tell the user what is missing.
+  Without a yes, skip those steps and tell the user what is missing. For an
+  `execute in` plan, run `forceload query` and the force-load pair in that
+  dimension too (`execute in <dimension> run forceload ...`).
 - A `Test failed`, "No entity was found" or "That position is not loaded" from
   a chunk that is not force-loaded and has no player nearby proves nothing: the
   chunk may just be unloaded. Repeat the check inside a force-load.

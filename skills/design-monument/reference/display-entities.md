@@ -107,7 +107,7 @@ A transformation can be animated smoothly instead of snapping. Set the new
 - `teleport_duration:N` — ticks to interpolate position changes from teleports.
 
 This is the non-redstone way to make displays drift, spin, pulse, or grow.
-Ashlar cannot run or schedule datapack functions, so looping animations are out of reach. Keep displays static, or, only if the user asks, re-apply allowlisted `data merge entity` updates by hand while the session is open.
+Ashlar cannot run or schedule datapack functions, so looping animations are out of reach. Keep displays static, or, only if the user asks, route each `data merge entity` update through a small plan amendment approved at the exec-ashlar gate.
 
 ## text_display — 3D floating text and logos
 

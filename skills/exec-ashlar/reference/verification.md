@@ -63,7 +63,8 @@ blocks with `mc_inspect` where it matters. `mc_render` does not show entities.
 - Block-entity details: `data get block <x> <y> <z>` (signs, banners, lecterns,
   containers). It also needs the chunk loaded ("That position is not loaded"
   otherwise), so run it inside the same force-load unless a player is near.
-- Villagers: after a short wait, read each one's memories with
+- Villagers: keep the chunks force-loaded through the short wait (with no
+  player near, nothing ticks otherwise), then read each one's memories with
   `data get entity @e[tag=ashlar.<project>,tag=ashlar.<project>.<name>,limit=1] Brain.memories` and
   confirm `minecraft:home` (its bed) and `minecraft:job_site` are set.
 

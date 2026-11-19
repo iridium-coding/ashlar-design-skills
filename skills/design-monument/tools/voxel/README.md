@@ -41,9 +41,12 @@ from voxel import Palette, VoxelModel, render_views, write_fills_json
 ## Placing
 
 `<exec-ashlar>` is the `exec-ashlar` skill's folder, a sibling of
-`design-monument`:
+`design-monument`. Write the fills to `.minecraft-builder/<project>/phases/NN-<name>.json` and check
+them offline at design time:
 
 ```bash
-python3 <exec-ashlar>/scripts/ashlar_place.py plan fills.json
-python3 <exec-ashlar>/scripts/ashlar_place.py place fills.json --snapshot --label "<project> figure"
+python3 <exec-ashlar>/scripts/ashlar_place.py plan .minecraft-builder/<project>/phases/NN-<name>.json
 ```
+
+`exec-ashlar build` runs `place` after the user approves the plan at the gate;
+do not run it yourself at design time.

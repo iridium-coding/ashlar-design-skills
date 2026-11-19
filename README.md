@@ -18,7 +18,11 @@
 > done
 > ```
 >
-> Start Claude Code or Codex from the workspace root. The design and the rules
+> Start Claude Code or Codex from the workspace root. Personal copies under
+> `~/.claude/skills` with the same names override the linked project skills, so
+> remove them. The scripts need Python 3.11 or newer (or
+> `uv run --no-project --python 3.11 python <script> ...`), and the voxel
+> toolkit runs through `uv`. The design and the rules
 > for these skills are in `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
 
 # Minecraft Java — Claude Plugin

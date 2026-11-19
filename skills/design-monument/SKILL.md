@@ -38,8 +38,10 @@ logo, giant 3D text, or a large creature. Do not use for:
 - Natural terrain or a natural wonder → `terrain-landmark` / `terrain-shape`.
 - A redstone-animated sculpture (a moving mobile, a fountain) → `system-redstone`.
 
-Those three skills may not be installed; if not, say so and offer a `site-prep`
-phase for light grading only.
+`terrain-shape`, `terrain-landmark` and `system-redstone` may not be installed.
+If one is not, say so. In place of the terrain skills, offer a `site-prep` phase
+for light grading only; say that a complex redstone build is out of reach
+without `system-redstone`.
 
 ## Connection
 

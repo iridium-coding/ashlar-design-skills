@@ -7,6 +7,9 @@ Environment knobs:
   FAKE_FAIL_BUILD  1-based number of the mc_build call that returns isError
   FAKE_WARN        when set, every mc_build reply has a WARNINGS section
   FAKE_FAIL_SNAPSHOT  when set, mc_snapshot returns isError
+  FAKE_FAIL_INSPECT   when set, mc_inspect returns isError ("Error: region too large")
+  FAKE_INSPECT_BOTTOM when set, the bottom cell of every inspected column is this
+                      state; every other cell is air
   FAKE_SERVER_REQUEST when set, every request is preceded by a server-initiated
                       request that reuses the client's id
 Like the real server it logs "connecting to <MC_PLUGIN_URL>" on stderr.
@@ -23,6 +26,26 @@ def send(message):
 
 def text(body, error=False):
     return {"content": [{"type": "text", "text": body}], "isError": error}
+
+
+def inspect_columns(arguments):
+    a, b = arguments["from"], arguments["to"]
+    x1, x2 = sorted((a[0], b[0]))
+    y1, y2 = sorted((a[1], b[1]))
+    z1, z2 = sorted((a[2], b[2]))
+    bottom = os.environ.get("FAKE_INSPECT_BOTTOM")
+    lines = [f"Region (default) x=[{x1}..{x2}] y=[{y1}..{y2}] z=[{z1}..{z2}], "
+             "runs bottom to top (ids without the minecraft: prefix):"]
+    for x in range(x1, x2 + 1):
+        for z in range(z1, z2 + 1):
+            runs, low = [], y1
+            if bottom:
+                runs.append(f"{y1} {bottom}")
+                low = y1 + 1
+            if low <= y2:
+                runs.append(f"{low} air" if low == y2 else f"{low}-{y2} air")
+            lines.append(f"{x},{z}: " + " | ".join(runs))
+    return "\n".join(lines)
 
 
 def main():
@@ -76,6 +99,11 @@ def main():
                     body += ("\nWARNINGS (blocks that would fall):\n"
                              "  minecraft:torch at 1,64,1 - unsupported")
                 result = text(body)
+        elif name == "mc_inspect":
+            if os.environ.get("FAKE_FAIL_INSPECT"):
+                result = text("Error: region too large", error=True)
+            else:
+                result = text(inspect_columns(arguments))
         else:
             result = text(f"unknown tool {name}", error=True)
         send({"jsonrpc": "2.0", "id": rid, "result": result})

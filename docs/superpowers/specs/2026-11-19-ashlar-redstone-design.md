@@ -737,14 +737,21 @@ than the head in front of an extended piston, and an observer written powered.
   weakly powered only by dust. Repeaters, comparators and powered observers
   strongly power the block in front. Redstone blocks power adjacent components
   and dust but not blocks.
-- **Dust:** Java connection rules: dust points at adjacent power and
-  transmission components, at the back and sides of pistons, and at dust one
-  block higher or lower, unless a conductive block sits above the lower dust.
-  Power passes down from dust on glass but never from dust on a slab. One
-  connection makes a line pointing both ways. A lone dust is a cross in vanilla
-  (powering all four sides) and a dot only if toggled; what Ashlar's pass
-  leaves follows rung 0. A dot powers only the block below. Power drops by 1 per
-  dust. Dust weakly powers the block it sits on and the blocks it points into.
+- **Dust:** Java connection rules: dust points at adjacent power components on
+  any side (comparators included), at repeaters only along their axis, at
+  observers only from behind, and at dust one block higher or lower, unless a
+  conductive block sits above the lower dust. It does not point at pistons or
+  other mechanism components (that exception is Bedrock-only). Power steps
+  down to lower dust only from dust sitting on a conductive block: dust on
+  glass, slabs or other non-conductive blocks takes power from lower dust but
+  passes none down (Java). One connection makes a line pointing both ways; two
+  or more make the matching corner or junction. A lone dust is a cross in
+  vanilla and a dot only if toggled. Until rung 0 says otherwise, the checker
+  assumes Ashlar's connection pass behaves like vanilla's shape update: a lone
+  wire written with no sides (as every stamped module wire is, because
+  `stamp.py` drops them) stays a dot, and one written with all four sides stays
+  a cross. A dot powers only the block below. Power drops by 1 per dust. Dust
+  weakly powers the block it sits on and the blocks it points into.
 - **Comparators:** compare and subtract modes; the rear input from a signal, a
   container's fullness (finding 5), or a container behind one conductive block,
   except that a block between them powered to 15 makes the comparator read 15;
@@ -752,10 +759,11 @@ than the head in front of an extended piston, and an observer written powered.
 - **Repeaters:** powered and locked states; delay does not matter at rest.
 - **Quasi-connectivity:** a piston, dropper or dispenser is also powered when
   the position above it receives power.
-- **Settling:** iterate from the written inputs, starting with torches lit,
-  until nothing changes. If it does not settle within a fixed number of rounds,
-  or repeats a state, report "cannot settle" and name the loop's parts: that is
-  an oscillator.
+- **Settling:** iterate from the written states (inputs and outputs as
+  written), so a latch keeps the stable state it was written in, until nothing
+  changes. If it does not settle within a fixed number of rounds, or repeats a
+  state, report "cannot settle" and name the loop's parts: that is an
+  oscillator.
 - **Item stack sizes:** a small table (16 for ender pearls, eggs, snowballs,
   signs and the like; 1 for tools, minecarts and other unstackables); an
   unknown item counts as 64, with a warning.
@@ -765,7 +773,7 @@ citations:
 
 | Rule | Wiki page → section |
 | --- | --- |
-| A lone dust is a cross, a dot only when toggled; a dot powers only the block below; dust points at the back and sides of pistons; power passes down from glass, never from slabs; a conductive block above the lower dust cuts a step | Redstone Dust → Redstone component |
+| A lone dust is a cross, a dot only when toggled; a dot powers only the block below; in Java dust does not point at pistons, and a non-conductive block passes no power down; a conductive block above the lower dust cuts a step | Redstone Dust → Redstone component (the piston and glass exceptions there are Bedrock-only) |
 | Reshaping dust after placement does not update its neighbours (the BUD effect) | Redstone Dust → Redstone component |
 | A block is weakly powered only by dust; weak power activates components but not dust | Redstone mechanics → Weakly powered |
 | A torch strongly powers the block above, powers adjacent components, and turns off when its block is powered | Redstone Torch → Redstone component; Redstone mechanics → Weakly powered |

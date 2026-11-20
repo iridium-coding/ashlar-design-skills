@@ -5,14 +5,14 @@
 > **This fork** ([iridium-coding/ashlar-design-skills](https://github.com/iridium-coding/ashlar-design-skills))
 > adapts the six `design-*` skills and `survey-research` to build through the
 > [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on a Paper server,
-> and adds the `exec-ashlar` skill. Chapman's other skills are unchanged and not
-> needed. To use the adapted skills in a workspace with Claude Code and Codex,
-> clone this repo into the workspace as `ashlar-design-skills/`, then from the
-> workspace root:
+> and adds the `exec-ashlar` skill and ports `system-redstone`. Chapman's other
+> skills are unchanged and not needed. To use the adapted skills in a workspace
+> with Claude Code and Codex, clone this repo into the workspace as
+> `ashlar-design-skills/`, then from the workspace root:
 >
 > ```bash
 > mkdir -p .claude/skills .agents/skills
-> for s in design-building design-city design-grounds design-house design-monument design-village exec-ashlar survey-research; do
+> for s in design-building design-city design-grounds design-house design-monument design-village exec-ashlar survey-research system-redstone; do
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".claude/skills/$s"
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".agents/skills/$s"
 > done

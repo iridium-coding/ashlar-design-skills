@@ -398,7 +398,7 @@ def power_diff(before: dict[Pos, State], after: dict[Pos, State]) -> list[tuple[
 | R14 | **Piston structure.** An extended piston needs `piston_head[facing=<same>, type=<sticky for sticky_piston, else normal>, short=false]` at `pos + facing`. A head needs an extended base of the matching type at `head − facing`. Anything else at `pos + facing` of an extended piston is an error. |
 | R15 | **Activation.** Hopper `enabled = not signal`. Lamp `lit = signal`. Note block, trapdoor and fence gate `powered = signal`. Doors: `powered = signal at either half`, the same on both halves. When a door, trapdoor or gate is powered at rest, `open` must be true. |
 | R16 | **Settling.** Start from the written states. Each round recomputes dust (to a fixed point within the round), then torches, repeaters (respecting locks), comparators, then the derived states (R13, R15), all from the previous round's values. Stop when a round changes nothing. A repeated state or `max_rounds` without settling marks every position whose state differs across the cycle as unsettled. |
-| R17 | **Unmodelled neighbours.** A neighbour of a modelled component is listed with a reason, and treated as a non-conductor giving no signal, when it is: absent from the world ("not written by the plan; pass `--background`"), a redstone-relevant block outside this model (rails, tripwire and hooks, daylight detector, target, lectern, sculk sensors, copper bulb, crafter, cake, cauldron, composter, item frame, bell, trapped chest output), or `is_conductor(...) is None`. |
+| R17 | **Unmodelled and unwritten neighbours.** A neighbour of a modelled component is listed as unmodelled with a reason, and treated as a non-conductor giving no signal, when it is a redstone-relevant block outside this model (rails, tripwire and hooks, daylight detector, target, lectern, sculk sensors, copper bulb, crafter, cake, cauldron, composter, item frame, bell, trapped chest output), or `is_conductor(...) is None`. A neighbour absent from the world (not written by the plan, no `--background`) is treated as air, per spec §8.1, and adds one entry to `Report.warnings` per modelled component at the edge: `x y z: neighbour not written by the plan; treated as air; pass --background to include the site`. Warnings never change the exit code. (Ruling 2026-11-20, plan author.) |
 | R18 | **Stack sizes.** 16 for ender pearls, eggs, snowballs, signs, banners, empty buckets, honey bottles and armor stands. 1 for tools, weapons, armour, minecarts, boats, saddles, potions, filled buckets, shulker boxes, books with text, enchanted books, music discs, totems, elytra, tridents, bows, crossbows, shields, fishing rods, shears and flint and steel. 64 for a known common set, at least the items in this plan's fixtures and benchmarks. An unknown item counts as 64 and adds a warning. |
 
 **Acceptance Criteria:**
@@ -618,6 +618,8 @@ git commit -m "feat(system-redstone): redstone_rest.py check, diff and container
 
 **Goal:** Teach `exec-ashlar` the `tests` table, the `test` mode, the four verdicts, the gate additions and the recovery rules from spec §6.
 
+**Order:** runs after Task 6 (ruling 2026-11-20, plan author): `execution.md` links `../system-redstone/reference/ashlar-redstone.md`, which Task 6 creates, and `node scripts/validate-plugin.mjs` fails on dead reference links. Blocked by Tasks 1, 4 and 6.
+
 **Files:**
 - Modify: `skills/exec-ashlar/SKILL.md`
 - Modify: `skills/exec-ashlar/reference/plan-format.md`
@@ -667,6 +669,8 @@ git commit -m "docs(exec-ashlar): tests table, test mode, verdicts and recovery"
 ### Task 6: Port the `system-redstone` text
 
 **Goal:** Rewrite `system-redstone`'s Markdown for Ashlar per spec §5, keeping Chapman's Java design knowledge, so the static text checks cover it.
+
+**Order:** runs before Task 5 (ruling 2026-11-20, plan author); blocked by Task 4 only. Its links go to `exec-ashlar` reference files that already exist, and it names the `test` mode in prose only.
 
 **Files:**
 - Modify: `tests/ashlar/test_skill_text.py`

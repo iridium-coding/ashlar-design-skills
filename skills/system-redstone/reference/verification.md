@@ -1,125 +1,104 @@
 # Verification and correction
 
-A contraption built correctly block-for-block can still not *work*. Every
-design ships a **functional test recipe**; the `exec-inspect` runs it; when it
-fails, you diagnose and correct. This file is how.
+Write functional tests in the project's `plan.toon`. Name each input, its
+coordinates, the observable result and a timeout based on the timing budget.
+Hand off the approved plan to `exec-ashlar build <project>` and then
+`exec-ashlar test <project>`. Record readings and verdicts in `build-log.md`.
 
-## Authoring an inspection recipe
+## Authoring the tests table
 
-Write the recipe to `.minecraft-builder/<project>/inspection-recipe.toon`. A
-test is a sequence of **trigger → wait → sample**:
-
-- **trigger** — apply an input. The `exec-inspect` does this with `command_execute`
-  / `block_set_state` — e.g. place a `minecraft:redstone_block` at a button
-  position then set it back to `minecraft:air` — or `inventory_set_slot` /
-  `player_give_item` to load a stack into an input container.
-- **wait** — hold for the design's **timing budget** plus slack (the worst-case
-  deterministic path from `design-patterns.md`).
-- **sample** — read the result: `block_get_state` for a block state (a door
-  block now `minecraft:air`, a piston `[extended=true]`, a comparator powered),
-  `block_scan_region` for a region, `inventory_get` / `inventory_count_items`
-  for container contents, `entity_get` / `entity_query` for collected drops.
-  Use `scoreboard_*` to count events over time (e.g. items processed).
-- **expect** — the value a working contraption produces.
+Each row has a test name, consecutive step number, kind, position or box,
+detail and expectation. For example, this test drives a pre-built sorter
+with a small batch and checks that it returned to rest:
 
 ```toon
-test: jeb-door-2x2
-steps[4]{action,target,detail}:
-  trigger,{x:4,y:64,z:0},place stone_button powered then release
-  wait,,20 game ticks
-  sample,{x:4,y:64,z:2},expect air at all 4 door-block coords
-  sample,{x:4,y:64,z:2},after 20 more ticks expect the door self-closed
+tests[5]{test,step,kind,at,detail,expect}:
+  cobble,1,load,4 65 0,"item replace block 4 65 0 container.0 with minecraft:cobblestone 12",-
+  cobble,2,settle,0 60 0 8 66 4,containers,timeout 30
+  cobble,3,expect,8 61 4,container,gained minecraft:cobblestone=12
+  cobble,4,conserve,0 60 0 8 66 4,containers,-
+  cobble,5,rest,0 60 0 8 66 4,blocks,baseline
 ```
 
-Give every contraption a test — even a "trivial" one. The whole point of the
-inspector loop is to confirm the machine actually runs: that a clock is
-oscillating, a chunk is ticking, and timing landed where the budget said.
+- **Baseline.** Start each test with settled container contents and a full
+  read of the machine at loaded rest. Internal containers, excluding this
+  test's inputs and receiving outputs, must hold the planned setup contents.
+  If a failed test leaves items in transit, stop and report the affected
+  containers. The user can clear stray items in game or choose rollback.
+  Snapshots restore block states only. Report any inventory the user needs to
+  recover or reload.
+- **Drive.** Use a `load` targeting an available container slot. Only approved
+  `item replace block` or `data merge block` inventory loads may drive a test.
+  For a physical control or player observation, write a `manual` row with its
+  coordinates, an exact instruction in quotes and `-` for the expectation.
+  A test with any manual row is a manual test.
+- **Wait.** A `settle` row reads `containers` or `blocks` in a box until two
+  consecutive reads agree, within `timeout <seconds>`. An `await` row polls a
+  condition, e.g. `minecraft:sugar_cane>=8 within 3600` at the output.
+- **Inspect.** An `expect` checks `block` properties in a cell or box, or
+  `container` contents as an exact `holds` or `gained` list. Join counts
+  with a pipe, e.g. `holds minecraft:cobblestone=41|minecraft:stick=4`.
+  Derive those counts for the actual slice and use distinct filler that cannot
+  arrive in the item stream. `conserve` accounts for every item across the
+  box against baseline plus loads, including unintended destinations.
+  `rest` compares component power properties to this test's baseline.
+- **Repeat.** For repeated trials, use `repeat,-,steps <first>-<last>,<count>`
+  and record each cycle. Use separate tests when the agent can exercise a
+  fixture independently of the user's real control.
 
-## Java-exclusive: event-based functional verification
-
-Sampling block state is a snapshot — it can miss a mechanism that fired and
-reset between reads. Java exposes a **real feedback channel** Bedrock's MCP did
-not: subscribe to world events, trigger, then drain them.
-
-- **`events_subscribe(event_types, filters?)`** → a `subscription_id`. The
-  deliverable set is **closed**: `block.use` (a button/lever/door interacted),
-  `block.break`, `player.chat`, `player.join` / `player.leave`, `server.tick`,
-  and `server.starting` / `server.started` / `server.stopping` /
-  `server.stopped`, plus `fluid.flow` (26.2+ only; requires `filters.region {dimension, from:{x,y,z}, to:{x,y,z}}`; optional `filters.max_per_second`, default 20, max 1000; payload `{dimension,x,y,z,fluid,source,amount}`). Any other name — `block.place`, `container.open` /
-  `container.close`, `entity.death`, `entity.spawn`, `item.use`, `item.craft`,
-  `player.death` — is declared by the protocol but never emitted, and
-  `events_subscribe` **rejects the whole call** rather than subscribing to less
-  than you asked. One bad name kills the valid types in the same array, so a
-  mixed list fails outright. There is no entity, container, or item event:
-  verify those outcomes by sampling instead (`entity_query`,
-  `inventory_count_items`, `block_get_state`). Narrow with `filters` (e.g. an
-  area) to avoid noise.
-- **`events_poll(subscription_id)`** drains the events captured since the last
-  poll.
-- **`events_unsubscribe`** when done so the subscription doesn't accumulate.
-
-The flow is **subscribe → trigger → wait → poll → expect events**, a complement
-to the snapshot `sample` step rather than a replacement. It confirms the
-mechanism *fired*, not just that geometry ended up in some state:
-
-```toon
-test: hidden-door-fires
-steps[4]{action,target,detail}:
-  subscribe,,events_subscribe(["block.use"]) → sub_id
-  trigger,{x:4,y:64,z:0},press the button (player or command)
-  poll,,events_poll(sub_id) expect ≥1 block.use at the button pos
-  sample,{x:4,y:64,z:2},door-block coords are air
-```
-
-Where it earns its place:
-
-- **Door / button / trap** — `block.use` confirms a player (or a redstone-driven
-  interaction) triggered it; pair with the door-block `sample`.
-- **Interactive builds** — watch `player.chat` or `block.use` to drive a build
-  that responds to the user in real time. From mod 1.2.0 `player.chat` carries a `chat_type`, and on Minecraft 26.2 and later it also fires for `/say`, `/msg` and `/me`; for chat-driven recipes filter on `{"chat_type":"minecraft:chat"}` so command output is ignored.
-- **Water elevator, bubble column, lava or water feed** — `fluid.flow` on a small region around the feed (26.2+).
-- **Mob farm, sorter, or any container/entity outcome** — there is no
-  `entity.death` and no `container.*` event, so this channel cannot help.
-  Verify by sampling across the timing budget instead: `entity_query` over the
-  kill chute, `inventory_count_items` on the collection or output chest.
-
-Not a substitute for sampling geometry (it can't read a static block state), but
-a genuine signal that a mechanism is firing under load. Event payload shapes are
-version-sensitive — confirm against the running version (`server_get_status`)
-with one `events_subscribe` / trigger / `events_poll` round trip before relying
-on a specific field.
+Confirm that the full read covers the planned cells, the test box covers the
+whole route, and every load appears in the approval gate. See the
+[plan format](../../exec-ashlar/reference/plan-format.md) and
+[execution procedure](../../exec-ashlar/reference/execution.md).
 
 ## Per-type test contracts
 
-| Contraption | Trigger | Sample after wait | Pass criterion |
-| ----------- | ------- | ----------------- | -------------- |
-| Door | power the button position | door-block coords | all become `minecraft:air`; self-closes |
-| Sorter | put a stack of the target item in the input | output and overflow chests | target item only in its row; others empty |
-| Mob farm | spawn the mob in the spawn box, or wait a cycle | collection chest | drops arrive within the expected rate |
-| Clock | apply the enable signal | a target coord, sampled repeatedly | oscillation period within ±1 tick of plan |
-| Minecart | **clear stray entities** (`kill @e[type=minecart]` + stray mobs), then place a test cart at the start | detector rails along the route | rails fire in order, ETAs within ~2 ticks; no mid-route stall |
-| Elevator | place an entity at the base | a coord at the top | entity arrives within the budgeted time |
-| Music | trigger the sequencer | the note-block coords | each pulses in sequence |
+| Machine | Agent can check | Needs the user |
+| --- | --- | --- |
+| Door | Drive the accepted hopper input, read every doorway cell open, then verify the closed blocks and return to baseline. Repeat the agreed cycles. | Operate the actual lever, button or plate. Without the fixture, guide each open/close cycle and read both positions. |
+| Sorter | Feed target and unmatched items. Check gains in each output and overflow, exact filter contents, conservation and rest after each batch. | Player-facing loading access when requested. |
+| Crop farm | Await harvest in the collection chest with the chunks ticking. Check crop support, collection, piston rest and continued growth. Allow for random ticks. | Any required planting, harvesting or actual player control specified by the design. |
+| Mob farm | Compare collected drops to the baseline over a measured interval. | Stand at the AFK spot for natural spawning or within the spawner's activation range. Confirm the expected mob and rate. |
+| Clock | Drive an accepted enable fixture. Load a dropper counter, measure collected items over a known interval, then verify it stops and stays at rest. | Operate the real switch. Observe pulse order or precise timing if the fixture cannot resolve it. |
+| Minecart | Read rail states, switch positions and the terminal positions of the build's tagged test entities. | Ride the route, report detector order, elapsed time and any stall. Clear rail obstructions by hand. |
+| Elevator | Check shaft continuity, source blocks and arrival of the build's tagged test entity where applicable. | Ride the elevator to verify direction, travel time and usable entry and exit. |
+| Note-block music | Check instrument supports, pitches, repeater delays and final states. | Trigger and listen for sequence, pitch and tempo. Static samples can miss short pulses. |
 
-## Correction catalog — symptom → diagnosis → fix
+Sugar cane needs 16 random ticks for a new block, averaging about 18 minutes
+at default Java rates. Size the crop test's sample and timeout accordingly.
+[Minecraft Wiki, sugar cane farming](https://minecraft.wiki/w/Sugar_Cane#Farming)
 
-When the inspector reports a failure, diagnose with this table and emit
-corrected steps:
+## Four verdicts
 
-| Symptom | Diagnosis | Fix |
-| ------- | --------- | --- |
-| Clock / loop is static at the first sample | Edge-balanced loop never toggled, placement order, or the chunk isn't ticking | Apply the one-tick nudge (place `minecraft:redstone_block` adjacent, then set `minecraft:air`); confirm the chunk is loaded/force-loaded; re-sample |
-| Piston never extends, though redstone next to it is powered | The circuit assumed a QC power position the build didn't actually create, or the power face is wrong | Verify the QC/direct-power face matches the design; move power to the intended block and re-test |
-| Sorter leaks the target item, or sorts into the wrong row | Wrong filler-item count for the sorter variant, or filter rows interfering | Set the filler count exactly per the cited Java sorter design (typically 18 in the filter slot); add a 1-block isolation gap between rows |
-| Hopper not pulling | The hopper is powered (locked) by a stray signal | Find and insulate the stray redstone — often a torch on an adjacent block |
-| Filter hopper skips matching items | A non-matching item is in its collection range | Re-route the item stream so matching items arrive alone |
-| Timing path lands a tick early/late | Repeater delays not summed to the design budget | Re-check the deterministic timing budget; adjust repeater delays so paths align |
-| Mob farm: zero spawns | Spawn surface too bright, or outside the spawn shell | Re-check light level (block-light 0 for hostiles on modern Java) and the ~24–128-block shell at the world's simulation distance |
-| Powered rail does not propel the cart | The booster has no real redstone source, so the rail re-evaluated to `powered=false`. A source-less `powered=true` (via `set_state`, even `update_flags:2`) holds only at 0 players and collapses the moment a player is online — player-driven block updates re-eval the rail | Put a `minecraft:redstone_block` directly under each booster rail (`y = RAILY-1`), source first then the rail; a sourced rail recomputes to `powered=true` on every re-eval (player-proof and reload-proof). Re-test with a player online, not headless. ~1 booster per 4 cells on flat keeps an occupied cart accelerating |
-| Cart dead-stops partway along a working route | A **stray entity** is sitting on the rail — a stalled earlier test cart, or an ejected/spawned mob (a pig, etc.). The #1 false "broken rail" | `kill @e[type=minecart]` AND stray mobs (`@e[type=pig]`, …) along the route **before and after** every ride test, then re-test |
-| Door corner does not move | A stuck piston, or a missed power/timing connection | Free the piston / clear obstruction; verify the corner's power and timing against the design |
-| Iron-golem / villager farm rate low | A village-mechanics problem, not engineering | Hand the village half back to `design-village` |
+| Verdict | Evidence required for a pass |
+| --- | --- |
+| `built` | Acceptance and quality checks pass and `diff` of a full read against the plan finds the right blocks and written non-power properties, excluding connection-pass properties. |
+| `at_rest` | Pre-build checker passed for modelled parts, exceptions were checked by hand, the loaded baseline matches `diff --loaded`, and every `rest` row passed. |
+| `agent_tested` | Every agent test passed. Use `n/a` when there is no agent-driven test. |
+| `manual` | Every manual test passed. Use `pending` for outstanding actions and `n/a` if there are none. |
 
-After a fix, the `exec-worker` applies the corrected steps and the `exec-inspect`
-re-runs the test. Loop until it passes — a contraption is not done until its
-functional test passes.
+Use `fail` for a failed check and `pending` for an outstanding one. Include
+all four verdicts and their readings in the hand-off. Call the machine working
+only when every applicable verdict passed, including a functional test. If it
+needs the user's test, give the exact outstanding step and expected result.
+
+## Correction catalog
+
+| Symptom | Diagnosis and correction |
+| --- | --- |
+| A component never changes | Check its as-built written state, source and loaded baseline using `check` and `diff`. Correct its resting properties and real input path. |
+| Clock never starts | Confirm the chunks tick, the off switch enables the loop and the fixture or user supplied its designed start event. |
+| Piston or door corner fails | Check direct power, quasi-connectivity, base/head pairing, clearance, movable blocks and the worst-case timing path. Check actual door blocks separately from piston power. |
+| Comparator reads 0 | Check the exact source inventory, rear facing and whether a conductive block above a chest prevents it opening. |
+| Outputs are mixed | Adjacent same-facing chests may have paired. Separate them, change facings or use barrels. Also check filter thresholds and signal isolation under backup. |
+| Filter skips an item or leaks | Check item identities, stack sizes, all five filter slots and the derived unlock threshold. Inspect input routing and adjacent slices. |
+| Hopper fails to pull | Trace stray power that locks it, often from a torch on an adjacent block. |
+| Side output of isolated dust never powers | Read the wire's sides. A dot powers only below it. Route a real wire connection to the intended side. |
+| A path arrives early or late | Sum repeater delays on both paths and align them. Verify pulse length and motion in the actual orientation. |
+| No mob drops | Check light, the player's spawn shell and simulation distance or spawner activation range. Hand village-mechanics failures to `design-village`. |
+| Cart stops | Check rail orientation, a sustained power source at each booster and physical obstructions. Have the user clear stray carts or mobs. Re-test with a rider. |
+
+Record the first failing row and its evidence. Re-run the offline checker,
+write a fix phase for only the changed blocks, and obtain a fresh gate through
+`exec-ashlar build`. Repeat the tests after the correction. Stop after three
+failed fix rounds and recommend a rollback or redesign.

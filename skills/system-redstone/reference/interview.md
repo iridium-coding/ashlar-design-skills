@@ -1,8 +1,11 @@
 # The adaptive interview
 
-Pin down the contraption without over-asking. Ask in small grouped batches
-(use `AskUserQuestion` for the multiple-choice ones), skip what is already
-clear, and record answers in `requirements.md`.
+Pin down the contraption without over-asking. Ask in small grouped batches, skip what is
+already clear, and record answers in `requirements.md`.
+
+- Claude Code: use `AskUserQuestion` for multiple-choice questions.
+- Codex: use `request_user_input` when available.
+- Otherwise: ask directly in chat.
 
 ## Question bank
 
@@ -15,10 +18,10 @@ clear, and record answers in `requirements.md`.
    an AFK session")? Throughput drives parallelism and footprint.
 4. **Trigger** — button, lever, pressure plate, automatic (observer / clock),
    or hidden.
-5. **Site and space** — anchor coordinates from the survey-site; how much room is
-   available; underground, in a base, standalone.
-6. **Simulation distance** — for any mob farm, the world's simulation distance
-   (often 4 on consoles, up to 12 on PC). The viable spawn shell depends on it.
+5. **Site and space** — review the anchor, footprint and facing limits from
+   `exec-ashlar survey <project>`. Which sides must stay accessible? Is the
+   machine underground, in a base or standalone?
+6. **Simulation distance** — for any mob farm, the server's simulation distance. The viable spawn shell depends on it.
 7. **Aesthetic** — exposed redstone (functional), or hidden behind a façade
    (then coordinate the enclosure with `design-house` / `design-building`)?
 8. **Integration** — standalone, inside a building, or part of a village's
@@ -27,11 +30,17 @@ clear, and record answers in `requirements.md`.
 
 ## Conditional follow-ups
 
+- Lever, button, plate or clock → offer the hidden hopper test input for this
+  build. Explain the space it needs and how the user can test the real control
+  if they decline it. Record the choice.
+- Manual steps → who will be in game, and when can they operate the controls?
+- Sorter → which exact items and stack sizes? Prefer items that stack to 64.
+  Agree on where unmatched items and overflow go.
 - Mob / iron / villager farm → confirm the simulation distance and, for
   iron/villager farms, hand the village half to `design-village`.
 - The request names a tutorial or creator → check `community-sources.md`;
   Java designs apply directly, but confirm the design's game version against
-  the running world (`server_get_status`) and ask `survey-research` for a recent
+  the running world (`mc_status`) and ask `survey-research` for a recent
   source if there's any version-drift doubt.
 - The request needs a patched-out (0-tick) or exploit (TNT/item duping)
   mechanic → explain it is not reliable on modern Java and offer the

@@ -8,7 +8,7 @@ to verify against the running version.
 
 ## Trust for Java
 
-- **The Minecraft Wiki** (minecraft.wiki) — Mojang-endorsed; the highest-trust
+- **The Minecraft Wiki** (minecraft.wiki) — a community-maintained
   source for mechanics, timing, and block behaviour. Each block/tutorial page
   documents the Java behaviour and notes the version a change landed in. Prefer
   it over the Fandom mirror, which carries outdated figures.
@@ -21,12 +21,12 @@ to verify against the running version.
 - **The Minecraft Wiki's tutorial namespace** — the "Tutorials/" pages
   (mechanisms, farming, redstone) are vetted Java designs.
 - **Mojang changelogs / official snapshots** — authoritative for what changed
-  in a given version (e.g. the removal of 0-tick pulses, Crafter additions).
+  in a given version (e.g. changes to crop growth, Crafter additions).
 
 ## Verify against the running version
 
-- **Confirm the world's version first** with `server_get_status`. A design
-  proven on an older version may behave differently on 1.21.11 and 26.x.
+- **Confirm the world's version first** with `mc_status`. A design
+  proven on an older version may behave differently on Java 26.3.
 - **Version-sensitive areas** to double-check before relying on them:
   spawn-light thresholds, mob-spawn shell distances, bubble-column speeds,
   iron-golem spawn volume, powered-rail spacing, and any contraption that
@@ -37,8 +37,8 @@ to verify against the running version.
   mechanic instead.
 - **Prefer recent sources.** Ask `survey-research` for material verified on a recent
   Java version and note the version a design was confirmed on.
-- When the `exec-reflect` records a contraption pattern as proven on a given Java
-  version, prefer that logged pattern next time over re-deriving — but re-verify
+- When a project’s `build-log.md` records a passed functional test on a given
+  Java version, reuse that proven pattern — but re-verify
   it if the world's version has since changed.
 
 ## Sourcing rules
@@ -52,9 +52,8 @@ to verify against the running version.
 
 ## When in doubt — test it live
 
-Java's determinism means you can verify a mechanic directly: build a minimal
-version in a scratch area, run the functional-test recipe pattern from
-`verification.md`, and confirm the behaviour on the actual running version
-before committing it to a full design. A two-block observer clock, a single
-sorter row, or a one-piston door is cheap to prove and removes any
-version-drift doubt.
+Java's determinism means you can verify a mechanic directly: design a minimal
+module, check its resting state offline, then include its test in the plan.
+Use `exec-ashlar build` for approval and placement and `exec-ashlar test` for
+the observations in `verification.md`. A switchable observer clock, a single
+sorter row or a one-piston door can isolate a version-sensitive mechanic.

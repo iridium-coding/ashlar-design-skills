@@ -6,18 +6,26 @@ sources (`community-sources.md`) for anything not standard.
 
 ## Item sorters
 
-- **Basic 1-row hopper sorter** — one item type, one output. A filter hopper
-  holds **18 filler items** spread one per slot (5 slots filled with stacks +
-  the remaining configuration that leaves room for exactly one extra of the
-  target item); a comparator reads the filter hopper and a redstone-torch
-  inverter locks the output hopper. The standard Java sorter uses the
-  comparator-overflow trick — confirm the filler count against the specific
-  sorter design you cite, since variants differ. Footprint ~1×5×4, tileable.
+- **Basic 1-row hopper sorter** — one item type, one output. A comparator
+  reads the filter hopper. A torch locks the output hopper until a matching
+  item raises the comparator signal. Reserve the first slot for the target,
+  and put one 64-stack filler that will never arrive in the stream in each
+  of the other four slots. Derive the target count from the circuit's unlock
+  strength using `floor(1 + 14 × total / 320)` for 64-stack items in a hopper.
+  In the classic overflow-protected tile, 41 target + 4 filler = 45 (signal 2).
+  The next item gives 46 (signal 3). Even a backed-up slice caps at 64 + 4
+  (signal 3), so it cannot unlock its neighbours. In an isolated slice wired
+  for strength 2, the checker's smaller example is 18 target + 4 filler = 22
+  (signal 1), then 23 (signal 2). Check adjacent slices under backup before
+  tiling this variant. Footprint ~1×5×4 for the basic row.
+  [Minecraft Wiki, hopper sorter overflow protection](https://minecraft.wiki/w/Tutorial:Hopper#Overflow_protection)
 - **Multi-row universal sorter** — one row per item type, side by side. Space
   filter rows so a neighbouring row's comparator cannot misread; add a 1-block
   isolation gap if rows interfere.
 - **Overflow protection** — route unfiltered items to a labelled overflow chest
-  (or a lava trash can) so a backed-up sorter does not jam the input.
+  (or a lava trash can if loss is intended). For separate output inventories,
+  leave a one-block gap between same-facing chests, turn them differently or
+  use barrels. Ashlar automatically pairs adjacent, same-facing chests.
 - **Compactor** — auto-crafts 9 ingots → a block (or reverses it). On 1.21+ the
   vanilla **`minecraft:crafter`** (auto-crafting block, observer- or
   comparator-triggered) is the clean way; a hopper-into-a-crafter feed is the
@@ -39,7 +47,8 @@ sources (`community-sources.md`) for anything not standard.
   distance); water streams funnel mobs to a kill chute and a hopper collector.
   Rate scales with simulation distance — design to the world's setting. Modern
   Java spawns hostiles at block-light level 0, so the platform must be fully
-  dark. Before sizing a farm, call `level_get_mob_spawns {dimension, position}` at the platform and read `categories.monster`; if the mob you want is absent there, the platform will never produce it.
+  dark. Before sizing a farm, check the mob's Java biome, light and
+  structure requirements, then observe drops with a player at the AFK spot.
 - **Specific spawners** — zombie / skeleton / cave-spider / blaze XP farms off a
   natural spawner; drowned, guardian (ocean monument), witch hut; enderman
   platform in the End; slime-chunk farm.
@@ -68,34 +77,29 @@ sources (`community-sources.md`) for anything not standard.
 - **Auto-smelter** — a furnace bank fed by an input hopper, a separate fuel
   hopper, and an output hopper to a chest. Three furnaces in parallel ≈ 18
   items/min. Furnaces keep smelting XP until the player collects the output — a
-  useful XP source. Add overflow protection if input can outpace smelting. To size the fuel supply, `content_registry_get_fuel {item_id}` gives `burn_time_ticks` (furnace), `burn_time_ticks_fast` (blast furnace and smoker), `speed_multiplier` (always 1.0 before 26.3) and `brewing_fuel_uses`. For a composter loop, `content_registry_is_compostable {item_id}` gives the chance one item adds a layer to a composter that already holds compost (an empty composter always takes a layer). `content_registry_set_compostable` does not exist on 26.3.
+  useful XP source. Add overflow protection if input can outpace smelting. Size
+  fuel and compost inputs from the running version's burn times and composting
+  chances, then measure the actual output.
 - **Auto-brewer** — dispenser-fed brewing stands in a chain.
 
-## Java-exclusive: ship a farm pre-configured (block-entity NBT)
+## Ship a farm pre-loaded
 
-Bedrock's MCP couldn't set block-entity contents; Java can, so a farm can
-**arrive configured and loaded** rather than requiring the user to set it up:
+Load containers after their blocks exist. For example, these rows of a setup
+`commands` phase seed an auto-smelter's fuel hopper:
 
-- **Mob-spawner farms** — configure a placed `minecraft:spawner` directly so the
-  build ships a working, tuned spawner instead of relying on a found one:
-  ```
-  block_entity_set_nbt(pos, nbt='{SpawnData:{entity:{id:"minecraft:zombie"}},
-    SpawnCount:4,MaxNearbyEntities:6,RequiredPlayerRange:16,SpawnRange:4,
-    MinSpawnDelay:200,MaxSpawnDelay:800}')
-  ```
-  Set `SpawnData`, `SpawnCount`, `MaxNearbyEntities`, `RequiredPlayerRange`,
-  `SpawnRange`, and the delay bounds to match the collector's throughput.
-- **Auto-smelter / auto-brewer** — pre-load the **fuel hopper** (coal/blast
-  fuel) and seed input/output hoppers via `inventory_set_slot` or an `Items`
-  list, so the bank starts smelting/brewing immediately.
-- **Tree / animal farms** — pre-fill the bone-meal dispenser or the breeder's
-  feed dropper so the farm runs on first tick.
+```toon
+commands[3]{phase,seq,command,purpose}:
+  4,1,"forceload add 8 3",load setup chunk
+  4,2,"item replace block 8 65 3 container.0 with minecraft:coal 64",seed fuel hopper
+  4,3,"forceload remove 8 3",release setup chunk
+```
 
-Use `inventory_set_slot` (cleaner, slot-by-slot) or `block_entity_set_nbt` with
-an `Items:[{slot:0,id:"minecraft:coal",count:64}]` list. Read it back with
-`block_entity_get_nbt` to confirm the merge. The container/spawner SNBT shape is
-version-sensitive (1.20.5+ uses the item-components system) — round-trip it on
-the running version (`server_get_status`) rather than trusting a literal blindly.
+Use the same pattern for a bone-meal dispenser or a breeder's feed dropper.
+For a spawner-based design, an approved `data merge block` row can set the
+mob, spawn count, range and delay bounds to suit the collector. Confirm the
+NBT for the running version with `data get block`, and verify merged values or
+initial inventory with the same command inside a paired force-load. The
+functional test measures what the operating farm delivers.
 
 ## Throughput budgeting
 

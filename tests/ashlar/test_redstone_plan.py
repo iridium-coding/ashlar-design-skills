@@ -125,15 +125,14 @@ def test_assemble_filter_matches_unspecified_props_as_wildcards(tmp_path):
                 box("minecraft:oak_stairs[facing=east,half=top]", (0, 0, 0), (0, 0, 0)),
                 box("minecraft:oak_stairs[facing=west,half=bottom]", (1, 0, 0), (1, 0, 0)),
                 box("minecraft:spruce_planks", (2, 0, 0), (2, 0, 0)),
-                box("minecraft:gold_block", (0, 0, 0), (2, 0, 0),
+                box("minecraft:oak_stairs[facing=south]", (0, 0, 0), (2, 0, 0),
                     filter="minecraft:oak_stairs"),
                 box("minecraft:glass", (0, 0, 0), (2, 0, 0),
-                    filter="minecraft:gold_block[x=1]"),
+                    filter="minecraft:oak_stairs[facing=north]"),
                 box("minecraft:diamond_block", (0, 0, 0), (3, 0, 0),
                     filter="minecraft:air")]}})
     world = assemble(load_plan(path))
-    assert world[(0, 0, 0)].id == "minecraft:gold_block"
-    assert world[(1, 0, 0)].id == "minecraft:gold_block"
+    assert world[(0, 0, 0)] == world[(1, 0, 0)] == parse_state("oak_stairs[facing=south]")
     assert world[(2, 0, 0)].id == "minecraft:spruce_planks"
     assert world[(3, 0, 0)].id == "minecraft:diamond_block"
 
@@ -238,3 +237,57 @@ def test_bad_inputs_name_file_and_line(tmp_path):
     r.write_text("{not json")
     with pytest.raises(PlanError, match="read.json"):
         load_read(r)
+
+
+def test_background_is_the_initial_state_for_keep_and_filters(tmp_path):
+    path = write_plan(tmp_path, ['1,a,p.json,3,0 0 0,2 0 0,mcp'], phase_files={'p.json': {'fills': [
+        box('stone', (0, 0, 0), (2, 0, 0), mode='keep'),
+        box('gold_block', (0, 0, 0), (2, 0, 0), filter='dirt')]}})
+    bg = {(0, 0, 0): parse_state('dirt'), (1, 0, 0): parse_state('glass')}
+    assert assemble(load_plan(path), bg) == {(0, 0, 0): parse_state('gold_block'),
+                                             (1, 0, 0): parse_state('glass'), (2, 0, 0): parse_state('stone')}
+    assert bg[(0, 0, 0)] == parse_state('dirt')
+
+
+@pytest.mark.parametrize('nbt,expected', [('{Items:[]}', {}),
+    ('{Items:[{Slot:1b,id:stick,count:2}]}', {1: Stack('minecraft:stick', 2)}),
+    ('{CustomName:Label}', {0: Stack('minecraft:dirt', 1)})])
+def test_data_merge_replaces_the_whole_items_list(tmp_path, nbt, expected):
+    path = write_plan(tmp_path, ['2,loads,-,0,0 0 0,0 0 0,commands'], commands=[
+        '2,1,"item replace block 0 0 0 container.0 with minecraft:dirt",first',
+        f'2,2,"data merge block 0 0 0 {nbt}",second'])
+    assert setup_loads(load_plan(path)).get((0, 0, 0), {}) == expected
+
+
+def test_filters_match_java_defaults_without_adding_authored_properties(tmp_path):
+    path = write_plan(tmp_path, ['1,a,p.json,4,0 0 0,2 0 0,mcp'], phase_files={'p.json': {'fills': [
+        box('repeater', (0, 0, 0), (2, 0, 0)),
+        box('stone', (0, 0, 0), (0, 0, 0), filter='repeater[delay=1,facing=north,locked=false,powered=false]'),
+        box('stone', (1, 0, 0), (1, 0, 0), filter='repeater[delay=2]')]}})
+    assert assemble(load_plan(path)) == {(0, 0, 0): parse_state('stone'), (1, 0, 0): parse_state('repeater'),
+                                         (2, 0, 0): parse_state('repeater')}
+
+
+def test_filter_unknown_default_needs_an_explicit_property(tmp_path):
+    path = write_plan(tmp_path, ['1,a,p.json,2,0 0 0,0 0 0,mcp'], phase_files={'p.json': {'fills': [
+        box('beehive', (0, 0, 0), (0, 0, 0)),
+        box('stone', (0, 0, 0), (0, 0, 0), filter='beehive[honey_level=1]')]}})
+    with pytest.raises(PlanError, match='(?=.*explicit)(?=.*honey_level)'):
+        assemble(load_plan(path))
+
+
+def test_known_filter_mismatch_resolves_another_omitted_property(tmp_path):
+    path = write_plan(tmp_path, ['1,a,p.json,2,0 0 0,0 0 0,mcp'], phase_files={'p.json': {'fills': [
+        box('beehive[facing=west]', (0, 0, 0), (0, 0, 0)),
+        box('stone', (0, 0, 0), (0, 0, 0), filter='beehive[honey_level=0,facing=north]')]}})
+    assert assemble(load_plan(path))[(0, 0, 0)] == parse_state('beehive[facing=west]')
+
+
+def test_keep_recognises_air_materials_while_filters_match_exact_ids(tmp_path):
+    path = write_plan(tmp_path, ['1,a,p.json,4,0 0 0,3 0 0,mcp'], phase_files={'p.json': {'fills': [
+        box('glass', (0, 0, 0), (1, 0, 0), mode='keep'),
+        box('gold_block', (2, 0, 0), (3, 0, 0), mode='keep', filter='cave_air')]}})
+    bg = {(x, 0, 0): parse_state('void_air' if x % 2 else 'cave_air') for x in range(4)}
+    world = assemble(load_plan(path), bg)
+    assert [world[(x, 0, 0)].id for x in range(4)] == [
+        'minecraft:glass', 'minecraft:glass', 'minecraft:gold_block', 'minecraft:void_air']

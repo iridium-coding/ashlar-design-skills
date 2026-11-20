@@ -499,6 +499,9 @@ git commit -m "feat(system-redstone): Java redstone model and settling"
 - Create: `skills/system-redstone/scripts/redstone_rest.py`
 - Create: `tests/ashlar/redstone_fixtures.py`
 - Create: `tests/ashlar/test_redstone_rest.py`
+- Modify: `skills/system-redstone/scripts/redstone_plan.py` and
+  `tests/ashlar/test_redstone_plan.py` for load sequence, background fill and
+  server-rendered text handling.
 
 **Interfaces** (used by Tasks 5, 6, 9 and 12):
 
@@ -512,7 +515,8 @@ class CheckResult:
     input_unsettled: dict[Pos, list[Pos]]
 
 def run_check(plan_path: Path, inputs: Sequence[Pos] = (), background: Path | None = None) -> CheckResult
-def run_diff_plan(plan_path: Path, read_path: Path, loaded: bool) -> list[tuple[Pos, str, str]]
+def run_diff_plan(plan_path: Path, read_path: Path, loaded: bool,
+                  background: Path | None = None) -> list[tuple[Pos, str, str]]
 def run_diff_reads(a: Path, b: Path) -> list[tuple[Pos, str, str]]
 def list_containers(plan_path: Path) -> list[tuple[Pos, str]]
 def main(argv: list[str] | None = None) -> int
@@ -520,15 +524,21 @@ def main(argv: list[str] | None = None) -> int
 
 Command line (spec §8.1):
 - `check PLAN [--input X Y Z]... [--background READ.json]`
-- `diff PLAN READ.json [--loaded]`
+- `diff PLAN READ.json [--loaded] [--background PRE-BUILD-READ.json]`
 - `diff READ_A.json READ_B.json`, chosen when the first argument ends in `.json`
 - `containers PLAN`
 
 **Behaviour:**
 - **`--input`:** for a lever, button or plate, uses `switch_on`; for a container (a test-input hopper), adds one `minecraft:cobblestone` to its first empty slot. It starts from `loaded_world`.
 - **`diff PLAN READ`:** compares each written cell. The block id must match, and so must each property the plan writes, except power properties and connection-pass properties (spec §6.4). A cell missing from the read is a mismatch (`not read`).
+- **Conditional fills:** a plan diff uses `--background` for pre-build cells
+  needed to resolve a keep or filter fill. Report invalid input if its
+  result still depends on an unknown prior cell.
 - **`diff --loaded`:** compares the power properties of every modelled component with `loaded_world`.
 - **`diff READ READ`:** compares the power properties of the modelled components present in both reads.
+- **Coverage:** report when setup loads make a circuit unsettled. A loaded diff
+  requires a settled baseline. Server-rendered `text` requires a hand check
+  (exit 2), as the phase file lacks its cell coordinates.
 - **The report:** stdout text, starting with `check <project>: <n> mismatches, <n> structural, <n> unsettled, <n> unmodelled`, then one line per entry (spec §8.5).
 - **Exit codes:**
   - `check`: 0 clean; 1 mismatches, structural errors or unsettled as built; 3 clean except unmodelled parts. Input results never change the exit code, because a clock is expected not to settle.

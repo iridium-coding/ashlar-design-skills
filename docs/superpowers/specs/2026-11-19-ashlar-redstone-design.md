@@ -680,20 +680,23 @@ going on.
 
 ```text
 python3 <skill>/scripts/redstone_rest.py check <plan.toon> [--input <x> <y> <z>]... [--background <read.json>]
-python3 <skill>/scripts/redstone_rest.py diff <plan.toon> <read.json> [--loaded]
+python3 <skill>/scripts/redstone_rest.py diff <plan.toon> <read.json> [--loaded] [--background <pre-build-read.json>]
 python3 <skill>/scripts/redstone_rest.py diff <read-a.json> <read-b.json>
 python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
 ```
 
 - Python 3.11 or newer, standard library only, like the placer; runs in Claude
   Code and Codex.
-- Reads `plan.toon`, its phase files (already stamped) and the setup
-  `item replace block` and `data merge block` rows. It applies phases in order,
-  and within a phase fills, then text, then blocks, as `mc_build` does.
+- Reads `plan.toon`, its stamped phase files and the setup
+  `item replace block` and `data merge block` rows. It applies phases in order
+  and applies their fills before individual blocks. A phase with server-rendered
+  `text` requires a hand check and exits 2. Author the lettering as fills or
+  blocks when the checker needs to cover every cell.
 - `--background` merges a read of the existing site (cells the plan does not
-  write), for a machine built against existing blocks. Without it, unwritten
-  cells are air, and the report warns about any modelled part at the edge of
-  the written area.
+  write), for a machine built against existing blocks. For `check`, unwritten
+  cells default to air and the report warns about modelled parts at the edge.
+  For a plan `diff`, supply the pre-build read when a conditional fill depends
+  on cells whose original states were unknown.
 - `diff` against a plan compares every written cell's block and its
   non-power properties, ignoring connection-pass properties (§6.4); this is the
   `built` check. With `--loaded` it instead compares the power properties of
@@ -714,7 +717,9 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
 1. **As built:** the resting state with the inputs as written and every
    container empty. Every written component must match it.
 2. **Loaded:** the resting state after the setup loads. This becomes the
-   expected baseline for `diff --loaded` and the test runs.
+   expected baseline for `diff --loaded` and the test runs. If this circuit
+   cannot settle, `check` reports the affected positions and `diff --loaded`
+   exits 2 because the loaded baseline is undefined.
 3. **With `--input`:** the loaded state with that input switched on (a lever
    powered, a button or plate pressed, a test-input hopper holding one item).
    The report lists every component that changes: pistons extending or

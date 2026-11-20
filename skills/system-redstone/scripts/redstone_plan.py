@@ -22,11 +22,16 @@ require_python()
 
 import json
 import re
+from collections import ChainMap
 from dataclasses import dataclass, field
 from pathlib import Path
 
 Pos = tuple[int, int, int]
 AIR = "minecraft:air"
+AIR_MATERIALS = {AIR, "minecraft:cave_air", "minecraft:void_air"}
+# Defaults verified in the shipped Java 26.3 RepeaterBlock constructor. Apply
+# them only when evaluating filters against an earlier placement instruction.
+FILTER_DEFAULTS = {"minecraft:repeater": {"delay": "1", "facing": "north", "locked": "false", "powered": "false"}}
 
 
 class PlanError(Exception):
@@ -228,11 +233,73 @@ def _state_in(text: object, where: str) -> State:
         raise PlanError(f"{where}: {exc}") from None
 
 
-def _matches(current: State, wanted: State) -> bool:
-    return current.id == wanted.id and all(current.get(k) == v for k, v in wanted.props)
+def _matches(current: State, wanted: State, authored: bool) -> bool | None:
+    if current.id != wanted.id:
+        return False
+    defaults = FILTER_DEFAULTS.get(current.id, {}) if authored else {}
+    complete = True
+    for key, value in wanted.props:
+        actual = current.get(key, defaults.get(key))
+        if actual is None:
+            complete = False
+        elif actual != value:
+            return False
+    return True if complete else None
 
 
-def _apply_fill(world: dict[Pos, State], fill: object, where: str) -> None:
+# Each ambiguous cell keeps at most one pre-build state plus one state per
+# distinct write at that position. The flag distinguishes an authored write
+# (with Java placement defaults) from an existing, possibly partial read.
+CellOutcome = tuple[State | None, bool]
+
+
+@dataclass
+class _AmbiguousCell:
+    outcomes: set[CellOutcome]
+    reason: str
+
+
+def _conditional_write(world: ChainMap[Pos, State], unresolved: dict[Pos, _AmbiguousCell], pos: Pos,
+                       new: State, keep: bool, flt: State | None, require_known: bool, where: str) -> None:
+    pending = unresolved.get(pos)
+    current = world.get(pos, None if require_known else State(AIR))
+    authored = pos in world.maps[0]
+    before = pending.outcomes if pending else {(current, authored)}
+    after: set[CellOutcome] = set()
+    for state, was_written in before:
+        if state is None:
+            match = None
+        elif keep and state.id not in AIR_MATERIALS:
+            match = False
+        else:
+            match = flt is None or _matches(state, flt, was_written)
+        if match is not False:
+            after.add((new, True))
+        if match is not True:
+            after.add((state, was_written))
+
+    if len(after) == 1:
+        state, was_written = after.pop()
+        if was_written:
+            assert state is not None
+            world[pos] = state
+        unresolved.pop(pos, None)
+    elif pending:
+        pending.outcomes = after
+    else:
+        if current is None:
+            reason = (f"{where}: conditional fill at {pos} needs the pre-build state; "
+                      "pass --background with a pre-build read covering the conditional fills")
+        else:
+            assert flt is not None  # A known material is sufficient for an unfiltered keep.
+            remedy = ("specify the filtered properties explicitly in the earlier write" if authored else
+                      "supply a complete state for the existing block in --background")
+            reason = f"{where}: cannot evaluate filter {format_state(flt)} at {pos}; {remedy}"
+        unresolved[pos] = _AmbiguousCell(after, reason)
+
+
+def _apply_fill(world: ChainMap[Pos, State], fill: object, where: str,
+                unresolved: dict[Pos, _AmbiguousCell], require_known_conditions: bool) -> None:
     if not isinstance(fill, dict) or "from" not in fill or "to" not in fill or "block" not in fill:
         raise PlanError(f"{where}: fill needs from, to and block")
     a = _int3(fill["from"], where, "fill from")
@@ -242,6 +309,8 @@ def _apply_fill(world: dict[Pos, State], fill: object, where: str) -> None:
     if mode not in ("replace", "keep", "outline", "hollow", "walls"):
         raise PlanError(f"{where}: unknown fill mode {mode!r}")
     flt = _state_in(fill["filter"], where) if fill.get("filter") else None
+    if mode == "keep" and flt is not None and flt.id not in AIR_MATERIALS:
+        return  # The cell cannot simultaneously be air and match this filter.
     air = State(AIR)
     lo = tuple(min(p, q) for p, q in zip(a, b))
     hi = tuple(max(p, q) for p, q in zip(a, b))
@@ -258,16 +327,19 @@ def _apply_fill(world: dict[Pos, State], fill: object, where: str) -> None:
                 if mode == "hollow" and not shell:
                     new = air
                 pos = (x, y, z)
-                current = world.get(pos, air)
-                if mode == "keep" and current.id != AIR:
-                    continue
-                if flt is not None and not _matches(current, flt):
-                    continue
-                world[pos] = new
+                if mode == "keep" or flt is not None:
+                    _conditional_write(world, unresolved, pos, new, mode == "keep", flt, require_known_conditions, where)
+                else:
+                    world[pos] = new
+                    unresolved.pop(pos, None)
 
 
-def assemble(plan: Plan, background: dict[Pos, State] | None = None) -> dict[Pos, State]:
-    world: dict[Pos, State] = {}
+def written_cells(plan: Plan, background: dict[Pos, State] | None = None, *,
+                  require_known_conditions: bool = False) -> dict[Pos, State]:
+    """Collect successful plan writes; conditional fills consult the existing site."""
+    written: dict[Pos, State] = {}
+    world = ChainMap(written, background or {})
+    unresolved: dict[Pos, _AmbiguousCell] = {}
     for row in plan.phases:
         if row.get("via") == "commands" or row.get("file", "-") == "-":
             continue
@@ -282,16 +354,29 @@ def assemble(plan: Plan, background: dict[Pos, State] | None = None) -> dict[Pos
             data = {"fills": data}
         if not isinstance(data, dict):
             raise PlanError(f"{file}: phase file must be an object or a list of fills")
+        if data.get("text"):
+            raise PlanError(f"{file}: server-rendered text requires a hand check; "
+                            "use explicit blocks for offline verification")
+        for key in ("fills", "blocks"):
+            if key in data and not isinstance(data[key], list):
+                raise PlanError(f"{file}: {key} must be a list")
         for i, fill in enumerate(data.get("fills") or []):
-            _apply_fill(world, fill, f"{file} fills[{i}]")
+            _apply_fill(world, fill, f"{file} fills[{i}]", unresolved, require_known_conditions)
         for i, entry in enumerate(data.get("blocks") or []):
             where = f"{file} blocks[{i}]"
             if not isinstance(entry, dict) or "pos" not in entry or "block" not in entry:
                 raise PlanError(f"{where}: block needs pos and block")
-            world[_int3(entry["pos"], where, "block pos")] = _state_in(entry["block"], where)
-    for pos, state in (background or {}).items():
-        world.setdefault(pos, state)
-    return world
+            pos = _int3(entry["pos"], where, "block pos")
+            world[pos] = _state_in(entry["block"], where)
+            if unresolved:
+                unresolved.pop(pos, None)
+    if unresolved:
+        raise PlanError(next(iter(unresolved.values())).reason)
+    return written
+
+
+def assemble(plan: Plan, background: dict[Pos, State] | None = None) -> dict[Pos, State]:
+    return (background or {}) | written_cells(plan, background)
 
 
 # --- setup loads ----------------------------------------------------------
@@ -401,20 +486,20 @@ def _item_stack(rest: str, where: str) -> Stack:
     return Stack(item, int(tail))
 
 
-def _data_stacks(nbt: str, where: str) -> dict[int, Stack]:
+def _data_stacks(nbt: str, where: str) -> dict[int, Stack] | None:
     nbt = nbt.strip()
     if not nbt.startswith("{"):
         raise PlanError(f"{where}: data merge needs an NBT compound")
     if _scan_group(nbt, 0, where) != len(nbt):
         raise PlanError(f"{where}: unexpected text after the NBT compound")
-    stacks: dict[int, Stack] = {}
     for pair in _top_level(nbt[1:-1], ",", where):
         key, sep, value = pair.partition(":")
-        if not sep or key.strip() != "Items":
+        if not sep or _unquote(key) != "Items":
             continue
         value = value.strip()
         if not value.startswith("[") or _scan_group(value, 0, where) != len(value):
             raise PlanError(f"{where}: Items must be a list")
+        stacks: dict[int, Stack] = {}
         for entry in _top_level(value[1:-1], ",", where):
             entry = entry.strip()
             if not entry.startswith("{") or _scan_group(entry, 0, where) != len(entry):
@@ -436,7 +521,8 @@ def _data_stacks(nbt: str, where: str) -> dict[int, Stack]:
                 item = "minecraft:" + item
             stacks[int(slot[:-1] if slot[-1].isalpha() else slot)] = Stack(
                 item, int(count[:-1] if count[-1].isalpha() else count))
-    return stacks
+        return stacks
+    return None
 
 
 def setup_loads(plan: Plan) -> dict[Pos, dict[int, Stack]]:
@@ -460,8 +546,8 @@ def setup_loads(plan: Plan) -> dict[Pos, dict[int, Stack]]:
                 raise PlanError(f"{where}: malformed data merge command {command!r}")
             pos = _coords(m.group(1, 2, 3), where)
             stacks = _data_stacks(m.group(4), where)
-            if stacks:
-                loads.setdefault(pos, {}).update(stacks)
+            if stacks is not None:
+                loads[pos] = stacks
     return loads
 
 

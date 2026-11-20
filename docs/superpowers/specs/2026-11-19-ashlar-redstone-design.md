@@ -478,32 +478,36 @@ tests[9]{test,step,kind,at,detail,expect}:
 And for a lever-driven door:
 
 ```toon
-tests[7]{test,step,kind,at,detail,expect}:
+tests[8]{test,step,kind,at,detail,expect}:
   cycle,1,manual,101 65 -341,"Flip the lever at 101 65 -341 on, then tell me",-
   cycle,2,settle,98 64 -343 103 67 -336,blocks,timeout 10
   cycle,3,expect,100 65 -340 100 66 -339,block,minecraft:air
   cycle,4,manual,101 65 -341,"Flip the lever at 101 65 -341 off, then tell me",-
   cycle,5,settle,98 64 -343 103 67 -336,blocks,timeout 10
-  cycle,6,rest,98 64 -343 103 67 -336,blocks,baseline
-  cycle,7,repeat,-,steps 1-6,10
+  cycle,6,expect,100 65 -340 100 66 -339,block,minecraft:smooth_stone
+  cycle,7,rest,98 64 -343 103 67 -336,blocks,baseline
+  cycle,8,repeat,-,steps 1-7,9
 ```
 
 (Here the wall runs along z at x = 100, the doorway is z = -340 to -339 at
 y = 65 to 66, the pistons sit at z = -342 and z = -337, and the lever is on the
-wall's east face beside the doorway.)
+wall's east face beside the doorway. Smooth stone fills the doorway when
+closed. The first pass and nine repeats give ten cycles.)
 
 | Kind | `at` | `detail` | `expect` | Run by |
 | --- | --- | --- | --- | --- |
-| `load` | the container | one console command in an allowed form (`item replace block` or `data merge block`), quoted | `-` | agent |
+| `load` | the container | one quoted inventory load command (`item replace block` or `data merge block` with an `Items` payload only) | `-` | agent |
 | `settle` | a region | `containers` or `blocks`: what to read | `timeout <seconds>`: repeat the reads until two in a row agree, or fail | agent |
 | `await` | a container or cell | `container` or `block` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail | agent |
 | `expect` | a container, a cell or a region | `container` or `block` | `container`: either `gained` and the items the container gained since this test's baseline, or `holds` and its exact contents, each as `id=count` joined by `\|` (nothing else may have been gained, or be held); `block`: a block state that every cell must match (unspecified properties are wildcards) | agent |
 | `conserve` | a region | `containers` | `-`: for every item, the total across the region's containers equals this test's baseline total plus this test's loads, and no container outside this test's `gained` rows gained anything | agent |
 | `rest` | a region | `blocks` | `baseline`: the power properties of the redstone components match this test's baseline | agent |
 | `manual` | where the user acts | the exact instruction, quoted | `-`; the next steps read what happened | user |
-| `repeat` | `-` | `steps <a>-<b>` | how many times to run those steps | — |
+| `repeat` | `-` | `steps <a>-<b>` | how many additional times to run those earlier steps | — |
 
 A test with a `manual` row is a manual test; any other test is an agent test.
+Manual tests use user actions and passive observation. Put any `load` rows in
+a separate agent test.
 Every `load` command is a world change: validation checks it against
 `commands.md`, and the approval gate shows it as it will run.
 
@@ -522,11 +526,16 @@ rolls back. The plan never clears containers through the console.
 
 ### 6.2 Validation additions (`plan-format.md`)
 
-- Every `tests` row has a known kind, a parsable `at` inside the plan's
-  `bbox`, and a parsable `expect`.
-- Every `load` matches `item replace block` or `data merge block` in
-  `commands.md` (no `summon` in tests).
-- Every test that drives the machine ends with a `rest` row.
+- Every `tests` row has a known kind and a parsable `expect`. Its `at` is a
+  parsable position or region inside the plan's `bbox`, except for `repeat`,
+  which uses `-` and names a valid range of earlier steps in the same test.
+- Every `load` is in an agent test and matches `item replace block` or
+  `data merge block` in `commands.md`. A test `data merge block` may set only
+  the inventory `Items` payload. The command's coordinates must equal the
+  row's single `at` position inside the `bbox` and identify a planned or
+  observed container. Confirm the container is present before executing.
+- Every test that drives the machine ends with a `rest` row after expanding
+  any `repeat` rows.
 - A plan written by `system-redstone` has at least one test for each input, or
   a note saying why the input cannot be tested.
 - Plans from other skills may omit `tests`.
@@ -538,26 +547,43 @@ those tests; with `--manual` it runs only the manual tests, so pending manual
 steps can be finished, or one failed test re-run, without repeating the rest.
 
 1. Preflight as for every mode. The project's registry status must be `built`.
+   For changed test rows or execution scope on a built project, use the
+   test-only gate (§6.5).
 2. `mc_players`. If anyone is inside the machine's box grown by 2 blocks, stop
-   before any agent step and say so. The user may stand further away to watch.
-   Manual steps are done by the user, who is expected to be at the machine.
-3. `forceload query`, then the paired `forceload add` over the machine's
-   columns (`commands.md`), held through all the agent steps of this run and
-   removed at the end, also when a step fails.
-4. **At rest check:** `ashlar_place.py read` over the machine's box, and
-   `data get block` on every container in it (the checker's `containers`
-   command lists them). `redstone_rest.py diff --loaded` compares the read with
-   the checker's predicted state after setup; this decides the *at rest*
-   verdict (§6.4).
+   before any agent test or test write and say so. The user may stand further
+   away to watch. Manual steps are done by the user, who is expected to be at
+   the machine.
+3. If agent tests are selected, run `forceload query`, then the paired
+   `forceload add` over the approved columns (`commands.md`). Start the
+   approved hold budget at the first add attempt. Bound calls and waits so
+   cleanup can start by its reserved time. Record each confirmed addition.
+4. **At rest check:** `ashlar_place.py read` over the extent covering both the
+   machine box and the recorded pre-build background when supplied, including
+   the background's modelled cells outside the machine box. Keep force-loads
+   and writes within approval. `redstone_rest.py diff --loaded`, with the
+   same background if supplied, compares the read with the checker's
+   predicted state after setup. Enumerate supported actual containers in the
+   test area and any reused by the circuit from the full read. Reconcile them
+   with the plan-authored list from `containers`, the setup loads and any
+   recorded expectations for reused containers. Read their inventories with
+   `data get block`. For manual-only runs or console reads outside the
+   approved force-load area, take this inventory evidence while a player keeps
+   the chunks loaded. Unknown expected contents the circuit depends on
+   prevent an `at_rest` pass (§6.4).
 5. Run each agent test's rows in order, each from its own baseline (§6.1). A
-   failing row ends that test, records what was seen, and moves on to the next
-   test.
-6. Release the force-load.
+   failing row ends that test and records what was seen. Continue only if the
+   next test fits before the cleanup reserve.
+6. If this run attempted force-loads, start cleanup when it finishes, is
+   interrupted or reaches the cutoff. Release only its confirmed additions
+   and check the result with `forceload query`. If cleanup cannot be
+   confirmed, report the affected chunks and the last result.
 7. Guide the manual tests: one instruction at a time, wait for the user's word,
-   read, record. The user can stop at any point; the manual verdict then stays
-   `pending`.
+   read, record. Use the chunks the user keeps loaded for these reads. The user
+   can stop at any point; the manual verdict then stays `pending`.
 8. Record the verdicts and evidence in a `## Test …` section of `build-log.md`
-   and in `registry.json`, then report.
+   and in `registry.json`, then report. Retain earlier evidence only for
+   unchanged, still-applicable tests. Revised tests and tests affected by a
+   fix are `pending` until rerun.
 
 Between reads, wait with whatever the client allows (for example a shell
 `sleep`), or simply read again. Send reads in batches of at most 12 (Ashlar
@@ -583,7 +609,7 @@ Each verdict is `pass`, `fail`, `pending` or `n/a`:
 | Verdict | Passes when |
 | --- | --- |
 | `built` | The existing acceptance and `quality_contract` checks pass, and `redstone_rest.py diff` of a full read against the plan finds no cell that differs in block or in any property other than power properties and the ones Ashlar's connection pass sets |
-| `at_rest` | The checker was clean before the build, the power properties in the baseline read after setup match the checker's loaded rest state, and every `rest` row passed |
+| `at_rest` | The checker was clean before the build, the power properties in the baseline read after setup match the checker's loaded rest state, internal inventories match their expected contents, and every `rest` row passed |
 | `agent_tested` | Every agent test passed; `n/a` when the agent can drive nothing |
 | `manual` | Every manual test passed; `pending` until the user has done them; `n/a` when there are none |
 
@@ -603,35 +629,51 @@ what is pending and how to check it. The registry `status` flow is unchanged.
 The gate also shows:
 
 - every test `load` command exactly as it will run;
-- each test's force-load, its chunks, and the longest time it may be held (the
-  sum of the test's timeouts);
+- the exact chunks each agent test may force-load and its maximum hold time.
+  Add only chunks absent from the pre-run query and remove only confirmed
+  additions. Include all expanded row timeouts and bounded overhead for
+  force-load calls, baseline reads, console steps, verification and cleanup.
+  Show the combined budget if tests share a force-load and reserve time to
+  release and verify the run's additions;
 - any test input or fixture, and where it is;
 - the manual steps the user will be asked to do;
 - what will remain unverified.
 
+If only the tests or their execution scope change after a build, validate
+the revised tests and use a fresh test-only approval for that scope. Show the
+revised test evidence requirements. Wait for an explicit yes, update the
+approval date and record the approved test scope. Keep the registry status
+`built` and run only the approved tests.
+
 ### 6.6 Recovery and corrections (`execution.md`)
 
-- **A build that stops part way** (placer exit 5, an MCP error, the user stops
-  it): the existing report lists what was written and the snapshot ids. The
-  skill then offers to resume the failed phase or to roll back, and asks before
-  either. Resuming keeps the interrupted phase's original snapshots as its
-  rollback point and re-places the phase from the start **without** taking new
-  ones (`--no-snapshot` for the placer, no `snapshot` for `mc_build`). A
-  snapshot taken now would record the half-written state: replacing the
-  original ids would lose the way back to the world before the build, and
-  keeping both would spend extra slots from the shared 20. Re-placing from the
-  start is safe because the phase's fills and blocks write the same cells again.
-  If any of the original snapshots has been evicted since, the resume gate says
-  so: that phase can no longer be rolled back. This is the same resume rule as
-  the terrain spec (`docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md`
-  §9.4 on branch `terrain`), so `execution.md` ends up with one rule.
+- **An interrupted block placement** (placer exit 5, an MCP error, the user
+  stops it): record the known writes and snapshot ids. Confirm that replaying
+  the fills and blocks would produce the same final cells. When it would,
+  offer to resume from the start or roll back and ask before either. Resume
+  using the original snapshots without taking new ones (`--no-snapshot` for
+  the placer, omit `snapshot` for `mc_build`). That keeps the original
+  rollback point and avoids spending slots on the half-written state. If any
+  original snapshot has been evicted, tell the user at the gate which part
+  can no longer be rolled back. If replay could produce a different result,
+  for instance with overlapping conditional fills, reconcile the partial
+  writes first and show the exact remaining writes, restore or correction at
+  a fresh gate.
+- **An interrupted `commands` phase:** release the phase's force-loads and
+  reconcile each confirmed or uncertain operation against the console log and
+  observed state. Use available block, inventory and tagged-entity reads.
+  Never replay summons, feature placement or inventory loads wholesale.
+  Show the precise remaining commands or recovery actions at a fresh gate
+  and wait for approval before continuing.
 - **A failed test:** `system-redstone` diagnoses it. The fix is a new phase
   holding only the changed blocks, added to `plan.toon`, validated, and shown at
   a new gate as a list of the cells it changes. Then snapshot, place and test
-  again. After three failed fix rounds the skill stops and recommends a rollback
-  or a redesign.
-- **A test that fails part way** still releases its force-load and records what
-  it saw.
+  again. Mark the tests affected by the fix `pending` until rerun. After three
+  failed fix rounds the skill stops and recommends a rollback or a redesign.
+- **A test that fails part way** records what it saw. When the run ends or
+  reaches its cleanup cutoff, release only its own force-load additions
+  within the reserved time. If cleanup cannot be confirmed, report the
+  affected chunks.
 
 ### 6.7 `ashlar_place.py read`
 
@@ -703,8 +745,9 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
   every modelled component with the loaded rest state; this is the `at_rest`
   check. `diff` of two reads compares the power properties of the modelled
   components in both reads (the `rest` rows).
-- `containers` lists every container in the plan, for `settle`, `conserve` and
-  the baseline.
+- `containers` lists the supported containers written by the plan. Use the
+  full read to find existing containers for `settle`, `conserve` and the
+  baseline.
 - `system-redstone` runs `exec-ashlar`'s scripts (`stamp.py`, and
   `ashlar_place.py read` for `--background`) by their sibling path,
   `../exec-ashlar/scripts/` from its own folder, the same way the plan format

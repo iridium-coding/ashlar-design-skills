@@ -2,8 +2,12 @@
 
 `mc_command` runs a command with full operator rights. Use only these forms,
 and only for what Ashlar's other tools cannot do. Commands that change the world
-must be listed exactly in the approved plan's `commands` table. The read-only
-checks may run whenever surveying or verification needs them.
+must be listed in the approved plan's `commands` table or as agent test
+`load` rows in its [`tests` table](plan-format.md#tests). Test loads are world
+changes. Show each one at the [approval gate](execution.md#approval-gate)
+exactly as it will run, for example `minecraft:item replace block 104 64 -350
+container.0 with minecraft:cobblestone 40`. The read-only checks may run
+whenever surveying or verification needs them.
 Verification and rollback may run their own position and entity checks and
 `kill @e[tag=ashlar.<project>]` without a plan row, each inside its own paired
 force-load (below), unless a player is near the site.
@@ -43,7 +47,8 @@ Read-only checks:
   (`minecraft:summon ...`, `minecraft:kill ...`, `minecraft:forceload ...`), so
   a server plugin that registers the same command name cannot take it over (on
   one server a plugin answered an unprefixed `kill`). Plan rows may omit the
-  prefix; the approval gate shows each command as it will run, with the prefix.
+  prefix. The approval gate shows ordinary commands exactly as they will
+  run and states the eligible add and remove scope for force-loads.
 - Each command is one line. Design-skill examples sometimes wrap long SNBT over
   several lines for reading; join them into one line, keeping every character,
   before listing or running them.
@@ -65,10 +70,11 @@ Read-only checks:
   phase's box, or the position) and `forceload remove` of exactly the same
   columns straight after. Coordinates are block x and z; the command covers
   every chunk containing them, at most 256 chunks per command. The survey's
-  biome test is the one exception (`survey.md`).
-- Never leave a chunk force-loaded. Every `forceload add` has a matching
-  `forceload remove` in the same phase or mode; if a phase stops part way, run
-  the remove before reporting.
+  biome test (`survey.md`) and read-only checks in already loaded chunks
+  are exceptions. In a manual test, use the chunks the user keeps loaded for
+  the evidence reads.
+- Release every confirmed force-load addition in the same phase or mode,
+  including when it stops part way. Preserve pre-existing force-loads.
 - Before a `forceload add`, run `forceload query`. If it lists chunks inside
   the area, the server owner already keeps them loaded: leave them out of both
   the add and the remove, and force-load the other chunks one at a time
@@ -82,13 +88,17 @@ Read-only checks:
   block-entity NBT, `place feature`, force-loads) would otherwise land in the
   main world, and ask whether to run each one as
   `execute in <dimension> run <command>` (for example `minecraft:the_nether`).
-  Without a yes, skip those steps and tell the user what is missing. For an
-  `execute in` plan, run `forceload query` and the force-load pair in that
-  dimension too (`execute in <dimension> run forceload ...`).
+  Without a yes, skip those steps and tell the user what is missing. Keep the
+  plan rows in their bare or `minecraft:`-prefixed forms for the redstone
+  checker and apply the wrapper only at execution. For an `execute in` plan,
+  run `forceload query` and the force-load pair in that dimension too
+  (`execute in <dimension> run forceload ...`).
 - A `Test failed`, "No entity was found" or "That position is not loaded" from
   a chunk that is not force-loaded and has no player nearby proves nothing: the
-  chunk may just be unloaded. Repeat the check inside a force-load.
+  chunk may just be unloaded. Repeat the check inside a force-load. For manual
+  test evidence, repeat it with the user close enough to load the chunk.
 - `place feature` changes blocks: keep it inside a snapshotted box.
+- Never clear containers through the console.
 - Write commands without a leading `/`.
 - Snapshots do not capture entities or block-entity contents: rollback removes
   entities with `kill` and cannot bring NBT back (`execution.md`).

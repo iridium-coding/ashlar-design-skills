@@ -68,7 +68,67 @@ blocks with `mc_inspect` where it matters. `mc_render` does not show entities.
   `data get entity @e[tag=ashlar.<project>,tag=ashlar.<project>.<name>,limit=1] Brain.memories` and
   confirm `minecraft:home` (its bed) and `minecraft:job_site` are set.
 
+## Redstone
+
+Before the build, confirm that the recorded `redstone_rest.py check` is clean
+for the as-built state, that unmodelled parts were checked by hand, and that
+the loaded state settles. Even exit 0 or 3 can accompany a `loaded … cannot
+settle` result. Record the pre-build site read path in the plan notes when the
+machine depends on existing blocks or conditional fills. See the
+[checker guide](../../system-redstone/reference/checker.md).
+
+For `built`, run the usual acceptance and `quality_contract` checks. Read the
+full machine box with `ashlar_place.py read`, using the plan's world, and
+compare it with the plan:
+
+```text
+python3 <skill>/scripts/ashlar_place.py read <x1> <y1> <z1> <x2> <y2> <z2> --out <full-read.json> [--world <name>]
+python3 <skill>/../system-redstone/scripts/redstone_rest.py diff <plan.toon> <full-read.json> [--background <pre-build-read.json>]
+```
+
+The diff checks the block and every written property except power and
+connection-pass properties. A wrong facing or missing block fails `built`.
+
+For `at_rest`, [test mode](../SKILL.md#test) compares the baseline read after
+setup with the checker's loaded rest state:
+
+```text
+python3 <skill>/../system-redstone/scripts/redstone_rest.py diff <plan.toon> <baseline.json> --loaded [--background <pre-build-read.json>]
+```
+
+Pass the same recorded pre-build read to both plan diffs when supplied. The
+loaded diff compares component IDs and power properties. Read the extent
+covering both the machine box and the supplied pre-build background so the
+loaded diff sees the modelled positions outside the box. An unsettled loaded
+state has no baseline.
+
+Use the full read to find the actual chests, trapped chests, barrels, hoppers,
+droppers and dispensers in the test area, including reused containers the
+circuit depends on. The checker's `containers` command lists the supported
+containers written by the plan. Compare that list with the observed positions,
+read inventories with `data get block`, and check internal container contents
+against the setup rows and any recorded expectations for reused containers.
+The pre-build background contains block states only. If an existing
+container's expected contents affect the circuit and are unknown, report the
+position and withhold the `at_rest` pass. If known contents or their effects
+fall outside what the checker models, check them by hand and record the
+evidence. Keep console reads within loaded chunks and preserve the approved
+force-load scope.
+
+Each `rest` row diffs a test's own baseline read against the after read over
+the same full region to check power properties at modelled positions. A pass
+for `at_rest` requires the pre-build check, a matching loaded baseline with
+verified internal inventories and every applicable `rest` row to pass.
+
+- **Power properties** are `power`, `powered`, `lit`, `extended`, `enabled`,
+  `triggered`, `locked`, and `open` on machine-driven doors, trapdoors and
+  fence gates.
+- **Connection-pass properties** are the side properties of wire, panes,
+  fences, walls and bars, stair `shape`, and chest `type`.
+
+Record all four [verdicts](registry.md#verdicts) with their evidence.
+
 ## Report
 
 List each check with pass or fail and its evidence (a column line, a count, a
-render). The build is done only when every check passes.
+render). The build is done only when every build check passes.

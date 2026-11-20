@@ -17,6 +17,8 @@ machine faces whichever way the wall faces.
 
 Ten guided lever cycles (open, then closed, ten times). No items.
 
+If the user accepts a test input: each agent cycle loads 25 items into it (about 10 s open), for ten agent cycles. The user's ten lever cycles are still required.
+
 ## Pass criteria
 
 As in [rung 2](02-door-2x2.md), with all nine doorway cells clear when open

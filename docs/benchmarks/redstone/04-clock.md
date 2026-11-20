@@ -16,6 +16,8 @@ chosen by the agent or named by the runner, with no facing required.
 
 Target period: about two seconds. Pulse count: at least 30 pulses.
 
+If the user accepts a pulse counter: load 64 items into its dropper and measure across at least 60 s (30 pulses at the target period).
+
 ## Pass criteria
 
 Ashlar only, as in [rung 1](01-sorter.md). Off: at rest, and `check` settles.

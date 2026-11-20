@@ -6,7 +6,7 @@ It checks:
 
 | # | Check | Expected | If different |
 | --- | --- | --- | --- |
-| 1 | A lone dust, and dust with one and two connections, after Ashlar's connection pass | Record the lone dust's shape (dot or cross); lines point into the block they power | Update the dust rule in spec §5.4 and the checker |
+| 1 | Two lone wires, one written with no sides (as stamped modules write them) and one written with all four sides, plus dust with one and two connections, after Ashlar's connection pass | Record which shape each lone wire ends up with (dot or cross); lines point into the block they power | Update the dust rule in spec §5.4 and the checker |
 | 2 | A comparator behind a hopper, with dust after it; `item replace block` 23 items into the hopper | The comparator outputs 2 and the dust re-powers | Stop and bring it to the user (see [How results flow back](#how-results-flow-back)) |
 | 3 | A hopper chain inside a force-load with nobody within 128 blocks; load 10 items into the top hopper | All 10 reach the chest within about 10 s | Stop and bring it to the user (see [How results flow back](#how-results-flow-back)) |
 | 4 | An extended sticky piston with its head, a torch, a repeater and a lamp written in states consistent with their power | They read back unchanged after 60 s | Note what Paper changes |
@@ -28,8 +28,9 @@ Each check passes when the "Expected" column of the table above holds for that
 row. A check whose result differs is not a failure of the run; it is a finding,
 and the "If different" column says what happens next. In summary:
 
-1. **Check 1:** the lone dust's shape (dot or cross) is recorded, and lines point
-   into the block they power. Otherwise, update the dust rule and the checker.
+1. **Check 1:** the shape each lone wire ends up with (dot or cross) is recorded
+   for both the no-sides and the all-four-sides wire, and lines point into the
+   block they power. Otherwise, update the dust rule and the checker.
 2. **Check 2:** the comparator outputs 2 and the dust re-powers. Otherwise, stop
    and bring it to the user.
 3. **Check 3:** all 10 items reach the chest within about 10 s. Otherwise, stop

@@ -17,6 +17,8 @@ machine faces whichever way the wall faces.
 
 Ten guided lever cycles (open, then closed, ten times). No items.
 
+If the user accepts a test input: each agent cycle loads 25 items into it (about 10 s open), for ten agent cycles. The user's ten lever cycles are still required.
+
 ## Pass criteria
 
 1. Ashlar only, as in [rung 1](01-sorter.md).

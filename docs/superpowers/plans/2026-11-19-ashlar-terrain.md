@@ -27,7 +27,7 @@
 - **Skill text rules** (spec 1 §7.5, spec §8.6): client-specific names only on lines labelled `Claude Code:` or `Codex:` with an `Otherwise:` line; paths relative to the skill folder, cross-skill paths only as siblings (`../terrain-shape/…`, `../exec-ashlar/…`), never repo-root paths; no word "orchestrator"; no server-specific facts (IPs, hosts, player names, this server's site coordinates or world list).
 - **Secrets:** never print, log or commit a value from an MCP server entry's `env`; never read `~/.claude.json` or `~/.codex/config.toml` with commands that echo values.
 - **Live world:** only Tasks 23–27 contact the live server. Tasks 24 and 25 are read-only. Task 26 writes only after the user's yes at that moment, only inside the scratch area recorded in Task 24, and restores it.
-- **Shared column reader:** `column_tiles`, `parse_columns` and `read_columns` (Task 3) are shared with sub-project 3 (`redstone` branch), whose `read` subcommand uses them. Whichever branch merges first owns them. If `origin/main` already has them when Task 3 starts, ask the user whether to merge `origin/main` into `terrain` and reuse them.
+- **Shared column reader:** `column_tiles`, `parse_columns` and `read_columns` (Task 3) are shared with sub-project 3 (`redstone` branch), whose `read` subcommand uses them. Sub-project 3 committed them on `redstone` as `462f592` (not yet merged). If `origin/main` already has them when Task 3 starts, ask the user whether to merge `origin/main` into `terrain` and reuse them; otherwise copy the three functions verbatim from `git show 462f592 -- skills/exec-ashlar/scripts/ashlar_place.py`, so the later merge has nothing to reconcile.
 
 ### Shared formats
 
@@ -320,9 +320,7 @@ def test_restore_refuses_when_player_inside(tmp_path): ...       # FAKE_PLAYERS 
 
 - [ ] **Step 4: Implement**
 
-- `column_tiles`: split the box's x/z rectangle into tiles of at most `min(max_columns, max_cells // height)` columns, row-major; each tile keeps the full y range.
-- `parse_columns`: data lines match `^(-?\d+),(-?\d+): (.+)$`; runs split on ` | `, each `^(-?\d+)-(-?\d+) (\S+)$`; other lines are ignored.
-- `read_columns`: one `mc_inspect` per tile with `format: "columns"` (and `world`), merging results; an `isError` reply raises `PlacerError(…, EXIT_SERVER)` with the reply redacted.
+- `column_tiles`, `parse_columns`, `read_columns`: copy them verbatim from `redstone`'s `462f592` (see Global Constraints) rather than writing new ones. As committed there: `column_tiles` keeps the full y range and splits in x, and also in z when one full-depth x strip exceeds the cap; `parse_columns` skips the `Region (default) …` header, reads data lines `^(-?\d+),(-?\d+): (.+)$` with runs `^(-?\d+)-(-?\d+) (\S+)$` split on ` | `, adds `minecraft:` when missing, and raises `PlacerError(EXIT_SERVER)` on a run it cannot parse; `read_columns` makes one `mc_inspect` per tile with `format: "columns"`, passes `world` only when it is not `None`, and stops on the first `isError` reply with `PlacerError(…, EXIT_SERVER)`, redacted. Only if `462f592` is unreachable, write them to this description.
 - `check_complete`: every column of the box is present, its runs are contiguous, and they start at the box's y1 and end at its y2.
 - `restore_build`: one fill per run, merging runs with equal `(z, y1, y2, state)` at consecutive x; `liquids: "static"`, `connect: false`, plus `world` when given.
 - Factor the checks inside `load_build` into `validate_build(data: dict[str, Any], limits: Limits, where: str) -> dict[str, Any]`; `load_build` reads the file and calls it.

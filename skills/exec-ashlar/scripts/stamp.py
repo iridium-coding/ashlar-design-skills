@@ -43,6 +43,9 @@ CONNECTING_SUFFIXES = ("_fence", "_wall", "_pane")
 CONNECTING_IDS = {"minecraft:iron_bars", "minecraft:redstone_wire"}
 PLACEMENTS_HEADER = re.compile(
     r"^placements\[\d+\]\{module,origin,rotation,mirror,phase\}:\s*$")
+VEG_PARTS = ("ground", "wood", "leaves")
+VEG_KEYS = {"name", "size", "kind", "anchor", *VEG_PARTS}
+AIR = "minecraft:air"
 
 Box = tuple[int, int, int, int, int, int]
 
@@ -161,19 +164,95 @@ def _inside(point: Any, size: list[int], where: str) -> None:
         raise StampError(f"{where}: {point!r} is outside the module size {size}")
 
 
+def _check_size(size: Any) -> list[int]:
+    if (not isinstance(size, list) or len(size) != 3
+            or not all(isinstance(v, int) and v > 0 for v in size)):
+        raise StampError("module 'size' must be three positive integers [w, h, d]")
+    return size
+
+
+def _check_vegetation(module: dict[str, Any]) -> None:
+    """Validate an F7 vegetation module: an anchor inside the size, and only known keys."""
+    _check_size(module.get("size"))
+    unknown = sorted(set(module) - VEG_KEYS)
+    if unknown:
+        raise StampError(f"vegetation module has keys {unknown}; only ground, wood and "
+                         "leaves parts are allowed")
+    if "anchor" not in module:
+        raise StampError("vegetation module needs an 'anchor' (the trunk base cell)")
+    _inside(module["anchor"], module["size"], "anchor")
+    for part in VEG_PARTS:
+        body = module.get(part, {})
+        if not isinstance(body, dict) or set(body) - {"fills", "blocks"}:
+            raise StampError(f"vegetation part {part!r} takes only fills and blocks")
+
+
+def _cells_to_fills(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Turn 1 x 1 x 1 cells into fills, merging runs of consecutive x with equal y, z and block."""
+    runs: dict[tuple[int, int, str], list[int]] = {}
+    for block in blocks:
+        extra = sorted(set(block) - {"pos", "block"})
+        if extra:
+            raise StampError(f"vegetation cells take only pos and block, not {extra}")
+        x, y, z = block["pos"]
+        runs.setdefault((y, z, block["block"]), []).append(x)
+    fills: list[dict[str, Any]] = []
+    for (y, z, state), xs in runs.items():
+        xs = sorted(set(xs))
+        start = prev = xs[0]
+        for x in xs[1:] + [None]:
+            if x is not None and x == prev + 1:
+                prev = x
+                continue
+            fills.append({"from": [start, y, z], "to": [prev, y, z], "block": state})
+            if x is not None:
+                start = prev = x
+    return fills
+
+
+def _phase(entries: list[tuple[dict[str, Any], list[int], int, str]]) -> dict[str, list]:
+    """Assemble one phase from (module, origin, rotation, mirror) entries.
+
+    Non-vegetation output keeps its order. Vegetation then adds every `ground`
+    part, every `wood` part and every `leaves` part; wood and leaves cells go
+    into air only, so they are fills with the air filter and `blocks` stays
+    for non-vegetation cells.
+    """
+    plain: dict[str, list] = {"fills": [], "blocks": []}
+    veg: dict[str, list] = {part: [] for part in VEG_PARTS}
+    for module, origin, rotation, mirror in entries:
+        if module.get("kind") != "vegetation":
+            part = stamp(module, origin, rotation, mirror)
+            plain["fills"] += part["fills"]
+            plain["blocks"] += part["blocks"]
+            continue
+        _check_vegetation(module)
+        for name in VEG_PARTS:
+            body = module.get(name, {"fills": [], "blocks": []})
+            part = stamp({"size": module["size"], **body}, origin, rotation, mirror)
+            fills = part["fills"] + _cells_to_fills(part["blocks"])
+            if name != "ground":
+                fills = [{**fill, "filter": AIR} for fill in fills]
+            veg[name] += fills
+    return {"fills": plain["fills"] + veg["ground"] + veg["wood"] + veg["leaves"],
+            "blocks": plain["blocks"]}
+
+
 def stamp(module: dict[str, Any], origin: list[int], rotation: int,
           mirror: str) -> dict[str, list[dict[str, Any]]]:
-    """Place one module instance; returns {"fills": [...], "blocks": [...]}."""
+    """Place one module instance; returns {"fills": [...], "blocks": [...]}.
+
+    A vegetation module returns the same shape, as a one-tree phase.
+    """
     if rotation not in (0, 90, 180, 270):
         raise StampError(f"rotation must be 0, 90, 180 or 270, not {rotation}")
     if mirror not in MIRRORS:
         raise StampError(f"mirror must be none, x or z, not {mirror!r}")
     if "text" in module:
         raise StampError("modules may not contain 'text'; put lettering in its own phase")
-    size = module.get("size")
-    if (not isinstance(size, list) or len(size) != 3
-            or not all(isinstance(v, int) and v > 0 for v in size)):
-        raise StampError("module 'size' must be three positive integers [w, h, d]")
+    size = _check_size(module.get("size"))
+    if module.get("kind") == "vegetation":
+        return _phase([(module, origin, rotation, mirror)])
     fills = []
     for i, fill in enumerate(module.get("fills", [])):
         _inside(fill.get("from"), size, f"fills[{i}].from")
@@ -227,24 +306,28 @@ def read_placements(path: Path, phase: int | None) -> list[dict[str, Any]]:
 
 
 def stamp_all(placements: list[dict[str, Any]], modules_dir: Path) -> dict[str, list]:
-    """Stamp every placement into one phase file; placements may not overlap."""
-    out: dict[str, list] = {"fills": [], "blocks": []}
-    placed: list[tuple[Box, str]] = []
+    """Stamp every placement into one phase file.
+
+    Placements may not overlap, except that vegetation may overlap vegetation.
+    """
+    entries: list[tuple[dict[str, Any], list[int], int, str]] = []
+    placed: list[tuple[Box, str, bool]] = []
     cache: dict[str, dict[str, Any]] = {}
     for row in placements:
         name = row["module"]
         if name not in cache:
             cache[name] = json.loads((modules_dir / f"{name}.json").read_text(encoding="utf-8"))
         module = cache[name]
+        is_veg = module.get("kind") == "vegetation"
         box = footprint(module["size"], row["rotation"], row["origin"])
-        for other, other_name in placed:
+        for other, other_name, other_veg in placed:
+            if is_veg and other_veg:
+                continue
             if _overlaps(box, other):
                 raise StampError(f"{name} at {row['origin']} overlaps {other_name}")
-        placed.append((box, f"{name} at {row['origin']}"))
-        part = stamp(module, row["origin"], row["rotation"], row.get("mirror", "none"))
-        out["fills"] += part["fills"]
-        out["blocks"] += part["blocks"]
-    return out
+        placed.append((box, f"{name} at {row['origin']}", is_veg))
+        entries.append((module, row["origin"], row["rotation"], row.get("mirror", "none")))
+    return _phase(entries)
 
 
 def main(argv: list[str] | None = None) -> int:

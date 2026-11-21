@@ -320,6 +320,18 @@ def surfaces(site: Site) -> Surfaces:
 _N6 = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
 _N26 = tuple((a, b, c) for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1)
              if (a, b, c) != (0, 0, 0))
+_ATTACH_TOP = _mc("snow", "moss_carpet", "pale_moss_carpet")
+_ATTACH_HANGING = _mc("vine", "cave_vines", "cave_vines_plant", "weeping_vines",
+                      "weeping_vines_plant", "pale_hanging_moss", "mangrove_propagule")
+
+
+def _attach_kind(block_id: str) -> str:
+    """How an attachment joins a tree: lies on top of a cell, hangs, or clings to a side."""
+    if block_id in _ATTACH_TOP:
+        return "top"
+    return "hanging" if block_id in _ATTACH_HANGING else "side"
+
+
 LEAF_REACH = 6  # vanilla leaf distance: a leaf survives within 6 steps of a log
 
 
@@ -330,7 +342,7 @@ def find_trees(site: Site) -> list[Tree]:
     cells it touches. Trees are ordered by (base_y, first trunk cell)."""
     trunks: set[Cell] = set()
     leaves: set[Cell] = set()
-    attached: set[Cell] = set()
+    attached: dict[Cell, str] = {}
     for (x, z), runs in site.columns.items():
         for ya, yb, state in runs:
             k = _kind(state)
@@ -339,7 +351,8 @@ def find_trees(site: Site) -> list[Tree]:
             elif k == _LEAF_K:
                 target = leaves
             elif k == _ATT_K:
-                target = attached
+                attached.update(((x, y, z), base_id(state)) for y in range(ya, yb + 1))
+                continue
             else:
                 continue
             target.update((x, y, z) for y in range(ya, yb + 1))
@@ -385,25 +398,35 @@ def find_trees(site: Site) -> list[Tree]:
         if not frontier:
             break
 
-    pending = set(attached)
-    while pending:
-        found = {}
-        for c in pending:
-            best: tuple[int, int] | None = None
+    # Attachments join by type and never through one another, except a hanging chain:
+    # on-top types need a trunk/leaf cell directly below; side types need one 6-adjacent;
+    # hanging types need one 6-adjacent or an assigned hanging cell directly above.
+    # Cells go top-down so a chain is one pass. Ties: (distance, trunk rank).
+    solid = dict(owner)  # trunk and leaf cells only
+    hanging_owner: dict[Cell, tuple[int, int]] = {}
+    for c in sorted(attached, key=lambda cell: (-cell[1], cell)):
+        kind = _attach_kind(attached[c])
+        best: tuple[int, int] | None = None
+        if kind == "top":
+            below = (c[0], c[1] - 1, c[2])
+            if below in solid:
+                best = (dist[below], solid[below])
+        else:
             for dx, dy, dz in _N6:
                 n = (c[0] + dx, c[1] + dy, c[2] + dz)
-                if n in owner:
-                    key = (dist[n], owner[n])
+                if n in solid:
+                    key = (dist[n], solid[n])
                     if best is None or key < best:
                         best = key
-            if best is not None:
-                found[c] = best
-        if not found:
-            break
-        for c, (d, rank) in found.items():
-            owner[c] = rank
-            dist[c] = d + 1
-        pending -= set(found)
+            if kind == "hanging":
+                above = hanging_owner.get((c[0], c[1] + 1, c[2]))
+                if above is not None and (best is None or above < best):
+                    best = above
+        if best is not None:
+            owner[c] = best[1]
+            dist[c] = best[0] + 1
+            if kind == "hanging":
+                hanging_owner[c] = (best[0] + 1, best[1])
 
     cells: list[set[Cell]] = [set() for _ in components]
     for c, rank in owner.items():

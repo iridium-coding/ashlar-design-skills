@@ -255,3 +255,55 @@ def test_load_heights_orders_and_nans(tmp_path):
     (tmp_path / "b.json").write_text(json.dumps(bad))
     with pytest.raises(ValueError):
         load_heights(tmp_path / "b.json")
+
+
+def test_attachments_do_not_flood_ground_cover(tmp_path):
+    box = (0, 50, 0, 19, 80, 19)
+    snow = {(x, 65, z): "minecraft:snow[layers=1]"
+            for x in range(20) for z in range(20) if (x, z) != (10, 10)}
+    snow[(10, 76, 10)] = "minecraft:snow[layers=1]"  # nothing below: floats, stays out
+    site = make_site(tmp_path / "s", box, trees=[tree(10, 10, 65)], cells=snow)
+    # snow on top of a leaf cell joins
+    leaf_top = max(y for y in range(65, 81)
+                   if site.block(10, y, 11).startswith("minecraft:oak_leaves"))
+    on_leaf = {(10, leaf_top + 1, 11): "minecraft:snow[layers=1]"}
+    site = make_site(tmp_path / "s2", box, trees=[tree(10, 10, 65)], cells={**snow, **on_leaf})
+    (t,) = find_trees(site)
+    plain = make_site(tmp_path / "p", box, trees=[tree(10, 10, 65)])
+    (t0,) = find_trees(plain)
+    assert t.cells == t0.cells | {(10, leaf_top + 1, 11)}
+    # lichen and moss lying/clinging around: same rule
+    cells = {(x, 65, 12): "minecraft:moss_carpet" for x in range(20)}
+    (t2,) = find_trees(make_site(tmp_path / "m", box, trees=[tree(10, 10, 65)], cells=cells))
+    assert t2.cells == t0.cells
+
+
+def test_hanging_chain_joins_but_neighbour_column_does_not(tmp_path):
+    box = (0, 50, 0, 11, 80, 11)
+    base = make_site(tmp_path / "b", box, trees=[tree(5, 5, 65)])
+    (t0,) = find_trees(base)
+    leaf = min(c for c in t0.cells if base.block(*c).startswith("minecraft:oak_leaves")
+               and base.block(c[0], c[1] - 1, c[2]) == "minecraft:air"
+               and c[1] == min(k[1] for k in t0.cells if base.block(*k).startswith("minecraft:oak_leaves")))
+    x, y, z = leaf
+    chain = {(x, y - i, z): "minecraft:vine[north=true]" for i in range(1, 6)}
+    # a separate vine column standing beside the chain, not under the tree
+    side = {(x + 4 if x + 4 <= 11 else x - 4, 60 + i, z): "minecraft:vine[north=true]"
+            for i in range(0, 4)}
+    site = make_site(tmp_path / "v", box, trees=[tree(5, 5, 65)], cells={**chain, **side})
+    (t,) = find_trees(site)
+    assert set(chain) <= t.cells
+    assert not (set(side) & t.cells)
+
+
+def test_side_attachment_needs_adjacency(tmp_path):
+    box = (0, 50, 0, 11, 80, 11)
+    cells = {(7, 66, 5): "minecraft:glow_lichen[down=true]",
+             (6, 66, 5): "minecraft:glow_lichen[down=true]"}
+    (t,) = find_trees(make_site(tmp_path / "g", box, cells=cells,
+                                trees=[tree(5, 5, 65, radius=0)]))
+    assert (6, 66, 5) in t.cells and (7, 66, 5) not in t.cells
+    cells = {(7, 66, 5): "minecraft:glow_lichen[down=true]"}
+    (t,) = find_trees(make_site(tmp_path / "g2", box, cells=cells,
+                                trees=[tree(5, 5, 65, radius=0)]))
+    assert (7, 66, 5) not in t.cells

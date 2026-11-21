@@ -17,11 +17,19 @@ player check and snapshots.
                          [--log PATH] [--server NAME] [--config PATH] [limit options]
   ashlar_place.py restore DIR [--world W] [--player-margin 2] [--log PATH]
                          [--server NAME] [--config PATH] [limit options]
+  ashlar_place.py commands FILE [--check] [--progress PATH] [--world W]
+                         [--dimension DIM] [--player-margin 2] [--log PATH]
+                         [--server NAME] [--config PATH]
+  ashlar_place.py biome-probe --box X1 Y1 Z1 X2 Y2 Z2 --heights FILE --biomes FILE
+                         --out FILE [--candidates A,B] [--world W]
+                         [--player-margin 2] [--server NAME] [--config PATH]
+  ashlar_place.py biome-restore PROBE --out FILE [--max-biome-blocks 32768]
 
 A phase file is an `mc_build` arguments object (`fills`, `blocks`, `liquids`,
 `connect`, `world`) or a bare list of fills. Exit codes: 0 ok, 2 invalid input,
 3 refused by a limit or snapshot rule, 4 player in the area (or an unreadable
-player list), 5 server error. Nothing printed ever contains a value from the
+player list), 5 server error, 6 a commands run finished with failed commands.
+Nothing printed ever contains a value from the
 server entry's `env` (or a secret-looking command-line argument): replies are
 parsed as received and redacted only when printed, logged or put in a message.
 
@@ -63,6 +71,7 @@ from pathlib import Path
 from typing import Any
 
 EXIT_OK, EXIT_INPUT, EXIT_REFUSED, EXIT_PLAYER, EXIT_SERVER = 0, 2, 3, 4, 5
+EXIT_PARTIAL = 6  # the run finished but some commands failed
 SHELL_MODES = {"outline", "hollow", "walls"}
 FILL_MODES = {"replace", "keep"} | SHELL_MODES
 TOP_KEYS = {"fills", "blocks", "liquids", "connect", "world"}
@@ -1083,6 +1092,571 @@ def cmd_heights(ns: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# ------------------------------------------- commands runner, probe, restore
+
+COMMAND_ID = r"[a-z0-9_.-]+:[a-z0-9_./-]+"
+COMMAND_FORMS: dict[str, re.Pattern[str]] = {
+    "place feature": re.compile(
+        rf"^place feature (?P<id>{COMMAND_ID}) (?P<x>-?\d+) (?P<y>-?\d+) (?P<z>-?\d+)$"),
+    "fillbiome": re.compile(
+        r"^fillbiome (?P<x1>-?\d+) (?P<y1>-?\d+) (?P<z1>-?\d+) "
+        rf"(?P<x2>-?\d+) (?P<y2>-?\d+) (?P<z2>-?\d+) (?P<id>{COMMAND_ID})$"),
+}
+# A reply without isError that starts with one of these is a failed command.
+FAILURE_PHRASES = ("Failed", "Unknown", "Incorrect", "Invalid",
+                   "That position is not loaded", "Too many blocks",
+                   "There is no", "Can't find element")
+BIOME_ID = re.compile(rf"^{COMMAND_ID}$")
+DIMENSION = re.compile(r"^[a-z0-9_.-]+(?::[a-z0-9_./-]+)?$")
+MAX_FORCELOAD = 256
+Rect = tuple[int, int, int, int]  # chunk x1, z1, x2, z2 (inclusive)
+
+
+def parse_command(command: str) -> tuple[str, dict[str, str]] | None:
+    """The form name and groups of an allowed command, else None."""
+    if not isinstance(command, str) or "\n" in command or "\r" in command:
+        return None
+    for name, pattern in COMMAND_FORMS.items():
+        match = pattern.match(command)
+        if match:
+            return name, match.groupdict()
+    return None
+
+
+def _in_box(x: int, z: int, y: int, box: Box) -> bool:
+    return box[0] <= x <= box[3] and box[1] <= y <= box[4] and box[2] <= z <= box[5]
+
+
+def load_commands(path: Path, limits: Limits,
+                  max_biome_blocks: int = 32_768) -> dict[str, Any]:
+    """Read and validate a commands file (F3); every refusal is exit 2."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PlacerError(f"cannot read {path} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    if not isinstance(data, dict) or data.get("version") != 1:
+        raise PlacerError(f"{path}: expected a commands file with version 1", EXIT_INPUT)
+    if data.get("kind") not in ("features", "biomes"):
+        raise PlacerError(f"{path}: kind must be 'features' or 'biomes'", EXIT_INPUT)
+    raw = data.get("box")
+    if not isinstance(raw, list) or len(raw) != 6:
+        raise PlacerError(f"{path}: box must be [x1, y1, z1, x2, y2, z2]", EXIT_INPUT)
+    _coords(raw[:3], "box from", limits)
+    _coords(raw[3:], "box to", limits)
+    box = box_of(raw[:3], raw[3:])
+    world = data.get("world")
+    if world is not None and not isinstance(world, str):
+        raise PlacerError(f"{path}: world must be a string or null", EXIT_INPUT)
+    commands = data.get("commands")
+    if not isinstance(commands, list) or not commands:
+        raise PlacerError(f"{path}: commands must be a non-empty list", EXIT_INPUT)
+    for n, command in enumerate(commands, 1):
+        parsed = parse_command(command)
+        if parsed is None:
+            raise PlacerError(f"command {n}: only 'place feature <id> <x> <y> <z>' and "
+                              "'fillbiome <x1> <y1> <z1> <x2> <y2> <z2> <biome>' "
+                              "are allowed", EXIT_INPUT)
+        form, g = parsed
+        if form == "place feature":
+            point = [int(g["x"]), int(g["y"]), int(g["z"])]
+            _coords(point, f"command {n}", limits)
+            if not _in_box(point[0], point[2], point[1], box):
+                raise PlacerError(f"command {n}: position is outside the file's box",
+                                  EXIT_INPUT)
+        else:
+            a = [int(g["x1"]), int(g["y1"]), int(g["z1"])]
+            b = [int(g["x2"]), int(g["y2"]), int(g["z2"])]
+            _coords(a, f"command {n}", limits)
+            _coords(b, f"command {n}", limits)
+            fill = box_of(a, b)
+            if not (_in_box(fill[0], fill[2], fill[1], box)
+                    and _in_box(fill[3], fill[5], fill[4], box)):
+                raise PlacerError(f"command {n}: fillbiome is outside the file's box",
+                                  EXIT_INPUT)
+            if volume(fill) > max_biome_blocks:
+                raise PlacerError(f"command {n}: fillbiome covers {volume(fill)} blocks "
+                                  f"(limit {max_biome_blocks})", EXIT_INPUT)
+    return {"kind": data["kind"], "box": box, "world": world,
+            "commands": list(commands)}
+
+
+def command_chunks(command: str) -> set[tuple[int, int]]:
+    """Chunks a command needs loaded: a feature's chunk plus a one-chunk margin,
+    or every chunk a fillbiome box touches."""
+    parsed = parse_command(command)
+    if parsed is None:
+        raise PlacerError("only 'place feature' and 'fillbiome' commands are allowed",
+                          EXIT_INPUT)
+    form, g = parsed
+    if form == "place feature":
+        cx, cz = int(g["x"]) >> 4, int(g["z"]) >> 4
+        return {(cx + dx, cz + dz) for dx in (-1, 0, 1) for dz in (-1, 0, 1)}
+    x1, x2 = sorted((int(g["x1"]), int(g["x2"])))
+    z1, z2 = sorted((int(g["z1"]), int(g["z2"])))
+    return {(cx, cz) for cx in range(x1 >> 4, (x2 >> 4) + 1)
+            for cz in range(z1 >> 4, (z2 >> 4) + 1)}
+
+
+def _bounds(cells: set[tuple[int, int]]) -> Rect:
+    xs = [c[0] for c in cells]
+    zs = [c[1] for c in cells]
+    return (min(xs), min(zs), max(xs), max(zs))
+
+
+def _area(rect: Rect) -> int:
+    return (rect[2] - rect[0] + 1) * (rect[3] - rect[1] + 1)
+
+
+def forceload_tiles(chunks_: set[tuple[int, int]],
+                    max_chunks: int = MAX_FORCELOAD) -> list[Rect]:
+    """Chunk rectangles of at most `max_chunks` chunks that cover `chunks_`."""
+    if not chunks_:
+        return []
+    rect = _bounds(chunks_)
+    if _area(rect) <= max_chunks:
+        return [rect]
+    if rect[2] - rect[0] >= rect[3] - rect[1]:
+        mid = (rect[0] + rect[2]) // 2
+        halves = ({c for c in chunks_ if c[0] <= mid}, {c for c in chunks_ if c[0] > mid})
+    else:
+        mid = (rect[1] + rect[3]) // 2
+        halves = ({c for c in chunks_ if c[1] <= mid}, {c for c in chunks_ if c[1] > mid})
+    return [t for half in halves for t in forceload_tiles(half, max_chunks)]
+
+
+_CHUNK_PAIR = re.compile(r"\[(-?\d+),\s*(-?\d+)\]")
+_QUERY_FOUND = re.compile(r"^(?:A force loaded chunk was|\d+ force loaded chunks were) found")
+
+
+def parse_forceload_query(text: str) -> set[tuple[int, int]]:
+    """The force-loaded chunks a bare `forceload query` reply lists."""
+    body = text.strip()
+    if body.startswith("No force loaded chunks were found"):
+        return set()
+    pairs = {(int(a), int(b)) for a, b in _CHUNK_PAIR.findall(body)}
+    if _QUERY_FOUND.match(body) and pairs:
+        return pairs
+    raise PlacerError("unexpected forceload query reply", EXIT_SERVER)
+
+
+def _console(client: McpClient, command: str, dimension: str | None) -> tuple[str, bool]:
+    """Run one console command with the minecraft: prefix, in `dimension` if given."""
+    full = (f"minecraft:execute in {dimension} run {command}" if dimension
+            else f"minecraft:{command}")
+    return client.call("mc_command", {"command": full})
+
+
+def _forceload_query(client: McpClient, dimension: str | None) -> set[tuple[int, int]]:
+    text, is_error = _console(client, "forceload query", dimension)
+    if is_error:
+        raise PlacerError("forceload query failed: " + client.redact(text), EXIT_SERVER)
+    try:
+        return parse_forceload_query(text)
+    except PlacerError as exc:
+        raise PlacerError(f"{exc}: {client.redact(text[:200])}", exc.code) from None
+
+
+def _forceload_args(rect: Rect) -> str:
+    if rect[0] == rect[2] and rect[1] == rect[3]:
+        return f"{rect[0] * 16} {rect[1] * 16}"
+    return f"{rect[0] * 16} {rect[1] * 16} {rect[2] * 16 + 15} {rect[3] * 16 + 15}"
+
+
+def _tile_adds(rects: list[Rect], preloaded: set[tuple[int, int]]) -> list[Rect]:
+    """The rectangles to add: never a chunk in `preloaded`. A rectangle that is
+    not left whole is force-loaded one chunk at a time."""
+    adds: list[Rect] = []
+    for rect in rects:
+        cells = {(cx, cz) for cx in range(rect[0], rect[2] + 1)
+                 for cz in range(rect[1], rect[3] + 1)} - preloaded
+        if not cells:
+            continue
+        bounds = _bounds(cells)
+        if len(cells) == _area(bounds):
+            adds.append(bounds)
+        else:
+            adds += [(cx, cz, cx, cz) for cx, cz in sorted(cells)]
+    return adds
+
+
+def _release(client: McpClient, added: list[Rect], dimension: str | None,
+             report: dict[str, Any]) -> list[Rect]:
+    """Remove every confirmed add; return the rectangles that are still loaded."""
+    left: list[Rect] = []
+    dead = False
+    for rect in reversed(added):
+        ok = False
+        if not dead:
+            try:
+                text, is_error = _console(client, f"forceload remove {_forceload_args(rect)}",
+                                          dimension)
+                ok = not is_error and text.lstrip().startswith("Unmarked")
+            except PlacerError:
+                dead = True  # the client is gone or hung: do not wait again
+        if ok:
+            report["forceloads_removed"].append(list(rect))
+        else:
+            left.append(rect)
+            report["forceload_left"].append(list(rect))
+    return left
+
+
+def _tile_box(rects: list[Rect], limits: Limits) -> Box:
+    x1, z1, x2, z2 = (min(r[0] for r in rects) * 16, min(r[1] for r in rects) * 16,
+                      max(r[2] for r in rects) * 16 + 15, max(r[3] for r in rects) * 16 + 15)
+    return (x1, limits.min_y, z1, x2, limits.max_y, z2)
+
+
+def _in_forceloads(client: McpClient, rects: list[Rect], *, dimension: str | None,
+                   world: str | None, margin: int, report: dict[str, Any],
+                   body: Any) -> PlacerError | None:
+    """Query, check players, force-load `rects` (skipping chunks the server already
+    keeps loaded), run `body()`, and always remove exactly what was added.
+    Returns the error that stopped it, if any."""
+    added: list[Rect] = []
+    stop: PlacerError | None = None
+    try:
+        preloaded = _forceload_query(client, dimension)
+        _check_players(client, _tile_box(rects, Limits()), margin, world)
+        for rect in _tile_adds(rects, preloaded):
+            text, is_error = _console(client, f"forceload add {_forceload_args(rect)}",
+                                      dimension)
+            if is_error or not text.lstrip().startswith("Marked"):
+                raise PlacerError("forceload add was not confirmed: "
+                                  + client.redact(text[:200]), EXIT_SERVER)
+            added.append(rect)
+            report["forceloads_added"].append(list(rect))
+        body()
+    except PlacerError as exc:
+        stop = exc
+    finally:
+        left = _release(client, added, dimension, report)
+    if left:
+        where = ", ".join(str(list(r)) for r in left)
+        message = ("FORCE-LOAD LEFT ON THE SERVER (chunk rectangles x1 z1 x2 z2): "
+                   + where)
+        stop = PlacerError(f"{stop}; {message}" if stop else message, EXIT_SERVER)
+    return stop
+
+
+@dataclass
+class _Tile:
+    rects: list[Rect]
+    indices: list[int]  # 1-based command numbers, in file order
+
+
+def _plan_tiles(needed: list[set[tuple[int, int]]]) -> list[_Tile]:
+    """Group commands into force-load tiles, ordered by each tile's first command."""
+    rects = forceload_tiles(set().union(*needed)) if needed else []
+    grouped: dict[int, list[int]] = {}
+    tiles: list[tuple[int, _Tile]] = []
+    for n, cells in enumerate(needed, 1):
+        for k, rect in enumerate(rects):
+            if all(rect[0] <= cx <= rect[2] and rect[1] <= cz <= rect[3]
+                   for cx, cz in cells):
+                grouped.setdefault(k, []).append(n)
+                break
+        else:  # straddles tiles: its own tile
+            tiles.append((n, _Tile(forceload_tiles(cells), [n])))
+    for indices in grouped.values():
+        union_cells = set().union(*(needed[n - 1] for n in indices))
+        tiles.append((indices[0], _Tile([_bounds(union_cells)], indices)))
+    return [tile for _, tile in sorted(tiles, key=lambda t: t[0])]
+
+
+def _read_progress(path: Path | None, total: int) -> set[int]:
+    if path is None or not path.exists():
+        return set()
+    done: set[int] = set()
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise PlacerError(f"cannot read {path} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+            index = entry["index"]
+            valid = (isinstance(index, int) and not isinstance(index, bool)
+                     and 1 <= index <= total and isinstance(entry["ok"], bool))
+        except (ValueError, KeyError, TypeError):
+            valid = False
+        if not valid:
+            raise PlacerError(f"{path}: not a progress file for these {total} commands",
+                              EXIT_INPUT)
+        done.add(index)
+    return done
+
+
+def run_commands(client: McpClient, commands: dict[str, Any], *, progress: Path | None,
+                 world: str | None, dimension: str | None,
+                 player_margin: int) -> dict[str, Any]:
+    """Run a validated commands file. Command numbers are 1-based. Returns the
+    report; `report["exit"]` is the exit code (0, 4, 5 or 6)."""
+    cmds: list[str] = commands["commands"]
+    done = _read_progress(progress, len(cmds))
+    tiles = _plan_tiles([command_chunks(c) for c in cmds])
+    report: dict[str, Any] = {
+        "commands": len(cmds), "tiles": len(tiles), "tiles_done": 0,
+        "skipped": len(done), "counts": {}, "features": {}, "failed": [],
+        "forceloads_added": [], "forceloads_removed": [], "forceload_left": [],
+        "error": None, "exit": EXIT_OK}
+    handle = None
+    if progress is not None:
+        try:
+            handle = open(progress, "a", encoding="utf-8")
+        except OSError as exc:
+            raise PlacerError(f"cannot write {progress} ({exc.__class__.__name__})",
+                              EXIT_INPUT) from None
+    try:
+        for tile in tiles:
+            pending = [n for n in tile.indices if n not in done]
+            if not pending:
+                report["tiles_done"] += 1
+                continue
+
+            def body() -> None:
+                for n in pending:
+                    _run_one(client, n, cmds[n - 1], dimension, report, handle)
+
+            stop = _in_forceloads(client, tile.rects, dimension=dimension, world=world,
+                                  margin=player_margin, report=report, body=body)
+            if stop is not None:
+                report["error"], report["exit"] = str(stop), stop.code
+                break
+            report["tiles_done"] += 1
+    finally:
+        if handle is not None:
+            handle.close()
+    if report["exit"] == EXIT_OK and report["failed"]:
+        report["exit"] = EXIT_PARTIAL
+    return report
+
+
+def _run_one(client: McpClient, n: int, command: str, dimension: str | None,
+             report: dict[str, Any], handle: Any) -> None:
+    text, is_error = _console(client, command, dimension)
+    if is_error:  # not recorded: a rerun tries it again
+        raise PlacerError(f"command {n} failed on the server: "
+                          + client.redact(text[:200]), EXIT_SERVER)
+    form, g = parse_command(command)  # type: ignore[misc]
+    failed = text.lstrip().startswith(FAILURE_PHRASES)
+    report["counts"][form] = report["counts"].get(form, 0) + 1
+    if failed:
+        report["failed"].append({"index": n, "command": command,
+                                 "reply": client.redact(text.strip())[:300]})
+    elif form == "place feature":
+        report["features"][g["id"]] = report["features"].get(g["id"], 0) + 1
+    if handle is not None:
+        try:
+            handle.write(json.dumps({"index": n, "ok": not failed}) + "\n")
+            handle.flush()
+        except OSError as exc:
+            raise PlacerError(f"cannot write the progress file "
+                              f"({exc.__class__.__name__})", EXIT_INPUT) from None
+
+
+def _dimension(value: str | None) -> str | None:
+    if value is not None and not DIMENSION.match(value):
+        raise PlacerError(f"--dimension {value!r} is not a dimension id", EXIT_INPUT)
+    return value
+
+
+def cmd_commands(ns: argparse.Namespace) -> int:
+    commands = load_commands(Path(ns.file), Limits())
+    dimension = _dimension(ns.dimension)
+    if ns.check:
+        needed = [command_chunks(c) for c in commands["commands"]]
+        forms = [parse_command(c)[0] for c in commands["commands"]]  # type: ignore[index]
+        print(json.dumps({"commands": len(forms),
+                          "forms": {f: forms.count(f) for f in sorted(set(forms))},
+                          "tiles": len(_plan_tiles(needed)),
+                          "dimension": dimension}, indent=2))
+        return EXIT_OK
+    world = ns.world or commands["world"]
+    client = McpClient(_server(ns))
+    try:
+        report = run_commands(client, commands,
+                              progress=Path(ns.progress) if ns.progress else None,
+                              world=world, dimension=dimension,
+                              player_margin=ns.player_margin)
+    finally:
+        client.close()
+    report["file"] = str(ns.file)
+    _emit(report, ns.log)
+    if report["error"]:
+        raise PlacerError(report["error"], report["exit"])
+    return report["exit"]
+
+
+def _read_json(path: str, what: str) -> Any:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PlacerError(f"cannot read the {what} {path} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+
+
+def _surface_y(heights: dict[str, Any], x: int, z: int, fallback: int) -> int:
+    """surface, else ground, at the column; `fallback` if neither is known."""
+    ox, oz = heights["origin"]
+    nx, nz = heights["size"]
+    xi, zi = x - ox, z - oz
+    if 0 <= xi < nx and 0 <= zi < nz:
+        for key in ("surface", "ground"):
+            value = heights[key][xi * nz + zi]
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    return fallback
+
+
+def _load_heights(path: str) -> dict[str, Any]:
+    data = _read_json(path, "heights file")
+    try:
+        ok = (data["version"] == 1 and len(data["origin"]) == 2 and len(data["size"]) == 2
+              and all(len(data[k]) == data["size"][0] * data["size"][1]
+                      for k in ("ground", "surface")))
+    except (KeyError, TypeError):
+        ok = False
+    if not ok:
+        raise PlacerError(f"{path}: not a heights file (F2)", EXIT_INPUT)
+    return data
+
+
+def _load_biome_ids(path: str) -> list[str]:
+    data = _read_json(path, "biomes file")
+    ids = data.get("ids") if isinstance(data, dict) else data
+    if not isinstance(ids, list) or not all(isinstance(i, str) and BIOME_ID.match(i)
+                                            for i in ids):
+        raise PlacerError(f"{path}: expected a JSON list of biome ids or "
+                          '{"ids": [...]}', EXIT_INPUT)
+    return ids
+
+
+def cmd_biome_probe(ns: argparse.Namespace) -> int:
+    limits = Limits()
+    a, b = list(ns.box[:3]), list(ns.box[3:])
+    _coords(a, "--box from", limits)
+    _coords(b, "--box to", limits)
+    box = box_of(a, b)
+    heights = _load_heights(ns.heights)
+    biomes = _load_biome_ids(ns.biomes)
+    candidates = [c for c in (ns.candidates or "").split(",") if c]
+    for c in candidates:
+        if not BIOME_ID.match(c):
+            raise PlacerError(f"--candidates: {c!r} is not a biome id", EXIT_INPUT)
+    cells = {(cx, cz) for cx in range(box[0] >> 4, (box[3] >> 4) + 1)
+             for cz in range(box[2] >> 4, (box[5] >> 4) + 1)}
+    found: dict[str, str] = {}
+    report: dict[str, Any] = {"forceloads_added": [], "forceloads_removed": [],
+                              "forceload_left": []}
+    state = {"last": None}
+    unusable: set[str] = set()
+
+    def probe(rects: list[Rect]) -> None:
+        for cx, cz in sorted(c for c in cells if any(
+                r[0] <= c[0] <= r[2] and r[1] <= c[1] <= r[3] for r in rects)):
+            x, z = cx * 16 + 8, cz * 16 + 8
+            y = max(limits.min_y, min(limits.max_y, _surface_y(heights, x, z, box[1])))
+            order = list(dict.fromkeys(
+                ([state["last"]] if state["last"] else []) + candidates + biomes))
+            result = "unknown"
+            for biome in order:
+                if biome in unusable:
+                    continue
+                text, is_error = client.call(
+                    "mc_command", {"command": f"minecraft:execute if biome {x} {y} {z} {biome}"})
+                if is_error:
+                    raise PlacerError("biome test failed on the server: "
+                                      + client.redact(text[:200]), EXIT_SERVER)
+                reply = text.strip()
+                if reply.startswith("Test passed"):
+                    result = state["last"] = biome
+                    break
+                if reply.startswith("Can't find element"):
+                    unusable.add(biome)  # not a biome of this server: skip it
+                elif not reply.startswith("Test failed"):
+                    raise PlacerError(f"unexpected biome test reply at chunk {cx},{cz}: "
+                                      + client.redact(reply[:200]), EXIT_SERVER)
+            found[f"{cx},{cz}"] = result
+
+    client = McpClient(_server(ns))
+    try:
+        stop = None
+        for rect in forceload_tiles(cells):
+            stop = _in_forceloads(client, [rect], dimension=None, world=ns.world,
+                                  margin=ns.player_margin, report=report,
+                                  body=lambda rect=rect: probe([rect]))
+            if stop is not None:
+                break
+    finally:
+        client.close()
+    if stop is not None:
+        raise stop
+    try:
+        Path(ns.out).write_text(json.dumps({
+            "version": 1, "world": ns.world, "box": list(box), "chunks": found}),
+            encoding="utf-8")
+    except OSError as exc:
+        raise PlacerError(f"cannot write {ns.out} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    unknown = sum(1 for v in found.values() if v == "unknown")
+    print(f"probed {len(found)} chunks ({unknown} unknown) -> {ns.out}")
+    if unusable:
+        print("not a biome on this server: " + ", ".join(sorted(unusable)))
+    return EXIT_OK
+
+
+def cmd_biome_restore(ns: argparse.Namespace) -> int:
+    probe = _read_json(ns.probe, "probe file")
+    try:
+        box = [int(v) for v in probe["box"]]
+        chunk_map = probe["chunks"]
+        valid = probe["version"] == 1 and len(box) == 6 and isinstance(chunk_map, dict)
+    except (KeyError, TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise PlacerError(f"{ns.probe}: not a biome probe (F5)", EXIT_INPUT)
+    slab = ns.max_biome_blocks // 256
+    if slab < 1:
+        raise PlacerError("--max-biome-blocks must be at least 256", EXIT_INPUT)
+    commands: list[str] = []
+    skipped: list[list[int]] = []
+    keyed = []
+    for key, biome in chunk_map.items():
+        try:
+            cx, cz = (int(p) for p in key.split(","))
+        except ValueError:
+            raise PlacerError(f"{ns.probe}: bad chunk key {key!r}", EXIT_INPUT) from None
+        if biome != "unknown" and not (isinstance(biome, str) and BIOME_ID.match(biome)):
+            raise PlacerError(f"{ns.probe}: bad biome for chunk {key}", EXIT_INPUT)
+        keyed.append((cx, cz, biome))
+    for cx, cz, biome in sorted(keyed):
+        if biome == "unknown":
+            skipped.append([cx, cz])
+            continue
+        y = box[1]
+        while y <= box[4]:
+            top = min(y + slab - 1, box[4])
+            commands.append(f"fillbiome {cx * 16} {y} {cz * 16} "
+                            f"{cx * 16 + 15} {top} {cz * 16 + 15} {biome}")
+            y = top + 1
+    try:
+        Path(ns.out).write_text(json.dumps({
+            "version": 1, "kind": "biomes", "box": box, "world": probe.get("world"),
+            "commands": commands, "skipped": skipped}), encoding="utf-8")
+    except OSError as exc:
+        raise PlacerError(f"cannot write {ns.out} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    print(f"wrote {len(commands)} fillbiome commands -> {ns.out}")
+    if skipped:
+        print("skipped unknown chunks: " + " ".join(f"[{cx}, {cz}]" for cx, cz in skipped))
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------- cli
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -1173,13 +1747,43 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--log")
     _add_limits(restore)
     _add_server(restore)
+
+    commands = sub.add_parser("commands", help="run a commands file (place feature, fillbiome)")
+    commands.add_argument("file")
+    commands.add_argument("--check", action="store_true",
+                          help="validate offline; never contacts the server")
+    commands.add_argument("--progress", metavar="PATH")
+    commands.add_argument("--world")
+    commands.add_argument("--dimension", metavar="DIM")
+    commands.add_argument("--player-margin", type=int, default=2)
+    commands.add_argument("--log")
+    _add_server(commands)
+
+    probe = sub.add_parser("biome-probe", help="write a per-chunk biome probe (F5)")
+    probe.add_argument("--box", type=int, nargs=6, required=True,
+                       metavar=("X1", "Y1", "Z1", "X2", "Y2", "Z2"))
+    probe.add_argument("--heights", required=True)
+    probe.add_argument("--biomes", required=True)
+    probe.add_argument("--out", required=True)
+    probe.add_argument("--candidates", metavar="A,B")
+    probe.add_argument("--world")
+    probe.add_argument("--player-margin", type=int, default=2)
+    _add_server(probe)
+
+    restore_biomes = sub.add_parser("biome-restore",
+                                    help="write fillbiome commands that undo a probe")
+    restore_biomes.add_argument("probe")
+    restore_biomes.add_argument("--out", required=True)
+    restore_biomes.add_argument("--max-biome-blocks", type=int, default=32_768)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
     handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place,
-                "read": cmd_read, "heights": cmd_heights, "backup": cmd_backup, "restore": cmd_restore}
+                "read": cmd_read, "heights": cmd_heights, "backup": cmd_backup, "restore": cmd_restore,
+                "commands": cmd_commands, "biome-probe": cmd_biome_probe,
+                "biome-restore": cmd_biome_restore}
     try:
         return handlers[ns.cmd](ns)
     except PlacerError as exc:

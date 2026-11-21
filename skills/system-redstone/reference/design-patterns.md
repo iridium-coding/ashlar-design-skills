@@ -41,6 +41,9 @@ lamp); build it deliberately, not by guesswork.
 
 ## Clocks
 
+Give every clock an off switch and design it to rest with that switch off.
+For an observer clock, the switch can retract one observer with a sticky piston.
+
 - **Repeater clock** — a loop of repeaters; the slowest reliable clock, period
   set by the repeater delays.
 - **Comparator (subtraction) clock** — a comparator loop for longer, tunable
@@ -60,10 +63,6 @@ state it in redstone ticks.
 - **Dropper randomness** — a dropper with several items ejects one at random; a
   hopper/comparator reads which slot emptied. The vanilla-redstone RNG, and the
   right choice for a self-contained in-world machine.
-- **Scoreboard / loot-table random** — for command-driven setup or verification,
-  a scoreboard random objective or `loot_table_generate` produces a number; gate
-  outputs on its value. Keep this out of the contraption's running logic — the
-  machine itself should run on the dropper RNG so it works without commands.
 
 ## Signal transmission
 
@@ -75,53 +74,6 @@ state it in redstone ticks.
 - Repeaters both **extend range** (every ≤15 blocks) and **add delay** — use
   them deliberately for retiming, especially to absorb observer drift.
 
-## Java-exclusive: command-driven path (datapack functions)
-
-A **non-redstone** way to sequence, time, and animate — something Bedrock's MCP
-could not do. Two tools:
-
-- **`function_run(function_id, as_entity?)`** — runs a datapack function *now*.
-- **`schedule_function(function_id, ticks, mode)`** — runs one after N game
-  ticks. `mode` is `append` (queue alongside any existing schedule for that
-  function) or `replace` (overwrite the pending schedule — the right choice for
-  a self-rescheduling loop so it can't double up).
-
-What it unlocks:
-
-- **Timed sequences** — staged light/door reveals: `function_run` step one, then
-  `schedule_function("build:reveal_2", 40, "replace")`, etc.
-- **Recurring animations** — a function whose last line re-schedules itself
-  (`schedule_function(<self>, 5, "replace")`) is a clean software clock with
-  *exact* tick timing, no redstone-clock drift or footprint. Pairs naturally
-  with display-entity `transformation` tweens (`entity_set_nbt` per frame).
-- **Staged reveals / firework shows** — choreograph events to the exact tick
-  without a physical clock.
-
-**Caveat — the datapack must be loaded.** The function only exists if its
-datapack is enabled: check `datapack_list_enabled`, enable with
-`datapack_enable`, and verify the function resolves with `function_list` /
-`function_get_definition` before relying on it. So this is an **advanced option
-for a build that already ships a small datapack.**
-
-**Caveat — resolving is not executing.** The mod can list a function and still
-**refuse to run it**: a live build saw `function_run` / `/function` return
-"This function should not run" and `/reload` return `successCount 0`, with the
-execution gate in the mod rather than in the pack metadata. Before you design
-any timing around functions, **smoke-test that they actually execute** — run a
-one-line function that sets a marker block at a known coordinate, then read that
-block back with `block_get_state`. If the marker didn't change, functions are
-inert in this world: do **not** plan a function-driven sequence, and fall back
-to vanilla redstone (or, for one-shot setup, direct MCP block ops). Never emit
-`.mcfunction` files expecting `/function` to run them.
-
-**Trade-off — prefer self-contained redstone for portability.** A redstone
-machine works in any world the moment it's placed, with nothing else installed.
-A function path needs the datapack to travel with the build. Use functions when
-the build *ships a datapack* and wants exact, frame-accurate timing (animations,
-choreographed reveals); use in-world redstone for a self-contained machine the
-user can copy anywhere. State the datapack requirement up front, the same way
-you'd surface an `initial_trigger` or chunk-load requirement.
-
 ## Composing
 
 When you compose a contraption from these: write the **timing budget** — sum the
@@ -129,4 +81,4 @@ deterministic delays along the worst-case path (each repeater 1–4 redstone
 ticks, each observer a clean 1-redstone-tick pulse, piston movement ~1.5 game
 ticks). Java timing is reproducible, so the sum is exact — pad with repeaters
 only to align paths, not to absorb a drift bug. State the budget in the design
-so the inspection recipe can wait the right number of ticks.
+so the test can wait for the output and check it against that budget.

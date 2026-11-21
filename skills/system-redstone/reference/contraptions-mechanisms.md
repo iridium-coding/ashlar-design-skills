@@ -72,18 +72,20 @@ cycle.
 Defensive builds near a settlement must not seal it — see the `design-village`
 raid rules.
 
-## Java-exclusive: ship the mechanism pre-loaded (block-entity NBT)
+## Ship the mechanism pre-loaded
 
-Bedrock's MCP couldn't set block-entity contents; Java can, so a contraption can
-**arrive loaded and ready** instead of needing the user to hand-fill it.
-Pre-load any dispenser, dropper, or hopper with exact contents — either with
-`inventory_set_slot` (cleaner, slot-by-slot) or `block_entity_set_nbt` with an
-`Items` list:
+Load dispensers, droppers and hoppers after placement in a setup `commands`
+phase. Use `item replace block` for individual slots. A `data merge block`
+row can set multiple slots in a newly placed container. For example, seed a
+show machine's dropper with two stacks, then check the contents with
+`data get block 4 65 0` inside a paired force-load. Verify inventory field
+names on the running Java version before writing a merge.
 
-```
-block_entity_set_nbt(pos, nbt='{Items:[
-  {slot:0,id:"minecraft:arrow",count:64},
-  {slot:1,id:"minecraft:arrow",count:64}]}')
+```toon
+commands[3]{phase,seq,command,purpose}:
+  4,1,"forceload add 4 0",load dropper chunk
+  4,2,"data merge block 4 65 0 {Items:[{Slot:0b,id:\"minecraft:cobblestone\",count:64},{Slot:1b,id:\"minecraft:stone\",count:64}]}",seed show dropper
+  4,3,"forceload remove 4 0",release dropper chunk
 ```
 
 Targets that matter for mechanisms:
@@ -97,23 +99,14 @@ Targets that matter for mechanisms:
   ingredients, or splash items.
 - **Note-block / show machines** — pre-load any dropper-fed staging container.
 
-For a **spawner-driven** mechanism, configure the `minecraft:spawner` block
-entity directly — entity, count, range, delays — so it ships working:
-
-```
-block_entity_set_nbt(pos, nbt='{SpawnData:{entity:{id:"minecraft:zombie"}},
-  SpawnCount:4,MaxNearbyEntities:6,RequiredPlayerRange:16,SpawnRange:4,
-  MinSpawnDelay:200,MaxSpawnDelay:800}')
-```
-
-Verify the merge by reading it back with `block_entity_get_nbt` (or
-`block_get_state`, which includes `blockEntityNbt`). The container/spawner SNBT
-shape is version-sensitive — on 1.20.5+ item entries use the components system —
-so do a round-trip read on the running version (`server_get_status` for the
-version) rather than trusting a literal blindly.
+For a spawner-driven mechanism, configure the mob, count, range and
+delays in an approved setup row and read them back with `data get block`.
+Leave a one-block gap between same-facing output chests, turn them
+differently or use barrels. Ashlar automatically pairs adjacent, same-facing
+chests, and a comparator reads both halves.
 
 ## Always
 
-Whatever the mechanism, it ships with a functional test recipe
-(`verification.md`) — a door is not done until a trigger opens it and a wait
-confirms it self-closes.
+Whatever the mechanism, it ships with a functional test in the plan
+(`verification.md`) — a door is not done until a trigger opens it and a read
+confirms it closes again as designed.

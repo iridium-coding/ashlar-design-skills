@@ -8,11 +8,15 @@ player check and snapshots.
 
   ashlar_place.py check  [--server NAME] [--config PATH]
   ashlar_place.py plan   FILE [limit options]
-  ashlar_place.py place  FILE (--snapshot [--label L] | --no-snapshot)
+  ashlar_place.py place  FILE (--snapshot [--label L] | --no-snapshot | --backup DIR)
                          [--world W] [--player-margin 2] [--max-snapshots 15]
                          [--log PATH] [--server NAME] [--config PATH] [limit options]
   ashlar_place.py read   X1 Y1 Z1 X2 Y2 Z2 --out FILE [--world W]
                          [--server NAME] [--config PATH]
+  ashlar_place.py backup --box X1 Y1 Z1 X2 Y2 Z2 --out DIR [--world W]
+                         [--log PATH] [--server NAME] [--config PATH] [limit options]
+  ashlar_place.py restore DIR [--world W] [--player-margin 2] [--log PATH]
+                         [--server NAME] [--config PATH] [limit options]
 
 A phase file is an `mc_build` arguments object (`fills`, `blocks`, `liquids`,
 `connect`, `world`) or a bare list of fills. Exit codes: 0 ok, 2 invalid input,
@@ -42,6 +46,8 @@ def require_python(version: tuple[int, ...] | None = None) -> None:
 require_python()
 
 import argparse
+import gzip
+import hashlib
 import json
 import os
 import queue
@@ -50,6 +56,7 @@ import subprocess
 import threading
 import time
 import tomllib
+from datetime import datetime, timezone
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -269,6 +276,12 @@ def load_build(path: Path, limits: Limits) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise PlacerError(f"{path}: expected an mc_build object or a list of fills",
                           EXIT_INPUT)
+    return validate_build(data, limits, str(path))
+
+
+def validate_build(data: dict[str, Any], limits: Limits, where: str) -> dict[str, Any]:
+    """Validate an mc_build arguments object; `where` names it in messages."""
+    path = where
     if "text" in data:
         raise PlacerError(f"{path}: 'text' (lettering) is not accepted here; "
                           "place it with the client's own mc_build call", EXIT_INPUT)
@@ -282,21 +295,21 @@ def load_build(path: Path, limits: Limits) -> dict[str, Any]:
     if not fills and not blocks:
         raise PlacerError(f"{path}: nothing to place", EXIT_INPUT)
     for i, fill in enumerate(fills):
-        where = f"fills[{i}]"
+        item = f"fills[{i}]"
         if not isinstance(fill, dict):
-            raise PlacerError(f"{where}: expected an object", EXIT_INPUT)
-        _coords(fill.get("from"), f"{where}.from", limits)
-        _coords(fill.get("to"), f"{where}.to", limits)
-        _block(fill.get("block"), f"{where}.block")
+            raise PlacerError(f"{item}: expected an object", EXIT_INPUT)
+        _coords(fill.get("from"), f"{item}.from", limits)
+        _coords(fill.get("to"), f"{item}.to", limits)
+        _block(fill.get("block"), f"{item}.block")
         if fill.get("mode", "replace") not in FILL_MODES:
-            raise PlacerError(f"{where}.mode: must be one of {sorted(FILL_MODES)}",
+            raise PlacerError(f"{item}.mode: must be one of {sorted(FILL_MODES)}",
                               EXIT_INPUT)
     for i, block in enumerate(blocks):
-        where = f"blocks[{i}]"
+        item = f"blocks[{i}]"
         if not isinstance(block, dict):
-            raise PlacerError(f"{where}: expected an object", EXIT_INPUT)
-        _coords(block.get("pos"), f"{where}.pos", limits)
-        _block(block.get("block"), f"{where}.block")
+            raise PlacerError(f"{item}: expected an object", EXIT_INPUT)
+        _coords(block.get("pos"), f"{item}.pos", limits)
+        _block(block.get("block"), f"{item}.block")
     return {**data, "fills": fills, "blocks": blocks}
 
 
@@ -572,13 +585,14 @@ class McpClient:
 # ------------------------------------------------------ column reading
 
 Runs = list[tuple[int, int, str]]
+Columns = dict[tuple[int, int], Runs]
 _COLUMN = re.compile(r"^(-?\d+),(-?\d+):\s*(.*)$")
 _RUN = re.compile(r"^(-?\d+)(?:-(-?\d+))?\s+(\S+)$")
 
 
-def parse_columns(text: str) -> dict[tuple[int, int], Runs]:
+def parse_columns(text: str) -> Columns:
     """Parse `mc_inspect` `columns` output into {(x, z): [(y1, y2, state), ...]}."""
-    columns: dict[tuple[int, int], Runs] = {}
+    columns: Columns = {}
     for line in text.splitlines():
         head = _COLUMN.match(line.strip())
         if not head:
@@ -595,9 +609,9 @@ def parse_columns(text: str) -> dict[tuple[int, int], Runs]:
     return columns
 
 
-def read_columns(client: "McpClient", box: Box, world: str | None) -> dict[tuple[int, int], Runs]:
+def read_columns(client: "McpClient", box: Box, world: str | None) -> Columns:
     """Read the exact block runs of every column in `box` through `mc_inspect`."""
-    columns: dict[tuple[int, int], Runs] = {}
+    columns: Columns = {}
     for part in column_tiles(box):
         args: dict[str, Any] = {"from": list(part[:3]), "to": list(part[3:]),
                                 "format": "columns"}
@@ -611,6 +625,176 @@ def read_columns(client: "McpClient", box: Box, world: str | None) -> dict[tuple
         except PlacerError as exc:
             raise PlacerError(client.redact(str(exc)), exc.code) from None
     return columns
+
+
+# ------------------------------------------------------------------ backups
+
+PLUGIN_VERSION = re.compile(r"^Plugin version:\s*(\S+)", re.MULTILINE)
+
+
+def check_complete(columns: Columns, box: Box) -> None:
+    """Every column of `box` is present with contiguous runs over its full y range."""
+    for x in range(box[0], box[3] + 1):
+        for z in range(box[2], box[5] + 1):
+            runs = columns.get((x, z))
+            if not runs:
+                raise PlacerError(f"column {x},{z} is missing from the read",
+                                  EXIT_REFUSED)
+            expected = box[1]
+            for y1, y2, _ in runs:
+                if y1 != expected or y2 < y1:
+                    raise PlacerError(f"column {x},{z} has a gap or overlap at "
+                                      f"y={expected}", EXIT_REFUSED)
+                expected = y2 + 1
+            if expected != box[4] + 1:
+                raise PlacerError(f"column {x},{z} covers y={box[1]}..{expected - 1}, "
+                                  f"not {box[1]}..{box[4]}", EXIT_REFUSED)
+
+
+def restore_build(columns: Columns, world: str | None) -> dict[str, Any]:
+    """mc_build arguments that put `columns` back exactly.
+
+    One fill per run; runs equal in (z, y1, y2, state) at consecutive x merge."""
+    fills: list[dict[str, Any]] = []
+    open_fill: dict[tuple[int, int, int, str], dict[str, Any]] = {}
+    for (x, z) in sorted(columns, key=lambda key: (key[1], key[0])):
+        for y1, y2, state in columns[(x, z)]:
+            key = (z, y1, y2, state)
+            current = open_fill.get(key)
+            if current is not None and current["to"][0] == x - 1:
+                current["to"][0] = x
+            else:
+                current = {"from": [x, y1, z], "to": [x, y2, z], "block": state}
+                open_fill[key] = current
+                fills.append(current)
+    args: dict[str, Any] = {"fills": fills, "blocks": [], "liquids": "static",
+                            "connect": False}
+    if world is not None:
+        args["world"] = world
+    return args
+
+
+def encode_columns(payload: dict[str, Any]) -> bytes:
+    """The exact bytes of columns.json.gz (format F1): gzip of compact sorted JSON."""
+    return gzip.compress(json.dumps(payload, sort_keys=True, separators=(",", ":"))
+                         .encode("utf-8"), mtime=0)
+
+
+def _manifest_complete(path: Path) -> bool:
+    try:
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(manifest, dict) and manifest.get("complete") is True
+
+
+def refuse_existing_backup(out: Path) -> None:
+    if _manifest_complete(out):
+        raise PlacerError(f"{out} already holds a complete backup; "
+                          "choose another folder", EXIT_REFUSED)
+
+
+def write_backup(out: Path, box: Box, world: str | None, columns: Columns,
+                 plugin: str | None) -> dict[str, Any]:
+    """Write backup format F1 into `out` and return the manifest.
+
+    Byte-exact format (the terrain toolkit writes the same bytes):
+      columns.json.gz = gzip.compress(json.dumps(payload, sort_keys=True,
+          separators=(",", ":")).encode("utf-8"), mtime=0), payload =
+          {"version": 1, "world": world, "box": [x1, y1, z1, x2, y2, z2],
+           "columns": {"<x>,<z>": [[y1, y2, state], ...]}}
+      manifest.json = json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+          manifest = {"version": 1, "box": [...], "world": world, "created":
+          "YYYY-MM-DDTHH:MM:SSZ" (UTC), "columns": count, "sha256": hex digest of
+          the exact columns.json.gz bytes, "plugin": str | None, "complete": true}
+    Both files go to temporary names first and are renamed into place, the
+    manifest last, so a folder without a manifest is never a complete backup."""
+    check_complete(columns, box)
+    payload = {"version": 1, "world": world, "box": list(box),
+               "columns": {f"{x},{z}": [[y1, y2, state] for y1, y2, state in columns[(x, z)]]
+                           for x in range(box[0], box[3] + 1)
+                           for z in range(box[2], box[5] + 1)}}
+    blob = encode_columns(payload)
+    manifest = {"version": 1, "box": list(box), "world": world,
+                "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "columns": len(payload["columns"]),
+                "sha256": hashlib.sha256(blob).hexdigest(), "plugin": plugin,
+                "complete": True}
+    temps = [out / ".columns.json.gz.tmp", out / ".manifest.json.tmp"]
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        temps[0].write_bytes(blob)
+        temps[1].write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                            encoding="utf-8")
+        temps[0].replace(out / "columns.json.gz")
+        temps[1].replace(out / "manifest.json")
+    except OSError as exc:
+        for temp in temps:
+            temp.unlink(missing_ok=True)
+        raise PlacerError(f"cannot write the backup in {out} "
+                          f"({exc.__class__.__name__})", EXIT_INPUT) from None
+    return manifest
+
+
+def load_backup(path: Path) -> tuple[dict[str, Any], Columns]:
+    """Read and verify a backup folder (checksum, shape, complete runs)."""
+    def bad(why: str) -> PlacerError:
+        return PlacerError(f"{path}: {why}", EXIT_INPUT)
+    try:
+        manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+        blob = (path / "columns.json.gz").read_bytes()
+    except (OSError, ValueError) as exc:
+        raise bad(f"cannot read the backup ({exc.__class__.__name__})") from None
+    if not isinstance(manifest, dict) or manifest.get("complete") is not True:
+        raise bad("not a complete backup")
+    if hashlib.sha256(blob).hexdigest() != manifest.get("sha256"):
+        raise bad("columns.json.gz does not match the manifest checksum")
+    try:
+        payload = json.loads(gzip.decompress(blob))
+        box = tuple(manifest["box"])
+        if (len(box) != 6 or payload["version"] != 1
+                or list(box) != payload["box"]):
+            raise ValueError("box or version mismatch")
+        columns: Columns = {}
+        for key, runs in payload["columns"].items():
+            x, z = key.split(",")
+            columns[(int(x), int(z))] = [(int(y1), int(y2), str(state))
+                                         for y1, y2, state in runs]
+    except (OSError, EOFError, ValueError, KeyError, TypeError) as exc:
+        raise bad(f"malformed backup ({exc.__class__.__name__})") from None
+    if len(columns) != manifest.get("columns"):
+        raise bad("column count does not match the manifest")
+    try:
+        check_complete(columns, box)  # type: ignore[arg-type]
+    except PlacerError as exc:
+        raise bad(str(exc)) from None
+    return manifest, columns
+
+
+def _restore_pages(columns: Columns, world: str | None,
+                   limits: Limits, where: str) -> list[Page]:
+    """Validated, paged restore fills; refusals here are exit 3."""
+    try:
+        build = validate_build(restore_build(columns, world), limits, where)
+    except PlacerError as exc:
+        raise PlacerError(str(exc), EXIT_REFUSED if exc.code == EXIT_INPUT
+                          else exc.code) from None
+    return make_pages(build, limits)
+
+
+def take_backup(client: "McpClient", box: Box, world: str | None, out: Path,
+                limits: Limits) -> dict[str, Any]:
+    """Read `box` column by column and write a backup; nothing is written unless
+    the read is complete and the restore fills pass validation and paging."""
+    text, is_error = client.call("mc_status", {})
+    if is_error:
+        raise PlacerError("mc_status failed: " + client.redact(text), EXIT_SERVER)
+    found = PLUGIN_VERSION.search(text)
+    plugin = client.redact(found.group(1)) if found else None
+    columns = read_columns(client, box, world)
+    check_complete(columns, box)
+    _restore_pages(columns, world, limits, "the restore fills")
+    return write_backup(out, box, world, columns, plugin)
 
 
 # --------------------------------------------------------- check and place
@@ -643,6 +827,29 @@ def _emit(report: dict[str, Any], log: str | None) -> None:
                   f"({exc.__class__.__name__}: {exc.strerror})", file=sys.stderr)
 
 
+def _check_players(client: McpClient, box: Box, margin: int,
+                   world: str | None) -> None:
+    text, is_error = client.call("mc_players", {})
+    if is_error:
+        raise PlacerError("mc_players failed: " + client.redact(text), EXIT_SERVER)
+    inside = players_inside(parse_players(text), box, margin, world)
+    if inside:
+        raise PlacerError("players inside the build area: " + ", ".join(inside),
+                          EXIT_PLAYER)
+
+
+def _run_pages(client: McpClient, pages: list[Page], report: dict[str, Any]) -> None:
+    for i, page in enumerate(pages, 1):
+        text, is_error = client.call("mc_build", page.args)
+        if is_error:
+            raise PlacerError(f"mc_build failed on page {i}/{len(pages)}: "
+                              + client.redact(text), EXIT_SERVER)
+        report["pages_done"] = i
+        report["warnings"] += [client.redact(w) for w in warnings_of(text)]
+        report["results"].append({"page": i, "result": [
+            client.redact(line) for line in result_lines(text)]})
+
+
 def cmd_place(ns: argparse.Namespace) -> int:
     limits = _limits(ns)
     path = Path(ns.file)
@@ -652,25 +859,23 @@ def cmd_place(ns: argparse.Namespace) -> int:
     if ns.world:
         for page in pages:
             page.args["world"] = ns.world
+    if ns.backup:
+        refuse_existing_backup(Path(ns.backup))
     if ns.snapshot and len(tiles) > ns.max_snapshots:
         raise PlacerError(f"this file needs {len(tiles)} snapshots (limit "
                           f"{ns.max_snapshots}); split it into smaller phase files",
                           EXIT_REFUSED)
     entry = _server(ns)
     report: dict[str, Any] = {"file": str(path), "pages_total": len(pages),
-                              "pages_done": 0, "snapshots": [], "warnings": [],
-                              "results": [], "error": None}
+                              "pages_done": 0, "snapshots": [], "backup": None,
+                              "warnings": [], "results": [], "error": None}
     client = McpClient(entry)
     try:
-        text, is_error = client.call("mc_players", {})
-        if is_error:
-            raise PlacerError("mc_players failed: " + client.redact(text),
-                              EXIT_SERVER)
         whole = union([page.box for page in pages])
-        inside = players_inside(parse_players(text), whole, ns.player_margin, world)
-        if inside:
-            raise PlacerError("players inside the build area: " + ", ".join(inside),
-                              EXIT_PLAYER)
+        _check_players(client, whole, ns.player_margin, world)
+        if ns.backup:
+            take_backup(client, whole, world, Path(ns.backup), limits)
+            report["backup"] = ns.backup
         for i, box in enumerate(tiles if ns.snapshot else [], 1):
             args: dict[str, Any] = {"action": "create", "from": list(box[:3]),
                                     "to": list(box[3:]),
@@ -683,15 +888,48 @@ def cmd_place(ns: argparse.Namespace) -> int:
                                   EXIT_SERVER)
             report["snapshots"].append(
                 client.redact(snapshot_id(text, client.secrets)))
-        for i, page in enumerate(pages, 1):
-            text, is_error = client.call("mc_build", page.args)
-            if is_error:
-                raise PlacerError(f"mc_build failed on page {i}/{len(pages)}: "
-                                  + client.redact(text), EXIT_SERVER)
-            report["pages_done"] = i
-            report["warnings"] += [client.redact(w) for w in warnings_of(text)]
-            report["results"].append({"page": i, "result": [
-                client.redact(line) for line in result_lines(text)]})
+        _run_pages(client, pages, report)
+    except PlacerError as exc:
+        report["error"] = str(exc)
+        _emit(report, ns.log)
+        raise
+    finally:
+        client.close()
+    _emit(report, ns.log)
+    return EXIT_OK
+
+
+def cmd_backup(ns: argparse.Namespace) -> int:
+    limits = _limits(ns)
+    a, b = [ns.box[0], ns.box[1], ns.box[2]], [ns.box[3], ns.box[4], ns.box[5]]
+    _coords(a, "--box from", limits)
+    _coords(b, "--box to", limits)
+    box = box_of(a, b)
+    out = Path(ns.out)
+    refuse_existing_backup(out)
+    client = McpClient(_server(ns))
+    try:
+        manifest = take_backup(client, box, ns.world, out, limits)
+    finally:
+        client.close()
+    _emit({"backup": str(out), "manifest": manifest}, ns.log)
+    return EXIT_OK
+
+
+def cmd_restore(ns: argparse.Namespace) -> int:
+    limits = _limits(ns)
+    path = Path(ns.dir)
+    manifest, columns = load_backup(path)
+    world = ns.world or manifest.get("world")
+    pages = _restore_pages(columns, world, limits, f"{path} restore fills")
+    box: Box = tuple(manifest["box"])  # type: ignore[assignment]
+    report: dict[str, Any] = {"backup": str(path), "pages_total": len(pages),
+                              "pages_done": 0, "warnings": [], "results": [],
+                              "error": None}
+    client = McpClient(_server(ns))
+    try:
+        _check_players(client, box, ns.player_margin, world)
+        _run_pages(client, pages, report)
     except PlacerError as exc:
         report["error"] = str(exc)
         _emit(report, ns.log)
@@ -786,6 +1024,8 @@ def build_parser() -> argparse.ArgumentParser:
     choice = place.add_mutually_exclusive_group(required=True)
     choice.add_argument("--snapshot", action="store_true")
     choice.add_argument("--no-snapshot", action="store_true")
+    choice.add_argument("--backup", metavar="DIR",
+                        help="write a column backup (F1) into DIR before building")
     place.add_argument("--label", default="ashlar_place")
     place.add_argument("--world")
     place.add_argument("--player-margin", type=int, default=2)
@@ -798,13 +1038,30 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--out", required=True)
     read.add_argument("--world")
     _add_server(read)
+
+    backup = sub.add_parser("backup", help="write a column backup (F1) of a box")
+    backup.add_argument("--box", type=int, nargs=6, required=True,
+                        metavar=("X1", "Y1", "Z1", "X2", "Y2", "Z2"))
+    backup.add_argument("--out", required=True, metavar="DIR")
+    backup.add_argument("--world")
+    backup.add_argument("--log")
+    _add_limits(backup)
+    _add_server(backup)
+
+    restore = sub.add_parser("restore", help="put a column backup back exactly")
+    restore.add_argument("dir")
+    restore.add_argument("--world")
+    restore.add_argument("--player-margin", type=int, default=2)
+    restore.add_argument("--log")
+    _add_limits(restore)
+    _add_server(restore)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
     handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place,
-                "read": cmd_read}
+                "read": cmd_read, "backup": cmd_backup, "restore": cmd_restore}
     try:
         return handlers[ns.cmd](ns)
     except PlacerError as exc:

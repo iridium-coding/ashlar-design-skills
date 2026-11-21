@@ -11,6 +11,8 @@ player check and snapshots.
   ashlar_place.py place  FILE (--snapshot [--label L] | --no-snapshot)
                          [--world W] [--player-margin 2] [--max-snapshots 15]
                          [--log PATH] [--server NAME] [--config PATH] [limit options]
+  ashlar_place.py read   X1 Y1 Z1 X2 Y2 Z2 --out FILE [--world W]
+                         [--server NAME] [--config PATH]
 
 A phase file is an `mc_build` arguments object (`fills`, `blocks`, `liquids`,
 `connect`, `world`) or a bare list of fills. Exit codes: 0 ok, 2 invalid input,
@@ -219,6 +221,24 @@ def tile(box: Box, cap: int) -> list[Box]:
         return [box]
     first, second = halve(box)
     return tile(first, cap) + tile(second, cap)
+
+
+def column_tiles(box: Box, max_columns: int = 1024,
+                 max_cells: int = 200_000) -> list[Box]:
+    """Cover `box` with x/z rectangles that keep its full y range.
+
+    Each tile has at most `max_columns` columns and `max_cells` cells."""
+    height = box[4] - box[1] + 1
+    cap = max(1, min(max_columns, max_cells // height))
+    width, depth = box[3] - box[0] + 1, box[5] - box[2] + 1
+    if width * depth <= cap:
+        return [box]
+    step_x = min(width, cap)
+    step_z = max(1, min(depth, cap // step_x))
+    return [(x, box[1], z, min(x + step_x - 1, box[3]), box[4],
+             min(z + step_z - 1, box[5]))
+            for x in range(box[0], box[3] + 1, step_x)
+            for z in range(box[2], box[5] + 1, step_z)]
 
 
 # -------------------------------------------------------------------- input
@@ -549,6 +569,50 @@ class McpClient:
                 self.proc.kill()
 
 
+# ------------------------------------------------------ column reading
+
+Runs = list[tuple[int, int, str]]
+_COLUMN = re.compile(r"^(-?\d+),(-?\d+):\s*(.*)$")
+_RUN = re.compile(r"^(-?\d+)(?:-(-?\d+))?\s+(\S+)$")
+
+
+def parse_columns(text: str) -> dict[tuple[int, int], Runs]:
+    """Parse `mc_inspect` `columns` output into {(x, z): [(y1, y2, state), ...]}."""
+    columns: dict[tuple[int, int], Runs] = {}
+    for line in text.splitlines():
+        head = _COLUMN.match(line.strip())
+        if not head:
+            continue
+        runs: Runs = []
+        for part in head[3].split(" | "):
+            run = _RUN.match(part.strip())
+            if not run:
+                raise PlacerError(f"cannot parse inspect run {part!r} in column "
+                                  f"{head[1]},{head[2]}", EXIT_SERVER)
+            state = run[3] if ":" in run[3].split("[")[0] else "minecraft:" + run[3]
+            runs.append((int(run[1]), int(run[2] or run[1]), state))
+        columns[(int(head[1]), int(head[2]))] = runs
+    return columns
+
+
+def read_columns(client: "McpClient", box: Box, world: str | None) -> dict[tuple[int, int], Runs]:
+    """Read the exact block runs of every column in `box` through `mc_inspect`."""
+    columns: dict[tuple[int, int], Runs] = {}
+    for part in column_tiles(box):
+        args: dict[str, Any] = {"from": list(part[:3]), "to": list(part[3:]),
+                                "format": "columns"}
+        if world is not None:
+            args["world"] = world
+        text, is_error = client.call("mc_inspect", args)
+        if is_error:
+            raise PlacerError("mc_inspect failed: " + client.redact(text), EXIT_SERVER)
+        try:
+            columns.update(parse_columns(text))
+        except PlacerError as exc:
+            raise PlacerError(client.redact(str(exc)), exc.code) from None
+    return columns
+
+
 # --------------------------------------------------------- check and place
 
 def _server(ns: argparse.Namespace) -> ServerEntry:
@@ -638,6 +702,39 @@ def cmd_place(ns: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_read(ns: argparse.Namespace) -> int:
+    limits = Limits()
+    a, b = [ns.x1, ns.y1, ns.z1], [ns.x2, ns.y2, ns.z2]
+    _coords(a, "from", limits)
+    _coords(b, "to", limits)
+    box = box_of(a, b)
+    client = McpClient(_server(ns))
+    try:
+        columns = read_columns(client, box, ns.world)
+    finally:
+        client.close()
+    cells: dict[str, str] = {}
+    for (x, z), runs in columns.items():
+        for y1, y2, state in runs:
+            for y in range(y1, y2 + 1):
+                cells[f"{x},{y},{z}"] = state
+    if len(cells) != volume(box) or any(
+            f"{x},{y},{z}" not in cells
+            for x in range(box[0], box[3] + 1) for z in range(box[2], box[5] + 1)
+            for y in range(box[1], box[4] + 1)):
+        raise PlacerError(f"mc_inspect returned {len(cells)} of {volume(box)} cells",
+                          EXIT_SERVER)
+    try:
+        Path(ns.out).write_text(json.dumps({
+            "world": ns.world, "from": list(box[:3]), "to": list(box[3:]),
+            "cells": cells}), encoding="utf-8")
+    except OSError as exc:
+        raise PlacerError(f"cannot write {ns.out} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    print(f"read {len(cells)} cells in {len(column_tiles(box))} calls -> {ns.out}")
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------- cli
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -694,12 +791,20 @@ def build_parser() -> argparse.ArgumentParser:
     place.add_argument("--player-margin", type=int, default=2)
     place.add_argument("--max-snapshots", type=int, default=15)
     place.add_argument("--log")
+
+    read = sub.add_parser("read", help="write a box's exact block states to JSON")
+    for name in ("x1", "y1", "z1", "x2", "y2", "z2"):
+        read.add_argument(name, type=int)
+    read.add_argument("--out", required=True)
+    read.add_argument("--world")
+    _add_server(read)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
-    handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place}
+    handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place,
+                "read": cmd_read}
     try:
         return handlers[ns.cmd](ns)
     except PlacerError as exc:

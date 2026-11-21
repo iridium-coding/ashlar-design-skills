@@ -67,3 +67,35 @@ Design skills may add keys such as `rooms` (design-house), `districts`
 `shared_anchors` (design-monument sibling seams); executors ignore them. A
 planned entry may have `"modules": []` and `"phases": []`. `updated` is the
 current UTC time if you can read it, otherwise the date.
+
+## verdicts
+
+Record the four redstone verdicts under the project entry:
+
+```json
+"verdicts": {
+  "built": "pass",
+  "at_rest": "pass",
+  "agent_tested": "pass",
+  "manual": "pending",
+  "evidence": "build-log.md, Test 2026-11-20 14:05",
+  "updated": "2026-11-20T14:20:00Z"
+}
+```
+
+Each verdict is `pass`, `fail`, `pending` or `n/a`. Use `pending` for
+outstanding checks. Record the `build-log.md` section with the readings in
+`evidence` and the update time in `updated`.
+
+| Verdict | Passes when |
+| --- | --- |
+| `built` | Acceptance, `quality_contract` and the full-read plan diff pass |
+| `at_rest` | The pre-build checker is clean, the post-setup baseline matches the loaded rest state with verified internal inventories, and every `rest` row passes |
+| `agent_tested` | Every agent test passes. Use `n/a` when the agent can drive nothing |
+| `manual` | Every manual test passes. Use `pending` when the user still has steps to do and `n/a` when there are none |
+
+The existing `status` flow is unchanged. See
+[Redstone verification](verification.md#redstone) and
+[test mode](../SKILL.md#test) for the evidence and reporting procedure.
+Keep prior evidence only for unchanged, still-applicable tests. Mark changed
+tests and tests affected by a fix `pending` until rerun.

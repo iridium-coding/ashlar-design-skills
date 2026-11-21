@@ -1,87 +1,38 @@
 ---
 name: system-redstone
 description: >-
-  Designs, plans, and verifies complex redstone and mechanical contraptions in
-  a live Minecraft Java Edition world — item sorters, hidden and piston doors,
-  automatic farms, mob-spawner collectors, minecart networks and roller
-  coasters, water and bubble elevators, note-block music, traps, and
-  decorative machines. Java-correct: uses Java redstone mechanics
-  (quasi-connectivity, deterministic timing) and avoids patched-out tricks.
-  Designs ship with functional in-world verification and automated correction.
-  Use when the user wants a redstone build, an automatic farm, a contraption,
-  or any working machine. Part of the minecraft-builder workflow.
+  Designs redstone contraptions for a Paper server reached through Ashlar
+  (item sorters, piston doors, farms, clocks, elevators, note-block music,
+  traps), Java-correct and written in their resting state, builds them through
+  exec-ashlar, and tests what Ashlar's tools can drive, reporting plainly what
+  still needs the user. Use when the user wants a contraption or a working
+  machine, or when a design skill hands one off.
 model: opus
 effort: high
+allowed-tools: mcp__ashlar__mc_status mcp__ashlar__mc_players mcp__ashlar__mc_survey mcp__ashlar__mc_render mcp__ashlar__mc_inspect
+metadata:
+  short-description: Design, build and test redstone machines through Ashlar
 ---
 
-# system-redstone (Redstone & Mechanisms)
+# system-redstone
 
-You design **working machines** — redstone contraptions and mechanical
-builds. You iterate on ideas with the user, suggest options, and produce a
-fully resolved design that is **correct for Java Edition** and ships with a
-plan to *prove* it works in-world. You do not place blocks — the `exec-worker`
-does — but you own whether the machine functions.
+## When to use
 
-## When to use — and not
-
-Use for any **contraption or working machine**: sorters, doors, farms, mob
-collectors, minecart systems, elevators, music, traps, decorative redstone.
-The orchestrator may sequence you to design a complex redstone interior for
-another leaf's structure. Do not use for a trivial single mechanism (a lone
-lever and lamp) — that is an ordinary `exec-plan` build.
+Use for a contraption or working machine, including a redstone interior handed
+off by a design skill. Own the machine design, timing and functional test.
+`exec-ashlar` handles the site survey, approved build and live tests.
 
 ## Connection
 
-If a `minecraft-java` tool call fails because the MCP server is unreachable,
-stop and tell the user to run the `minecraft-mcp-setup` agent.
+Call `mc_status` to confirm the running Java and Paper version. On failure,
+retry once after a few seconds. If it still fails, report the connection error.
 
-## How agent-built redstone behaves — verify it's actually ticking
+## Placement under Ashlar
 
-This sits above the other rules. On Java, `block_set_state` (and
-`block_fill_region`, `block_clone_region`, `structure_load_to_world`) place
-blocks with **default update flags `3` — notify + sync** — so a placed block
-fires neighbour updates just like a player-placed block. The consequence:
-**most clocks and loops self-start when the agent builds them.** This is the
-opposite of a parity-limited edition where setblock-style placement suppresses
-block updates and every closed loop needs a manual right-click to kick it.
-
-So you do *not* design around a "manual kick" by default. What you do instead:
-
-1. **Build the natural design** — observer clocks, repeater loops, hopper
-   clocks, self-cycling animations are all fine. They generally start on their
-   own.
-2. **Always verify the contraption is actually ticking** in the functional
-   test. Self-start is the rule, not a guarantee — confirm oscillation with a
-   sampled read; never ship a clock as "working" on faith.
-3. **Know the three things that can still leave a loop dormant** (detailed in
-   `reference/setblock-redstone-limits.md`):
-   - **Unloaded / non-ticking chunks** — redstone in a chunk that isn't loaded
-     and ticking simply pauses. Build near a player or a ticking / force-loaded
-     chunk. **Loaded ≠ ticking:** on a single-player integrated server an idle
-     or unfocused client pauses the scheduled block-tick queue even in a
-     force-loaded chunk, so piston cycles, hopper transfers, comparator
-     container-reads, lamp turn-*off*, and crop growth freeze (immediate updates
-     still resolve). A live focused client or a dedicated server is required for
-     tick-driven mechanisms to run — see `reference/setblock-redstone-limits.md`.
-   - **A genuinely closed, edge-balanced loop** can settle without ever
-     toggling.
-   - **Placement order** — a loop built block-by-block may reach a stable state
-     before the last block lands; place the power source last, or place the
-     whole mechanism as one structure.
-4. **The cheap, reliable nudge is a tool call, not a player chore.** If the test
-   shows a loop static, set a `minecraft:redstone_block` (or
-   `minecraft:lever[powered=true]`) adjacent for one game tick, then set it back
-   to `minecraft:air`. That single block update starts any stalled loop — the
-   agent can do this itself via `command_execute` / `block_set_state`.
-
-When a contraption genuinely needs a one-time **initial trigger** or a
-**chunk-load / force-load guarantee** to keep running, surface it in the
-recipe's `initial_trigger` block and in the orchestrator's final report. Be
-honest about it up front. But do not pre-emptively avoid self-cycling clocks the
-way a parity-limited edition would force you to — on Java they work.
-
-See `reference/setblock-redstone-limits.md` for the patterns that self-start,
-the exceptions, and the `initial_trigger` idiom for the inspection recipe.
+Ashlar places without physics. Its connection pass sets shapes. Write each
+component as it rests before setup, load containers after placement, and name
+the event or player action that actually starts the machine. Before choosing
+a layout, read `reference/ashlar-redstone.md` first.
 
 ## Core principle — design for Java mechanics
 
@@ -93,178 +44,142 @@ powered from the block one above), **deterministic redstone-tick timing**, and
 intent into a *correct, version-appropriate* Java design before any block is
 placed.
 
-Two things to keep off the design, because they are not reliable on modern
-Java: **0-tick pulses** (patched out years ago) and **TNT / item duping**
-(bugs/exploits that can break at any update or be disabled on the server). The
-fundamentals, the timing table, and the version-sensitive caveats are in
-`reference/java-redstone.md`. Reject a design that depends on a patched-out or
-exploit mechanic at the verification step; substitute the reliable Java
-equivalent and tell the user.
-
-Target **modern Java (1.21.11 and 26.x)**. Don't over-claim legacy quirks;
-several behaviours are version-sensitive — confirm with `server_get_status` and
-verify against the running version.
-
-## Inputs
-
-- **From the user** — the adaptive interview (`reference/interview.md`).
-- **From `survey-research`** — when a contraption is not in the catalog, ask for
-  current *Java-edition* sources (`reference/community-sources.md` lists who to
-  trust and how to verify against the running version).
-- **From `survey-site`** — the site, space, and existing builds.
-- **From the world** — the `mcbuilder:registry`, for iteration.
+Target Java 26.3 on Paper. Confirm version-sensitive details against the running
+version and use the timing table in `reference/java-redstone.md`.
 
 ## Process
 
-1. **Interview** — classify the contraption, automation level, throughput
-   target, and site constraints (`reference/interview.md`). Record in
-   `requirements.md`.
-2. **Design** — match a catalog entry (`reference/contraptions-farms.md`,
-   `reference/contraptions-mechanisms.md`) or compose one from logic
-   primitives (`reference/design-patterns.md`).
-3. **Verify statically** — reject any patched-out (0-tick) or exploit (duping)
-   dependency; check the timing budget; confirm it fits the world and the
-   structure/fill caps.
-4. **Resolve the plan** — write pre-tiled phases and steps into `plan.toon`.
-   Place water and lava sources last so flow does not disrupt the build.
-5. **Author the functional test** — write an inspection recipe (see below).
-6. **Return to the orchestrator** — and stay available to diagnose if the test
-   fails.
+1. **Preflight.** Check the connection, read `.minecraft-builder/registry.json`
+   if present, then use `exec-ashlar survey <project>` for the site.
+2. **Interview.** Use `reference/interview.md` to agree on footprint, facing,
+   throughput, item types, trigger and who will be in game for manual tests.
+   Offer a test input for a lever, button, plate or clock.
+3. **Design.** Choose a catalog entry or compose the logic patterns. Draw
+   modules in local coordinates and rotate or mirror placements to fit the site
+   (`../exec-ashlar/reference/modules.md`). State the timing budget and derive
+   comparator thresholds from the item counts and stack sizes.
+4. **Check.** Draft the phases, setup commands and placements in `plan.toon`.
+   Stamp each placement phase. Where the circuit relies on existing blocks
+   or conditional fills need original cell states, capture those cells with
+   `ashlar_place.py read` before building. Save the read in the local project,
+   record its path in the plan notes and pass it to `check` with `--background`.
+   Run `redstone_rest.py check`, fix mismatches and structural errors, and
+   re-run. A block the checker does not know is listed as unmodelled and
+   treated as a non-conductor, so choose power-path blocks the checker knows;
+   a mismatch at or next to an unmodelled block is a hand check, never a state
+   to write. If the report says `loaded ... cannot settle`, resolve that loop
+   before hand-off even if the as-built check exited 0 or 3. Run `check --input`
+   with the same background for each input, examine the changes and confirm
+   that its signal reaches each intended target. Document every unmodelled
+   part and its hand check in the plan notes. Record results in `build-log.md`.
+5. **Plan.** Finish `plan.toon` using `../exec-ashlar/reference/plan-format.md`.
+   Order phases as site prep, machine blocks, attached parts, then setup in
+   a `commands` phase (e.g. filter hopper contents or spawner NBT). Write the
+   `tests` table. Name the start input, manual actions, fixtures and limits of
+   agent testing in the notes. Re-run the checker if the plan changed.
+6. **Build.** Hand the checked plan to `exec-ashlar build <project>` for the
+   approval gate, snapshots and build. Supply the saved pre-build read path
+   when applicable so the executor can use `--background` for both the built
+   plan diff and the loaded-rest plan diff.
+7. **Test.** Hand off to `exec-ashlar test <project>` for loaded-baseline reads
+   and functional tests. Use `reference/verification.md` for the evidence.
+8. **Report.** Give the four verdicts, remaining manual steps and the chunk or
+   player requirements for unattended operation.
+9. **On failure.** Use the correction catalog, `check` and `diff` to locate the
+   fault. Write a fix phase with only the changed blocks. Return to
+   `exec-ashlar build` for a new gate and test again. After three failed fix
+   rounds, stop and recommend rollback or redesign.
+
+## Test inputs and fixtures
+
+For a machine started by a lever, button, plate or clock, `system-redstone`
+proposes a **test input** at the interview, and the gate shows it if the user
+accepts. It is a hopper the agent loads with `item replace block`, emptying into
+a sink barrel, read by a comparator. The comparator's signal (boosted by a
+repeater where needed) joins the machine's input line through a diode, so the
+lever and the test input cannot feed back into each other. The signal holds for
+about 0.4 s per item (a hopper moves one item per 8 game ticks), up to 5 × 64
+items. It is hidden where a player will not use it by accident, for example
+under the floor. With it, the agent can run the machine's tests itself; the
+user still flips the real input once (a `manual` step).
+
+**Pulse counter** (optional, for clocks): the clock fires a dropper that moves
+one item per pulse into a hopper and a chest. The agent loads the dropper, reads
+the chest twice with a known wall-clock gap, and estimates the period. The
+estimate is approximate because of server lag and read latency.
+
+Test inputs and fixtures are part of the design. They go through the checker,
+the gate and the snapshots like any other blocks, and the plan notes list them,
+so a later reader knows what they are.
+
+## Scripts
+
+Run from the workspace root containing `.minecraft-builder/`, with Python
+3.11 or newer. For an older system Python, use
+`uv run --no-project --python 3.11 python <script> ...`.
+
+- Claude Code: `<skill>` is `${CLAUDE_SKILL_DIR}`.
+- Codex: `<skill>` is the folder holding this `SKILL.md`.
+- Otherwise: `<skill>` is the folder holding this `SKILL.md`.
+
+```text
+python3 <skill>/../exec-ashlar/scripts/stamp.py --placements <plan.toon> --modules <modules-dir> --phase <number> --out <phase.json>
+python3 <skill>/../exec-ashlar/scripts/ashlar_place.py read X1 Y1 Z1 X2 Y2 Z2 --out <read.json> --world <world>
+python3 <skill>/scripts/redstone_rest.py check <plan.toon> [--input X Y Z]... [--background <pre-build-read.json>]
+python3 <skill>/scripts/redstone_rest.py diff <plan.toon> <read.json> [--loaded] [--background <pre-build-read.json>]
+python3 <skill>/scripts/redstone_rest.py diff <read-a.json> <read-b.json>
+python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
+```
 
 ## Reference library
 
-Read the file for the step you are on — do not load them all up front:
-
-| File | Covers |
-| ---- | ------ |
-| `reference/setblock-redstone-limits.md` | **Read first.** Which redstone patterns self-start when placed by the agent (most do, on Java), the exceptions that need an initial trigger or chunk-load guarantee, and the `initial_trigger` idiom for the inspection recipe. |
-| `reference/java-redstone.md` | Java redstone fundamentals, the timing table, version-sensitive caveats, and what's patched-out/exploit-grade to avoid. |
-| `reference/contraptions-farms.md` | Catalog — item sorters, mob-spawner collectors, mob farms, crop farms, auto-processing. |
-| `reference/contraptions-mechanisms.md` | Catalog — piston and hidden doors, transport, elevators, music, decorative, defensive. |
-| `reference/design-patterns.md` | Logic primitives — latches, edge detectors, pulse circuits, clocks, gates, RNG. |
-| `reference/verification.md` | Authoring inspection recipes and the symptom → diagnosis → fix correction catalog. |
-| `reference/interview.md` | The adaptive interview decision tree. |
-| `reference/community-sources.md` | Which Java creators and references to trust, and how to verify against the running version. |
-
-For volume limits, the 64×384×64 structure cap, tiled fills, and ticking
-areas/force-loading, follow the **`terrain-shape` skill's
-`${CLAUDE_PLUGIN_ROOT}/skills/terrain-shape/reference/command-budget.md`**.
-
-### Java-exclusive options beyond plain redstone
-
-Keep the *contraption* on vanilla redstone for portability, but these Java-only
-surfaces (which Bedrock's MCP lacked) materially help — reach for them where
-noted:
-
-- **Datapack functions** (`function_run` / `schedule_function`) — a non-redstone
-  path for exact-timed sequences and self-rescheduling animations, for a build
-  that ships a datapack (`reference/design-patterns.md`). **Smoke-test that they
-  actually execute first** — the mod can list a function yet refuse to run it
-  (`/function` → "should not run", `/reload` → `successCount 0`); if inert, use
-  redstone instead.
-- **`update_flags` placement** — `block_set_state` flag `3` self-starts circuits,
-  flag `2` stages a component **dormant** to arm deliberately
-  (`reference/setblock-redstone-limits.md`).
-- **Pre-loaded block entities** — ship dispensers/droppers/hoppers loaded and
-  spawners configured via `block_entity_set_nbt` / `inventory_set_slot`
-  (`reference/contraptions-farms.md`, `reference/contraptions-mechanisms.md`).
-- **Event-based verification** — `events_subscribe` / `events_poll` confirm a
-  mechanism *fired* (`reference/verification.md`); `fluid.flow` (26.2+, needs a `filters.region`) covers water and lava feeds.
-
-## Verification and automated correction
-
-A contraption built correctly block-for-block can still **not function** —
-wrong timing, a loop that didn't start, a chunk that isn't ticking, a sorter
-miscount. So every design you produce ships a **functional test recipe**,
-written to `.minecraft-builder/<project>/inspection-recipe.toon`:
-
-```toon
-test: sorter-1row
-steps[3]{action,target,detail}:
-  trigger,{x:10,y:64,z:4},place 64 cobblestone in the input chest
-  wait,,80 game ticks
-  sample,{x:10,y:62,z:8},expect cobblestone in the output chest only
-```
-
-A test is **trigger → wait → sample → expected**: apply an input (the
-`exec-inspect` leaf uses `command_execute` / `block_set_state` to place a
-redstone block or `player_give_item` / `inventory_set_slot` to load a
-container), wait the budgeted ticks, then read the result with
-`block_get_state` / `inventory_get` / `entity_get`.
-
-### Recipes with an initial-trigger / chunk-load requirement
-
-Most self-cycling clocks (observer ring, hopper clock, repeater loop) self-start
-on Java, so they do **not** need a special step. But when a contraption is one
-of the exceptions — a closed edge-balanced loop, a placement-order-sensitive
-loop, or one built in a chunk that may not stay loaded — declare an optional
-`initial_trigger` block. Unlike a parity-limited edition's mandatory player
-right-click, on Java the agent can usually apply this itself with a tool call:
-
-```toon
-test: rotating-light-beam
-initial_trigger:
-  required_if: clock reads static at first sample
-  at: {x:-39,y:143,z:-42}
-  action: set minecraft:redstone_block adjacent for 1 game tick then set minecraft:air
-  chunk_load: keep the (-39,143,-42) chunk loaded/force-loaded so the loop keeps ticking
-steps[3]{action,target,detail}:
-  trigger,,confirm the (-39,143,-42) chunk is loaded and ticking
-  wait,,200 game ticks
-  sample,{x:-37,y:144,z:-38},expect at least one of the cardinal lamps to be powered
-```
-
-If the loop is static at the first sample, the `exec-inspect` leaf applies the
-`initial_trigger` (a tool call), then re-samples. A genuine **outstanding
-requirement** — e.g. "this loop must be force-loaded to keep ticking" — is
-surfaced in the orchestrator's final report. Verify oscillation; never ship a
-clock as "working" without confirming it is actually ticking.
-
-The loop (the orchestrator sequences each step):
-
-1. The `exec-inspect` leaf runs your recipe after the build phase.
-2. On **PASS**, the contraption works — done.
-3. On **CORRECTIONS NEEDED / FAIL**, the orchestrator re-invokes you to
-   **diagnose** — use the symptom → diagnosis → fix table in
-   `reference/verification.md` (stuck piston = check QC assumption / direct
-   power; static loop = apply the redstone-block nudge or confirm the chunk
-   ticks; sorter leak = filler-item count) — and emit corrected steps. The
-   `exec-worker` leaf applies them and `exec-inspect` re-tests. Loop until it
-   works.
-
-This design-test-correct loop is the heart of the skill — a contraption is not
-done until its functional test passes.
+| File | When to use it |
+| --- | --- |
+| [ashlar-redstone.md](reference/ashlar-redstone.md) | **Read first.** Placement, resting states, starting and chunk ticking |
+| [java-redstone.md](reference/java-redstone.md) | Java mechanics, timing, comparator formula and Paper settings |
+| [design-patterns.md](reference/design-patterns.md) | Gates, edges, memory, clocks and signal transmission |
+| [contraptions-farms.md](reference/contraptions-farms.md) | Sorters, farms, throughput and loading containers |
+| [contraptions-mechanisms.md](reference/contraptions-mechanisms.md) | Doors, transport, note blocks and other machines |
+| [interview.md](reference/interview.md) | Requirements and optional test inputs |
+| [checker.md](reference/checker.md) | Commands, inputs, reports, exit codes and model limits |
+| [verification.md](reference/verification.md) | Test contracts, verdicts and corrections |
+| [community-sources.md](reference/community-sources.md) | Finding version-appropriate Java designs |
+| [setblock-redstone-limits.md](reference/setblock-redstone-limits.md) | Superseded placement reference |
 
 ## Hard rules
 
-- **Java-correct.** Use Java mechanics (QC, deterministic timing, clean observer
-  pulses). Refuse patched-out (0-tick) and exploit (duping) mechanics;
-  substitute the reliable Java equivalent and tell the user.
-- **Target modern Java (1.21.11 and 26.x)** — flag any version-sensitive claim
-  and verify against the running version with `server_get_status`.
-- **Never place blocks** — you produce a plan and a test recipe; the
-  `exec-worker` leaf executes, `exec-inspect` verifies.
-- **Pre-tile fills** to ≤32,768 blocks; keep every element within 64×384×64
-  and the build within Y -64 to 320.
-- **Use 18 filler items** in a standard Java hopper sorter (per filter slot).
-- **Contraptions run on vanilla redstone** — `/data` and loot tables are fine
-  for setup/verification, but for in-machine randomness use vanilla dropper RNG
-  so the machine works without command intervention.
-- **Village mechanics are out of scope** — for an iron-golem or villager-bait
-  farm you design only the spawn platform, kill chute, water funnel, and hopper
-  collector; the village (beds, villagers) belongs to `design-village`, so flag
-  it for the orchestrator to sequence.
-- **The façade is out of scope** — an enclosure or roof over the contraption is
-  a `design-building` / `design-house` / `design-city` concern; flag it for the
-  orchestrator rather than building it yourself.
-- **AFK fishing works on Java**, but many servers patch or discourage AFK farms
-  — verify the server permits it before recommending one.
+- Java-correct: quasi-connectivity, deterministic timing, clean observer
+  pulses. No 0-tick tricks, duping or headless pistons.
+- Every redstone component is written at rest. Hand off to `exec-ashlar build`
+  only after `redstone_rest.py check` is clean for as-built modelled parts,
+  the loaded baseline settles, and every unmodelled part is checked by hand
+  and noted.
+- Never call a machine working without a passed functional test. When Ashlar
+  cannot drive a machine, say "needs your test" and give the exact steps.
+- All world changes go through `exec-ashlar`. Console commands only as
+  `../exec-ashlar/reference/commands.md` allows; never command blocks or `Command`
+  NBT.
+- Contraptions run on vanilla redstone. Console commands are only for setup
+  and verification.
+- Derive container-read item counts from the comparator formula; never quote a
+  fixed number.
+- Village mechanics belong to `design-village`. A façade or enclosure belongs to
+  `design-building`, `design-house` or `design-city`.
+- AFK farms: confirm the server permits them.
 
-## Return
+## Tracking progress
 
-State the contraption back to the user — what it does, its footprint, its
-throughput, the materials — and confirm `plan.toon` and the inspection recipe
-are written. Return to the orchestrator with the result and flag what it needs
-to sequence next: any reusable module worth defining (`exec-blueprint`), the
-build itself (`exec-worker`), and the functional test (`exec-inspect`). If the
-functional test fails, the orchestrator routes the diagnosis back to you.
+- Claude Code: track the phases with your task or todo tool.
+- Codex: track the phases with `update_plan` when available.
+- Otherwise: keep a checklist in `build-log.md`.
+
+## Report
+
+Give the footprint, facing, expected throughput and materials. Report `built`,
+`at_rest`, `agent_tested` and `manual` individually with the corresponding
+observations from `build-log.md`. Use `pass`, `fail`, `pending` or `n/a` as
+defined in `reference/verification.md`. Call it working only when a functional
+test passed and every applicable verdict passed. When a manual test is pending,
+give its exact control, coordinates, action and expected result. Return those
+results to the requesting design skill and identify any village or enclosure
+hand-off.

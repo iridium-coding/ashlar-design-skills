@@ -62,14 +62,18 @@ quality_contract:
 - `materials`: the palette by role.
 - `modules` and `placements`: see `modules.md`. `stamp.py` produces each
   phase's file from its placements before the build.
-- `commands`: every console command, in order, exactly as it will run (the
-  `minecraft:` prefix may be omitted; `commands.md`), each matching
-  `commands.md`. Commands contain commas and quotes, so wrap each command in
-  double quotes and escape its inner double quotes as `\"` (TOON quoting). A
+- `commands`: every console command for a phase, in order, each matching
+  [commands.md](commands.md). Write the command in its bare or `minecraft:`-
+  prefixed form. Apply the approved dimension wrapper at execution so the
+  redstone checker can read setup loads directly from this table. Commands
+  contain commas and quotes, so wrap each command in double quotes and escape
+  its inner double quotes as `\"` (TOON quoting). A
   table with no rows (`commands`, `modules`, `placements`) may be omitted; write
   `commands[0]:` only if you want it explicit.
 - `acceptance`: spot checks, one cell each.
 - `quality_contract`: the property checks below.
+- `tests`: ordered functional test steps (see [tests](#tests)). Plans from
+  other skills may omit this table.
 
 ## Phase files
 
@@ -132,6 +136,75 @@ longer horizontal side, and use the population variance of the top y.
 `doors.facing` is the door block's own `facing` value; the check walks both
 sides along that axis.
 
+## tests
+
+Each test is a list of steps run in order. Example for a sorter batch:
+
+```toon
+tests[9]{test,step,kind,at,detail,expect}:
+  batch-1,1,load,104 64 -350,"item replace block 104 64 -350 container.0 with minecraft:cobblestone 40",-
+  batch-1,2,load,104 64 -350,"item replace block 104 64 -350 container.1 with minecraft:oak_log 40",-
+  batch-1,3,load,104 64 -350,"item replace block 104 64 -350 container.2 with minecraft:dirt 20",-
+  batch-1,4,settle,100 60 -352 108 64 -346,containers,timeout 180
+  batch-1,5,expect,106 61 -352,container,gained minecraft:cobblestone=40
+  batch-1,6,expect,106 61 -349,container,gained minecraft:oak_log=40
+  batch-1,7,expect,106 61 -346,container,gained minecraft:dirt=20
+  batch-1,8,conserve,100 60 -352 108 64 -346,containers,-
+  batch-1,9,rest,100 60 -352 108 64 -346,blocks,baseline
+```
+
+(A filter hopper's contents are checked the same way with `holds`, for example
+`expect,103 63 -352,container,holds minecraft:cobblestone=18|minecraft:stick=4`.)
+
+And for a lever-driven door:
+
+```toon
+tests[8]{test,step,kind,at,detail,expect}:
+  cycle,1,manual,101 65 -341,"Flip the lever at 101 65 -341 on, then tell me",-
+  cycle,2,settle,98 64 -343 103 67 -336,blocks,timeout 10
+  cycle,3,expect,100 65 -340 100 66 -339,block,minecraft:air
+  cycle,4,manual,101 65 -341,"Flip the lever at 101 65 -341 off, then tell me",-
+  cycle,5,settle,98 64 -343 103 67 -336,blocks,timeout 10
+  cycle,6,expect,100 65 -340 100 66 -339,block,minecraft:smooth_stone
+  cycle,7,rest,98 64 -343 103 67 -336,blocks,baseline
+  cycle,8,repeat,-,steps 1-7,9
+```
+
+(Here the wall runs along z at x = 100, the doorway is z = -340 to -339 at
+y = 65 to 66, the pistons sit at z = -342 and z = -337, and the lever is on the
+wall's east face beside the doorway. Smooth stone fills the doorway when
+closed. The first pass and nine repeats give ten cycles.)
+
+| Kind | `at` | `detail` | `expect` | Run by |
+| --- | --- | --- | --- | --- |
+| `load` | the container | one quoted inventory load command (`item replace block` or `data merge block` with an `Items` payload only) | `-` | agent |
+| `settle` | a region | `containers` or `blocks`: what to read | `timeout <seconds>`: repeat the reads until two in a row agree, or fail | agent |
+| `await` | a container or cell | `container` or `block` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail | agent |
+| `expect` | a container, a cell or a region | `container` or `block` | `container`: either `gained` and the items the container gained since this test's baseline, or `holds` and its exact contents, each as `id=count` joined by `\|` (nothing else may have been gained, or be held); `block`: a block state that every cell must match (unspecified properties are wildcards) | agent |
+| `conserve` | a region | `containers` | `-`: for every item, the total across the region's containers equals this test's baseline total plus this test's loads, and no container outside this test's `gained` rows gained anything | agent |
+| `rest` | a region | `blocks` | `baseline`: the power properties of the redstone components match this test's baseline | agent |
+| `manual` | where the user acts | the exact instruction, quoted | `-`; the next steps read what happened | user |
+| `repeat` | `-` | `steps <a>-<b>` | how many additional times to run those earlier steps | — |
+
+A test with a `manual` row is a manual test; any other test is an agent test.
+Manual tests use user actions and passive observation. Put any `load` rows in
+a separate agent test.
+Every `load` command is a world change: validation checks it against
+`commands.md`, and the approval gate shows it as it will run.
+
+**Each test has its own baseline.** Before a test's first row, `test` mode
+settles the machine's containers and reads the machine (block states and
+container contents). `gained`, `conserve` and `rest` are measured against that
+reading, so earlier batches, earlier runs and earlier fix rounds leave nothing
+for a later test to trip over: batch 2 is checked against the state batch 1
+left, and a re-test after a fix starts from wherever the machine stands. The
+machine must be at rest when the baseline is read: its power properties match
+the loaded rest state, and its internal containers (every container except
+this test's `load` targets and `gained` containers) hold what the loaded rest
+state says. If not, for example because an earlier failed run left items in a
+hopper line, the test stops and tells the user, who clears them in game or
+rolls back. The plan never clears containers through the console.
+
 ## Validation (start of `build`)
 
 Stop and report if any of these fails:
@@ -156,3 +229,16 @@ Stop and report if any of these fails:
 7. `quality_contract` has at least one row, and every door, stair and named
    room in the design is covered.
 8. The snapshot slots for the whole build are known.
+9. Every `tests` row has a known kind and a parsable `expect`. Its `at` is a
+   parsable position or region inside the plan's `bbox`, except for `repeat`,
+   which uses `-` and names a valid range of earlier steps in the same test.
+10. Every `load` is in an agent test and matches `item replace block` or
+    `data merge block` in `commands.md`. A test `data merge block` may set only
+    the inventory `Items` payload, and that list must be non-empty (an empty
+    `Items` would clear the container). The command's coordinates must equal the
+    row's single `at` position inside the `bbox` and identify a planned or
+    observed container. Confirm the container is present before executing.
+11. Every test that drives the machine ends with a `rest` row after expanding
+    any `repeat` rows.
+12. A plan written by `system-redstone` has at least one test for each input, or
+    a note saying why the input cannot be tested.

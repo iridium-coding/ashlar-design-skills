@@ -9,7 +9,8 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 SKILLS = ["design-building", "design-city", "design-grounds", "design-house",
-          "design-monument", "design-village", "exec-ashlar", "survey-research"]
+          "design-monument", "design-village", "exec-ashlar", "survey-research",
+          "system-redstone"]
 IDS = [skill.replace("-", "_") for skill in SKILLS]
 CLIENTS_FILE = "skills/exec-ashlar/reference/clients.md"
 VOXEL_TOOLKIT = "skills/design-monument/tools/voxel/"
@@ -24,10 +25,14 @@ CHAPMAN_TOOLS = [
     "data_storage_get", "data_storage_set", "level_get_biome_at", "level_get_info",
     "level_get_weather", "command_execute", "player_give_item", "itemstack_drop_at",
     "itemstack_describe", "inventory_set_slot", "server_get_status",
+    "events_subscribe", "events_poll", "events_unsubscribe", "function_run",
+    "function_list", "function_get_definition", "inventory_get", "inventory_count_items",
+    "entity_get", "datapack_enable", "datapack_list_enabled", "level_get_mob_spawns",
     "schedule_function", "loot_table_generate", "mcp_place",
 ]
 FORBIDDEN = [
     re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(CHAPMAN_TOOLS) + r")\b"),
+    re.compile(r"\bscoreboard_"),
     re.compile(r"CLAUDE_PLUGIN_ROOT"),
     re.compile(r"minecraft-mcp-setup"),
     re.compile(r"\bexec-(?:plan|blueprint|worker|inspect|reflect)\b"),
@@ -145,6 +150,11 @@ def test_leftovers_detects_tools_but_not_minecraft_ids() -> None:
     assert leftovers("run exec-worker\nnothing\nthe Orchestrator") == [
         (1, "exec-worker"), (3, "Orchestrator")]
     assert leftovers("allowed-tools: mcp__minecraft-java__block_set_state") == [(1, "block_set_state")]
+
+
+def test_leftovers_detects_redstone_tool_names() -> None:
+    assert leftovers("call events_poll") == [(1, "events_poll")]
+    assert leftovers("use scoreboard_* here") == [(1, "scoreboard_")]
 
 
 def test_labelled_lines_allow_client_names() -> None:

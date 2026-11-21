@@ -17,8 +17,21 @@ Before the first write, show the user:
   for each `commands` phase that runs `place feature`;
 - any other registry project whose `bbox` overlaps this build's box (a build
   over another build overwrites it);
-- every console command, exactly as it will run, with the `minecraft:` prefix;
-- every force-load the `commands` phases add and remove, and which chunks;
+- every ordinary console command in a `commands` phase, exactly as it will
+  run, with the `minecraft:` prefix;
+- each `commands` phase's exact eligible force-load chunks in the approved
+  world or dimension. The gate authorizes adding only eligible chunks absent
+  from the pre-phase query and removing only the phase's confirmed additions;
+- every test `load` command exactly as it will run;
+- the exact chunks each agent test may force-load and its maximum hold time.
+  Add only chunks the pre-run query shows are absent and remove only
+  confirmed additions. Include the expanded row timeouts and bounded time
+  for force-load calls, baseline reads, console steps, verification and
+  cleanup. Show the combined budget when tests share a force-load, with
+  enough time reserved to remove and verify the run's additions;
+- any test input or fixture, and where it is;
+- the manual steps the user will be asked to do;
+- what will remain unverified;
 - for a plan outside the server's main world: that its console steps need
   `execute in <dimension> run`, and whether the user agreed;
 - what a rollback cannot restore: entities, sign text and container contents,
@@ -28,6 +41,16 @@ Before the first write, show the user:
 
 Wait for an explicit yes. Then set `approved:` in `plan.toon` to today's date
 and the registry status to `building`.
+
+## Test-only approval
+
+If a built project's test rows or their execution scope change and all build
+phases stay the same, validate the revised tests and show their scope at a
+fresh gate. Include the exact commands, eligible chunks, hold budget, user
+steps and the results that need a new test. Wait for an explicit yes, update
+`approved:` in `plan.toon` and record the approved test scope in
+`build-log.md`. Keep the registry status `built` and run only the approved
+tests.
 
 ## Each phase
 
@@ -52,11 +75,17 @@ and the registry status to `building`.
      shell fill (`outline`, `hollow`, `walls`) is too large to split; split it
      into smaller phase files or fills. Exit 5: the server failed part way; the
      report lists the pages already written and the snapshot ids.
-   - `commands`: one `mc_command` call per row, in order, exactly as written,
-     with the `minecraft:` prefix added. A phase with console commands that name
-     a position or an entity starts with its `forceload add` row and ends with
-     the matching `forceload remove` row (`commands.md`); if the phase stops
-     part way, run the remove before reporting.
+   - `commands`: run ordinary rows in order, one exact approved
+     `mc_command` per row, with the `minecraft:` prefix and any approved
+     dimension wrapper. Use `forceload query` before adding chunks. Use the
+     approved range when every eligible chunk is absent. If the range
+     contains pre-existing loads, split it into per-chunk commands for the
+     missing eligible chunks only ([commands.md](commands.md#rules)).
+     Log each call before sending it and record its response or uncertainty.
+     At phase end or interruption, remove only this phase's confirmed
+     additions. Check the result with `forceload query` and report any
+     unresolved chunks. Return to the approval gate before changing the
+     commands, eligible chunk set or dimension.
 4. **Warnings**: every line under `WARNINGS` is an attached block without
    support. Fix them with another `mc_build` call before moving on.
 5. **Look**: `mc_render` top view, plus the facade the phase changed most.
@@ -79,8 +108,50 @@ and the registry status to `building`.
 - Water and lava are placed still. Use `liquids: "flow"` only for a few source
   blocks (a fountain head, a waterfall source): at most 2,000 flowing blocks per
   call.
-- Redstone does not update when placed. Every contraption needs a start lever
-  or button; tell the user what to flip.
+- Ashlar places redstone without physics. Write each component in its resting
+  state with inputs as built (normally off) and containers empty. Load setup
+  containers in a `commands` phase so their comparators receive real updates.
+  The connection pass sets shape properties.
+- A machine driven by game events starts once its chunks tick. A machine
+  driven by a player input or its own clock needs the user. Build clocks with
+  an off switch set to off. Show any approved test input at the gate and tell
+  the user which real input to operate.
+- Never nudge or reset a circuit by writing redstone blocks, levers or torches
+  with `mc_build`. Never place blocks through the console. See the
+  [Ashlar redstone placement rules](../../system-redstone/reference/ashlar-redstone.md).
+
+## Resuming and fixing
+
+- **An interrupted block placement** (placer exit 5, an MCP error, the user
+  stops it): record the known writes and snapshot ids. Confirm that replaying
+  the fills and blocks would produce the same final cells. When it would,
+  offer to resume from the start or roll back and ask before either. Resume
+  using the original snapshots without taking new ones (`--no-snapshot` for
+  the placer, omit `snapshot` for `mc_build`). That keeps the original
+  rollback point and avoids spending slots on the half-written state. If any
+  original snapshot has been evicted, tell the user at the gate which part
+  can no longer be rolled back. If replay could produce a different result,
+  for instance with overlapping conditional fills, reconcile the partial
+  writes first and show the exact remaining writes, restore or correction at
+  a fresh gate.
+- **An interrupted `commands` phase:** release this phase's confirmed
+  force-load additions. Reconcile each confirmed or uncertain operation
+  against the console log and observed state. Use the available block,
+  inventory and tagged-entity reads.
+  Never replay summons, feature placement or inventory loads wholesale.
+  Show the precise remaining commands or recovery actions at a fresh gate
+  and wait for approval before continuing.
+- **A failed test:** [`system-redstone`](../../system-redstone/SKILL.md)
+  [diagnoses it](../../system-redstone/reference/verification.md#correction-catalog).
+  The fix is a new phase holding only the changed blocks, added to `plan.toon`,
+  validated, and shown at a new gate as a list of the cells it changes. Then
+  snapshot, place and test again. Mark the tests affected by the fix
+  `pending` until rerun. After three failed fix rounds the skill stops and
+  recommends a rollback or a redesign.
+- **A test that fails part way** records what it saw. When the run ends or
+  reaches its cleanup cutoff, release only its own force-load additions
+  within the reserved time. If cleanup cannot be confirmed, report the
+  affected chunks.
 
 ## Rollback
 

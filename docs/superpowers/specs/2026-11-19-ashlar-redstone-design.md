@@ -2,7 +2,7 @@
 
 - **Date:** 2026-11-19
 - **Status:** approved by the user on 2026-11-19 (approach C; merge first, then
-  live runs)
+  live runs); implemented on `redstone`; PR #2
 - **Base:** fork `main` at `db3e8a1` (sub-project 1, PR #1, merged); Chapman's
   `system-redstone` from Release 1.2.0 (`b4bea4a`)
 - **Backend:** Ashlar 0.4.9 (`ashlar-mcp` + Paper plugin) on Paper 26.3

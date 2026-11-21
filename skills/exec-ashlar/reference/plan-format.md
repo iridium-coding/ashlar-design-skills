@@ -234,7 +234,8 @@ Stop and report if any of these fails:
    which uses `-` and names a valid range of earlier steps in the same test.
 10. Every `load` is in an agent test and matches `item replace block` or
     `data merge block` in `commands.md`. A test `data merge block` may set only
-    the inventory `Items` payload. The command's coordinates must equal the
+    the inventory `Items` payload, and that list must be non-empty (an empty
+    `Items` would clear the container). The command's coordinates must equal the
     row's single `at` position inside the `bbox` and identify a planned or
     observed container. Confirm the container is present before executing.
 11. Every test that drives the machine ends with a `rest` row after expanding

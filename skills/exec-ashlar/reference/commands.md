@@ -2,7 +2,7 @@
 
 `mc_command` runs a command with full operator rights. Use only these forms,
 and only for what Ashlar's other tools cannot do. Commands that change the world
-must be listed in the approved plan's `commands` table or as agent test
+must be listed exactly in the approved plan's `commands` table or as agent test
 `load` rows in its [`tests` table](plan-format.md#tests). Test loads are world
 changes. Show each one at the [approval gate](execution.md#approval-gate)
 exactly as it will run, for example `minecraft:item replace block 104 64 -350

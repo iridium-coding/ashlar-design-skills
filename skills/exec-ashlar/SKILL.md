@@ -159,9 +159,9 @@ With both, run only the named manual tests.
    verdict then stays `pending`.
 8. Record the verdicts and evidence in a `## Test …` section of `build-log.md`
    and in [`registry.json`](reference/registry.md#registryjson), then report as
-   in [build step 6](#build). A partial run can retain evidence for unchanged,
-   still-applicable tests. Revised tests and tests affected by a fix stay
-   `pending` until rerun. Follow the
+   in [build step 6](#build). Retain earlier evidence only for
+   unchanged, still-applicable tests. Revised tests and tests affected by a
+   fix stay `pending` until rerun. Follow the
    [fix procedure](reference/execution.md#resuming-and-fixing) for failures.
 
 Between reads, wait with whatever the client allows (for example a shell
@@ -193,7 +193,11 @@ a restore cannot bring back, and set the registry status to `rolled-back`.
 - Use the `minecraft:` prefix for console commands. Keep the columns
   touched by position and entity commands loaded as described in
   `reference/commands.md`. Pair every `forceload add` with its matching
-  `forceload remove`.
+  `forceload remove`. Never leave a chunk force-loaded: release only the
+  additions this run confirmed, and preserve any chunk that was loaded before.
+- A test `load` may only target a slot, or for `data merge` a container, that
+  the latest baseline or container read shows empty. Otherwise stop and report;
+  never overwrite items.
 - Never place blocks with `mc_command`, and never use it to get around a limit.
 - Never clear containers through the console.
 - Stay within Ashlar's limits (`reference/tools-and-limits.md`); split the work

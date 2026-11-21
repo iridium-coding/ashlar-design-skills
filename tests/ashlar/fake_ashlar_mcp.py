@@ -10,6 +10,7 @@ Environment knobs:
   FAKE_FAIL_INSPECT   when set, mc_inspect returns isError ("Error: region too large")
   FAKE_INSPECT_BOTTOM when set, the bottom cell of every inspected column is this
                       state; every other cell is air
+  FAKE_INSPECT_SKIP   when set, mc_inspect omits the column "x,z" given here
   FAKE_SERVER_REQUEST when set, every request is preceded by a server-initiated
                       request that reuses the client's id
 Like the real server it logs "connecting to <MC_PLUGIN_URL>" on stderr.
@@ -38,6 +39,8 @@ def inspect_columns(arguments):
              "runs bottom to top (ids without the minecraft: prefix):"]
     for x in range(x1, x2 + 1):
         for z in range(z1, z2 + 1):
+            if f"{x},{z}" == os.environ.get("FAKE_INSPECT_SKIP"):
+                continue
             runs, low = [], y1
             if bottom:
                 runs.append(f"{y1} {bottom}")

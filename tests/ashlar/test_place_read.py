@@ -118,3 +118,23 @@ def test_read_rejects_y_outside_world(tmp_path):
                "--config", str(config(tmp_path)))
     assert proc.returncode == 2
     assert not out.exists()
+
+
+def test_read_parse_error_is_redacted_and_writes_nothing(tmp_path):
+    out = tmp_path / "r.json"
+    proc = run("read", "0", "64", "0", "1", "65", "1", "--out", str(out),
+               "--config", str(config(tmp_path, FAKE_INSPECT_BOTTOM="stone tok-SECRET-123")))
+    assert proc.returncode == 5
+    assert not out.exists()
+    assert "cannot parse" in proc.stderr
+    assert_no_secrets(proc)
+
+
+def test_read_incomplete_reply_exits_5_and_writes_nothing(tmp_path):
+    out = tmp_path / "r.json"
+    proc = run("read", "0", "64", "0", "1", "65", "1", "--out", str(out),
+               "--config", str(config(tmp_path, FAKE_INSPECT_SKIP="1,1")))
+    assert proc.returncode == 5
+    assert "of 8 cells" in proc.stderr
+    assert not out.exists()
+    assert_no_secrets(proc)

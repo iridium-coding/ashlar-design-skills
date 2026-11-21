@@ -606,7 +606,10 @@ def read_columns(client: "McpClient", box: Box, world: str | None) -> dict[tuple
         text, is_error = client.call("mc_inspect", args)
         if is_error:
             raise PlacerError("mc_inspect failed: " + client.redact(text), EXIT_SERVER)
-        columns.update(parse_columns(text))
+        try:
+            columns.update(parse_columns(text))
+        except PlacerError as exc:
+            raise PlacerError(client.redact(str(exc)), exc.code) from None
     return columns
 
 

@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from redstone_fixtures import block, clock_module, door_2x2_module, plan_from_module, sorter_slice_module
+from redstone_fixtures import block, clock_module, door_2x2_module, floor, plan_from_module, sorter_slice_module
 from redstone_plan import PlanError, assemble, format_state, load_plan, parse_state
 from redstone_rest import list_containers, main, require_python, run_check, run_diff_plan, run_diff_reads
 
@@ -73,6 +73,29 @@ def test_rotation_and_mirror_give_same_verdicts(tmp_path, rotation, mirror):
     assert r.as_built.mismatches == r.as_built.structural == r.as_built.unsettled == []
     changed = {p for p, before, after in r.input_changes[lever] if "sticky_piston" in before and "extended" in after}
     assert changed == {at(p) for p in names["pistons"]}
+
+
+@pytest.mark.parametrize('rotation', [0, 90, 180, 270])
+@pytest.mark.parametrize('mirror', ['none', 'x', 'z'])
+@pytest.mark.parametrize('items,lit,enabled', [(22, 'true', 'false'), (23, 'false', 'true')])
+def test_sorter_slice_verdicts_survive_rotation_and_mirror(tmp_path, rotation, mirror, items, lit, enabled):
+    module, names, setup = sorter_slice_module(items)
+    plan, at = plan_from_module(tmp_path, module, rotation, mirror, setup=setup)
+    r = run_check(plan)
+    assert r.as_built.mismatches == r.as_built.structural == r.as_built.unsettled == r.as_built.unmodelled == []
+    assert r.loaded_world[at(names["lock_torch"])].get("lit") == lit
+    assert r.loaded_world[at(names["output_hopper"])].get("enabled") == enabled
+
+
+@pytest.mark.parametrize('rotation', [0, 90, 180, 270])
+@pytest.mark.parametrize('mirror', ['none', 'x', 'z'])
+def test_switched_clock_survives_rotation_and_mirror(tmp_path, rotation, mirror):
+    module, names = clock_module(True)
+    plan, at = plan_from_module(tmp_path, module, rotation, mirror)
+    switch = at(names['switch'])
+    r = run_check(plan, inputs=[switch])
+    assert r.as_built.mismatches == r.as_built.structural == r.as_built.unsettled == []
+    assert at(names['output']) in r.input_unsettled[switch]
 
 
 def test_clock_with_switch_settles_until_switched_on(tmp_path, capsys):
@@ -274,6 +297,8 @@ def test_built_diff_checks_static_properties_per_block_type(tmp_path):
     cases = [('glass_pane[north=true]', 'glass_pane[north=false]', False),
              ('oak_fence[east=true]', 'oak_fence[east=false]', False),
              ('cobblestone_wall[west=tall]', 'cobblestone_wall[west=none]', False),
+             ('cobblestone_wall[up=true]', 'cobblestone_wall[up=false]', False),
+             ('vine[up=true]', 'vine[up=false]', True),
              ('iron_bars[south=true]', 'iron_bars[south=false]', False),
              ('oak_stairs[shape=inner_left,facing=west]', 'oak_stairs[shape=straight,facing=east]', True),
              ('chest[type=single,facing=east]', 'chest[type=left,facing=east]', False),
@@ -359,3 +384,31 @@ def test_later_filter_can_resolve_an_ambiguous_write(tmp_path, initial, conditio
     else:
         with pytest.raises(PlanError, match='conditional fill|cannot evaluate filter'):
             run_diff_plan(plan, post, False, background=pre)
+
+
+def torch_circuit(tmp, support):
+    # lever -> dust -> repeater -> support block carrying a wall torch written unlit
+    module = {"size": [5, 2, 1], "fills": [floor((0, 0, 0), (4, 0, 0))], "blocks": [
+        block((0, 1, 0), 'lever[face=floor,facing=north,powered=true]'),
+        block((1, 1, 0), 'redstone_wire[power=15,east=side,west=side]'),
+        block((2, 1, 0), 'repeater[facing=west,delay=1,powered=true,locked=false]'),
+        {"pos": [3, 1, 0], "block": support if ':' in support else 'minecraft:' + support},
+        block((4, 1, 0), 'redstone_wall_torch[facing=east,lit=false]')]}
+    return plan_from_module(tmp, module)
+
+
+@pytest.mark.parametrize('support', ['stone', 'tuff', 'polished_blackstone_bricks', 'purpur_block'])
+def test_common_conductors_power_a_torch_support(tmp_path, support):
+    plan, _ = torch_circuit(tmp_path, support)
+    r = run_check(plan)
+    assert r.as_built.mismatches == [] and r.as_built.unmodelled == []
+
+
+def test_unmodelled_support_annotates_the_mismatch(tmp_path, capsys):
+    plan, _ = torch_circuit(tmp_path, 'example:block')
+    r = run_check(plan)
+    assert r.as_built.unmodelled
+    [(pos, _, _, reason)] = r.as_built.mismatches or [(None, None, None, '')]
+    assert 'next to unmodelled' in reason and 'check by hand' in reason
+    assert main(['check', str(plan)]) == 1
+    assert 'check by hand)' in capsys.readouterr().out

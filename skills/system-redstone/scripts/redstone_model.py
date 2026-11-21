@@ -92,7 +92,10 @@ def excluded(block: str) -> bool:
     return block in UNMODELLED or block.endswith(("cauldron", "copper_bulb", "candle_cake"))
 
 
-# R1: curated from Minecraft Wiki, Conductivity (Java lists), and fixture palettes.
+# R1: curated from Minecraft Wiki, Conductivity (Java lists; read 2026-11-20), and
+# fixture palettes. The wiki says every variant of a listed conductive family
+# (bricks, smooth, polished, cracked, chiseled, pillar) also conducts. A block
+# the wiki does not show stays out of the table, so it is listed as unmodelled.
 FULL_BLOCKS = set("""
 stone cobblestone mossy_cobblestone smooth_stone stone_bricks mossy_stone_bricks
 cracked_stone_bricks chiseled_stone_bricks bricks dirt grass_block coarse_dirt
@@ -133,6 +136,31 @@ FULL_BLOCKS |= (
     | variants(TREES | {"stripped_" + tree for tree in TREES}, ("log", "wood"))
     | variants(COLORS, ("wool", "concrete", "concrete_powder", "terracotta", "glazed_terracotta"))
 )
+FULL_BLOCKS |= set("""
+tuff polished_tuff tuff_bricks chiseled_tuff chiseled_tuff_bricks calcite dripstone_block
+amethyst_block purpur_block purpur_pillar packed_ice blue_ice
+smooth_sandstone cut_sandstone chiseled_sandstone smooth_red_sandstone cut_red_sandstone
+chiseled_red_sandstone
+polished_blackstone polished_blackstone_bricks cracked_polished_blackstone_bricks
+chiseled_polished_blackstone gilded_blackstone
+chiseled_deepslate cracked_deepslate_bricks cracked_deepslate_tiles
+mud mud_bricks packed_mud prismarine prismarine_bricks dark_prismarine end_stone_bricks
+quartz_bricks quartz_pillar chiseled_quartz_block
+cracked_nether_bricks chiseled_nether_bricks red_nether_bricks
+soul_sand soul_soil chiseled_bookshelf mangrove_roots muddy_mangrove_roots
+bamboo_block stripped_bamboo_block bamboo_mosaic
+ochre_froglight verdant_froglight pearlescent_froglight
+""".split())
+FULL_BLOCKS |= (
+    variants(("crimson", "warped"), ("stem", "hyphae"))
+    | variants(("stripped_crimson", "stripped_warped"), ("stem", "hyphae"))
+)
+COPPER_BLOCKS = {f"{wax}{age}{shape}" for wax in ("", "waxed_")
+                 for age, shape in [("", "copper_block"), ("exposed_", "copper"), ("weathered_", "copper"),
+                                    ("oxidized_", "copper")]}
+COPPER_SHAPES = {f"{wax}{age}{shape}" for wax in ("", "waxed_") for age in ("", "exposed_", "weathered_", "oxidized_")
+                 for shape in ("cut_copper", "chiseled_copper")}
+FULL_BLOCKS |= COPPER_BLOCKS | COPPER_SHAPES
 ORES = "coal copper diamond emerald gold iron lapis redstone".split()
 FULL_BLOCKS |= variants(ORES + ["deepslate_" + ore for ore in ORES] + ["nether_gold", "nether_quartz"], ("ore",))
 WALL_MATERIALS = set("""
@@ -699,6 +727,12 @@ def check_world(world: World, contents: Contents) -> tuple[World, Report]:
             report.warnings.append(f"{x} {y} {z}: neighbour not written by the plan; treated as air; "
                                    "pass --background to include the site")
     report.unmodelled = sorted(unmodelled.items())
+    # A mismatch beside an unmodelled block may come from treating it as a non-conductor.
+    report.mismatches = [
+        (pos, written, expected,
+         reason + "".join(f" (next to unmodelled {p[0]} {p[1]} {p[2]}; check by hand)"
+                          for p in neighbours(pos) if p in unmodelled))
+        for pos, written, expected, reason in report.mismatches]
     for p, slots in sorted(contents.items()):
         for slot, stack in sorted(slots.items()):
             if not stack_size(stack.item)[1]:

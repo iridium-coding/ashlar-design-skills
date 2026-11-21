@@ -291,3 +291,15 @@ def test_keep_recognises_air_materials_while_filters_match_exact_ids(tmp_path):
     world = assemble(load_plan(path), bg)
     assert [world[(x, 0, 0)].id for x in range(4)] == [
         'minecraft:glass', 'minecraft:glass', 'minecraft:gold_block', 'minecraft:void_air']
+
+
+def test_negative_coordinates_assemble_and_load(tmp_path):
+    path = write_plan(
+        tmp_path, ["1,base,p.json,3,-5 -2 -9,-4 -2 -9,mcp", "2,loads,-,0,-5 -2 -9,-4 -2 -9,commands"],
+        commands=['2,1,"item replace block -5 -2 -9 container.0 with minecraft:cobblestone 7",a'],
+        phase_files={"p.json": {"fills": [box("minecraft:stone", (-5, -2, -9), (-4, -2, -9))],
+                                "blocks": [{"pos": [-5, -1, -9], "block": "minecraft:lever"}]}})
+    world = assemble(load_plan(path))
+    assert set(world) == {(-5, -2, -9), (-4, -2, -9), (-5, -1, -9)}
+    assert world[(-5, -1, -9)].id == "minecraft:lever"
+    assert setup_loads(load_plan(path)) == {(-5, -2, -9): {0: Stack("minecraft:cobblestone", 7)}}

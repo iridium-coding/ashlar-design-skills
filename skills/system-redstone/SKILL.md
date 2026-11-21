@@ -64,7 +64,10 @@ version and use the timing table in `reference/java-redstone.md`.
    `ashlar_place.py read` before building. Save the read in the local project,
    record its path in the plan notes and pass it to `check` with `--background`.
    Run `redstone_rest.py check`, fix mismatches and structural errors, and
-   re-run. If the report says `loaded ... cannot settle`, resolve that loop
+   re-run. A block the checker does not know is listed as unmodelled and
+   treated as a non-conductor, so choose power-path blocks the checker knows;
+   a mismatch at or next to an unmodelled block is a hand check, never a state
+   to write. If the report says `loaded ... cannot settle`, resolve that loop
    before hand-off even if the as-built check exited 0 or 3. Run `check --input`
    with the same background for each input, examine the changes and confirm
    that its signal reaches each intended target. Document every unmodelled

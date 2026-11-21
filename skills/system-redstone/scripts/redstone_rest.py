@@ -97,6 +97,8 @@ def _ignored_in_built(state: State, key: str) -> bool:
         return key != 'open' or block.endswith(('_door', '_trapdoor', '_fence_gate'))
     if key in HORIZONTAL:
         return (block in ('redstone_wire', 'iron_bars') or block.endswith(('_pane', '_fence', '_wall', '_bars')))
+    if key == 'up':
+        return block.endswith('_wall')  # the connection pass recomputes a wall's post
     return ((key == 'shape' and block.endswith('_stairs')) or (key == 'type' and block in CHESTS))
 
 

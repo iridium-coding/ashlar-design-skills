@@ -72,7 +72,7 @@ at default Java rates. Size the crop test's sample and timeout accordingly.
 
 | Verdict | Evidence required for a pass |
 | --- | --- |
-| `built` | Acceptance and quality checks pass and `diff` of a full read against the plan finds the right blocks and written non-power properties, excluding connection-pass properties. |
+| `built` | Acceptance and quality checks pass and `diff` of a full read against the plan finds the right blocks and written non-power properties, excluding connection-pass properties (wire, pane, fence, wall and bar sides, a wall's `up`, stair shape, chest type). |
 | `at_rest` | Pre-build checker passed for modelled parts, exceptions were checked by hand, the loaded baseline matches `diff --loaded`, and every `rest` row passed. |
 | `agent_tested` | Every agent test passed. Use `n/a` when there is no agent-driven test. |
 | `manual` | Every manual test passed. Use `pending` for outstanding actions and `n/a` if there are none. |

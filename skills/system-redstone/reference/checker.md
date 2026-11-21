@@ -36,8 +36,8 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
   not inventory contents.
 - **Geometry (`diff`).** Supply a full post-build read. The checker compares
   the block ID and written non-power properties at each written cell, ignoring
-  the connection pass (wire, pane, fence, wall and bar sides, stair shape and
-  chest type). For a conditional fill whose result depends on an unknown
+  the connection pass (wire, pane, fence, wall and bar sides, a wall's `up`,
+  stair shape and chest type). For a conditional fill whose result depends on an unknown
   original cell, a plan diff requires `--background` covering that cell.
   A post-build read cannot supply the original state.
 - **Loaded rest (`diff --loaded`).** Compares component IDs and power
@@ -70,6 +70,14 @@ input X Y Z
   X Y Z  <before> -> <after>
   X Y Z  cannot settle
 ```
+
+A block the checker does not know is listed as unmodelled and treated as a
+non-conductor, so a power path through it can give a wrong expected state.
+Build torch supports, repeater and comparator targets and the blocks under and
+beside dust from blocks the checker knows. A mismatch that ends with
+`(next to unmodelled X Y Z; check by hand)` may come from that assumption:
+check it by hand or swap the block, and never write the suggested state
+blindly.
 
 A loaded circuit that cannot settle skips input probes. Read these lines even
 on exit 0. A clean as-built circuit can still oscillate after setup. Warnings

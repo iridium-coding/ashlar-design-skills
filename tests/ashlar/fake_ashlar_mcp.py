@@ -18,6 +18,7 @@ Environment knobs:
                       (replace, optional `filter` = only cells whose current id is the
                       filter's id), then `blocks`, and the file is rewritten after
                       every call that changes it
+  (mc_survey with matrix: true reads FAKE_WORLD; no world -> isError)
   FAKE_SERVER_REQUEST when set, every request is preceded by a server-initiated
                       request that reuses the client's id
 Like the real server it logs "connecting to <MC_PLUGIN_URL>" on stderr.
@@ -99,6 +100,44 @@ def inspect_columns(arguments):
     return "\n".join(lines)
 
 
+def survey_matrix(arguments):
+    """mc_survey with matrix: true over the fake world (from/to are [x, z] pairs)."""
+    world = load_world()
+    if world is None:
+        return text("Error: no FAKE_WORLD", error=True)
+    (xa, za), (xb, zb) = arguments["from"][:2], arguments["to"][:2]
+    x1, x2, z1, z2 = min(xa, xb), max(xa, xb), min(za, zb), max(za, zb)
+    kind = arguments.get("type", "SOLID")
+    cells = world.get("cells", {})
+    top_cell = max([int(k.split(",")[1]) for k in cells] + [world.get("ground", 63) - 1])
+    start = min(319, top_cell)
+
+    def visible(ident):
+        if ident == "air":
+            return False
+        if kind == "ANY":
+            return True
+        if ident.endswith("_leaves"):
+            return False
+        return kind != "SOLID" or ident not in ("water", "lava")
+
+    lines = [f"Area x=[{x1}..{x2}] z=[{z1}..{z2}] ({x2 - x1 + 1}x{z2 - z1 + 1}). "
+             f"Surface y: type {kind}.",
+             f"Height matrix (z rows top-to-bottom, x columns left-to-right, "
+             f"top-left = x={x1} z={z1}):"]
+    for z in range(z1, z2 + 1):
+        row = []
+        for x in range(x1, x2 + 1):
+            found = "-"
+            for y in range(start, -65, -1):
+                if visible(block_id(world_cell(world, x, y, z))):
+                    found = str(y)
+                    break
+            row.append(found)
+        lines.append(f"z={z}: " + " ".join(row))
+    return text("\n".join(lines))
+
+
 def load_world():
     path = os.environ.get("FAKE_WORLD")
     if not path:
@@ -171,6 +210,8 @@ def main():
                 result = text("Error: region too large", error=True)
             else:
                 result = text(inspect_columns(arguments))
+        elif name == "mc_survey" and arguments.get("matrix"):
+            result = survey_matrix(arguments)
         else:
             result = text(f"unknown tool {name}", error=True)
         send({"jsonrpc": "2.0", "id": rid, "result": result})

@@ -211,3 +211,51 @@ def test_python_guard_exits_cleanly_on_old_python(capsys):
         assert "needs Python 3.11 or newer" in message and "--python 3.11" in message
         module.require_python((3, 11))
         module.require_python()
+
+
+def _liquid(page):
+    return sum(ap.volume(ap.box_of(f["from"], f["to"])) for f in page.args.get("fills", [])
+               if f["block"].split("[")[0] in ("minecraft:water", "minecraft:lava"))
+
+
+def test_flowing_pages_stay_under_cap():
+    build = {"liquids": "flow", "fills": [
+        {"from": [0, 60, 0], "to": [29, 69, 9], "block": "minecraft:water[level=0]"}],
+        "blocks": []}
+    pages = ap.make_pages(build, ap.Limits())
+    assert len(pages) >= 2 and all(_liquid(p) <= 2000 for p in pages)
+    assert sum(_liquid(p) for p in pages) == 3000
+    summary, _, _ = ap.plan_summary(build, ap.Limits(), "x.json")
+    assert summary["liquid_cells"] == 3000
+
+
+def test_flowing_cap_mixes_liquid_and_dry_fills():
+    build = {"liquids": "flow", "fills": [
+        {"from": [0, 0, 0], "to": [9, 9, 9], "block": "minecraft:lava"},
+        {"from": [0, 0, 0], "to": [9, 9, 9], "block": "minecraft:lava[level=0]"},
+        {"from": [0, 0, 0], "to": [9, 9, 9], "block": "minecraft:stone"}], "blocks": []}
+    pages = ap.make_pages(build, ap.Limits(max_flowing=1500))
+    assert all(_liquid(p) <= 1500 for p in pages)
+
+
+def test_non_flow_phases_page_as_before():
+    fill = {"from": [0, 60, 0], "to": [29, 69, 9], "block": "minecraft:water[level=0]"}
+    pages = ap.make_pages({"fills": [fill], "blocks": []}, ap.Limits())
+    assert len(pages) == 1 and pages[0].args["fills"] == [fill]
+    summary, _, _ = ap.plan_summary({"fills": [fill], "blocks": []}, ap.Limits(), "x.json")
+    assert summary["liquid_cells"] == 3000
+
+
+def test_filter_must_be_a_block_state(tmp_path):
+    path = tmp_path / "p.json"
+    path.write_text(json.dumps({"fills": [{"from": [0, 0, 0], "to": [1, 1, 1],
+                                           "block": "minecraft:air", "filter": "air"}]}),
+                    encoding="utf-8")
+    with pytest.raises(ap.PlacerError) as err:
+        ap.load_build(path, ap.Limits())
+    assert err.value.code == 2
+    path.write_text(json.dumps({"fills": [{"from": [0, 0, 0], "to": [1, 1, 1],
+                                           "block": "minecraft:air",
+                                           "filter": "minecraft:water[level=0]"}]}),
+                    encoding="utf-8")
+    assert ap.load_build(path, ap.Limits())["fills"][0]["filter"].startswith("minecraft:")

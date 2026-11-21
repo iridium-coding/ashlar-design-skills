@@ -86,6 +86,7 @@ class Limits:
     snapshot_volume: int = 200_000
     min_y: int = -64
     max_y: int = 319
+    max_flowing: int = 2000
 
 
 @dataclass
@@ -93,6 +94,7 @@ class Page:
     args: dict[str, Any]
     box: Box
     cells: int
+    liquid: int = 0
 
 
 # ------------------------------------------------------------------- config
@@ -301,6 +303,8 @@ def validate_build(data: dict[str, Any], limits: Limits, where: str) -> dict[str
         _coords(fill.get("from"), f"{item}.from", limits)
         _coords(fill.get("to"), f"{item}.to", limits)
         _block(fill.get("block"), f"{item}.block")
+        if "filter" in fill:
+            _block(fill["filter"], f"{item}.filter")
         if fill.get("mode", "replace") not in FILL_MODES:
             raise PlacerError(f"{item}.mode: must be one of {sorted(FILL_MODES)}",
                               EXIT_INPUT)
@@ -315,10 +319,22 @@ def validate_build(data: dict[str, Any], limits: Limits, where: str) -> dict[str
 
 # ------------------------------------------------------------------- paging
 
-def split_fill(fill: dict[str, Any], limits: Limits) -> list[dict[str, Any]]:
-    """Split a fill that is too big for one call; shell fills cannot be split."""
+LIQUIDS = {"minecraft:water", "minecraft:lava"}
+
+
+def is_liquid(state: str) -> bool:
+    return state.split("[")[0] in LIQUIDS
+
+
+def split_fill(fill: dict[str, Any], limits: Limits,
+               flowing: bool = False) -> list[dict[str, Any]]:
+    """Split a fill that is too big for one call; shell fills cannot be split.
+
+    With `flowing`, a water or lava fill is also split to `max_flowing` cells."""
     box = box_of(fill["from"], fill["to"])
-    if volume(box) <= limits.max_blocks and chunks(box) <= limits.max_chunks:
+    cap_liquid = flowing and is_liquid(fill["block"])
+    if (volume(box) <= limits.max_blocks and chunks(box) <= limits.max_chunks
+            and not (cap_liquid and volume(box) > max(1, limits.max_flowing))):
         return [fill]
     mode = fill.get("mode", "replace")
     if mode in SHELL_MODES:
@@ -328,27 +344,34 @@ def split_fill(fill: dict[str, Any], limits: Limits) -> list[dict[str, Any]]:
     pieces: list[dict[str, Any]] = []
     for half in halve(box):
         pieces += split_fill({**fill, "from": list(half[:3]), "to": list(half[3:])},
-                             limits)
+                             limits, flowing)
     return pieces
 
 
-def _pack(items: list[tuple[dict[str, Any], Box]],
-          limits: Limits) -> list[list[tuple[dict[str, Any], Box]]]:
-    """Order-preserving packing within the block, chunk and entry limits."""
+def _liquid_cells(item: dict[str, Any], box: Box) -> int:
+    return volume(box) if is_liquid(item["block"]) else 0
+
+
+def _pack(items: list[tuple[dict[str, Any], Box]], limits: Limits,
+          flowing: bool = False) -> list[list[tuple[dict[str, Any], Box]]]:
+    """Order-preserving packing within the block, chunk, entry and flowing limits."""
     groups: list[list[tuple[dict[str, Any], Box]]] = []
     current: list[tuple[dict[str, Any], Box]] = []
-    cells = 0
+    cells = liquid = 0
     merged: Box | None = None
     for item, box in items:
         size = volume(box)
+        wet = _liquid_cells(item, box)
         grown = box if merged is None else union([merged, box])
         if current and (cells + size > limits.max_blocks
                         or chunks(grown) > limits.max_chunks
-                        or len(current) >= limits.max_ops):
+                        or len(current) >= limits.max_ops
+                        or (flowing and liquid + wet > limits.max_flowing)):
             groups.append(current)
-            current, cells, grown = [], 0, box
+            current, cells, liquid, grown = [], 0, 0, box
         current.append((item, box))
         cells += size
+        liquid += wet
         merged = grown
     if current:
         groups.append(current)
@@ -358,15 +381,17 @@ def _pack(items: list[tuple[dict[str, Any], Box]],
 def make_pages(build: dict[str, Any], limits: Limits) -> list[Page]:
     """Pages in mc_build's own order: every fill page before any block page."""
     shared = {k: build[k] for k in ("liquids", "connect", "world") if k in build}
+    flowing = build.get("liquids") == "flow"
     fills = [(piece, box_of(piece["from"], piece["to"]))
-             for fill in build["fills"] for piece in split_fill(fill, limits)]
+             for fill in build["fills"] for piece in split_fill(fill, limits, flowing)]
     blocks = [(block, box_of(block["pos"], block["pos"])) for block in build["blocks"]]
     pages: list[Page] = []
     for kind, items in (("fills", fills), ("blocks", blocks)):
-        for group in _pack(items, limits):
+        for group in _pack(items, limits, flowing):
             pages.append(Page(args={**shared, kind: [item for item, _ in group]},
                               box=union([box for _, box in group]),
-                              cells=sum(volume(box) for _, box in group)))
+                              cells=sum(volume(box) for _, box in group),
+                              liquid=sum(_liquid_cells(item, box) for item, box in group)))
     return pages
 
 
@@ -380,6 +405,7 @@ def plan_summary(build: dict[str, Any], limits: Limits,
         "file": str(path),
         "bbox": {"from": list(whole[:3]), "to": list(whole[3:])},
         "cells": sum(page.cells for page in pages),
+        "liquid_cells": sum(page.liquid for page in pages),
         "chunks": chunks(whole),
         "y_range": [whole[1], whole[4]],
         "pages": [{"kind": "fills" if "fills" in page.args else "blocks",
@@ -625,6 +651,72 @@ def read_columns(client: "McpClient", box: Box, world: str | None) -> Columns:
         except PlacerError as exc:
             raise PlacerError(client.redact(str(exc)), exc.code) from None
     return columns
+
+
+# ------------------------------------------------------------ height reads
+
+HEIGHT_TYPES = (("ground", "SOLID"), ("surface", "SOLID_OR_LIQUID_NO_LEAVES"),
+                ("top", "ANY"))
+SURVEY_CELLS = 200_000
+_MATRIX_HEAD = re.compile(r"top-left\s*=\s*x=(-?\d+)\s+z=(-?\d+)")
+_MATRIX_ROW = re.compile(r"^z=(-?\d+):\s*(.*)$")
+
+
+def parse_matrix(text: str) -> tuple[int, dict[int, list[int | None]]]:
+    """Parse `mc_survey` matrix text into (top-left x, {z: row}); non-integers are None."""
+    head = _MATRIX_HEAD.search(text)
+    if not head:
+        raise PlacerError("mc_survey reply has no height matrix header", EXIT_SERVER)
+    rows: dict[int, list[int | None]] = {}
+    for line in text.splitlines():
+        row = _MATRIX_ROW.match(line.strip())
+        if row:
+            rows[int(row[1])] = [int(t) if re.fullmatch(r"-?\d+", t) else None
+                                 for t in row[2].split()]
+    return int(head[1]), rows
+
+
+def height_tiles(area: tuple[int, int, int, int]) -> list[tuple[int, int, int, int]]:
+    """Cover an x/z area with bands of whole z rows of at most 200,000 cells."""
+    x1, z1, x2, z2 = area
+    width = x2 - x1 + 1
+    if width > SURVEY_CELLS:
+        raise PlacerError(f"area is {width} cells wide; the most one mc_survey row "
+                          f"can read is {SURVEY_CELLS}", EXIT_INPUT)
+    rows = SURVEY_CELLS // width
+    return [(x1, z, x2, min(z + rows - 1, z2)) for z in range(z1, z2 + 1, rows)]
+
+
+def read_heights(client: "McpClient", area: tuple[int, int, int, int],
+                 world: str | None) -> dict[str, Any]:
+    """Read ground, surface and top heights of an x/z area as a heights file (F2)."""
+    x1, z1, x2, z2 = area
+    nx, nz = x2 - x1 + 1, z2 - z1 + 1
+    grids: dict[str, list[int | None]] = {k: [None] * (nx * nz) for k, _ in HEIGHT_TYPES}
+    for part in height_tiles(area):
+        for key, kind in HEIGHT_TYPES:
+            args: dict[str, Any] = {"from": [part[0], part[1]], "to": [part[2], part[3]],
+                                    "type": kind, "matrix": True}
+            if world is not None:
+                args["world"] = world
+            text, is_error = client.call("mc_survey", args)
+            if is_error:
+                raise PlacerError("mc_survey failed: " + client.redact(text), EXIT_SERVER)
+            try:
+                left, rows = parse_matrix(text)
+            except PlacerError as exc:
+                raise PlacerError(client.redact(str(exc)), exc.code) from None
+            if left != part[0]:
+                raise PlacerError(f"mc_survey matrix starts at x={left}, "
+                                  f"not {part[0]}", EXIT_SERVER)
+            for z in range(part[1], part[3] + 1):
+                row = rows.get(z)
+                if row is None or len(row) != nx:
+                    raise PlacerError(f"mc_survey matrix is missing or short at z={z}",
+                                      EXIT_SERVER)
+                for xi, value in enumerate(row):
+                    grids[key][xi * nz + (z - z1)] = value
+    return {"version": 1, "world": world, "origin": [x1, z1], "size": [nx, nz], **grids}
 
 
 # ------------------------------------------------------------------ backups
@@ -973,6 +1065,24 @@ def cmd_read(ns: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_heights(ns: argparse.Namespace) -> int:
+    area = (min(ns.area[0], ns.area[2]), min(ns.area[1], ns.area[3]),
+            max(ns.area[0], ns.area[2]), max(ns.area[1], ns.area[3]))
+    client = McpClient(_server(ns))
+    try:
+        heights = read_heights(client, area, ns.world)
+    finally:
+        client.close()
+    try:
+        Path(ns.out).write_text(json.dumps(heights), encoding="utf-8")
+    except OSError as exc:
+        raise PlacerError(f"cannot write {ns.out} ({exc.__class__.__name__})",
+                          EXIT_INPUT) from None
+    print(f"read {heights['size'][0]}x{heights['size'][1]} heights in "
+          f"{len(height_tiles(area))} tiles -> {ns.out}")
+    return EXIT_OK
+
+
 # ---------------------------------------------------------------------- cli
 
 def _add_limits(parser: argparse.ArgumentParser) -> None:
@@ -983,11 +1093,12 @@ def _add_limits(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--snapshot-volume", type=int, default=defaults.snapshot_volume)
     parser.add_argument("--min-y", type=int, default=defaults.min_y)
     parser.add_argument("--max-y", type=int, default=defaults.max_y)
+    parser.add_argument("--max-flowing", type=int, default=defaults.max_flowing)
 
 
 def _limits(ns: argparse.Namespace) -> Limits:
     return Limits(ns.max_blocks, ns.max_chunks, ns.max_ops, ns.snapshot_volume,
-                  ns.min_y, ns.max_y)
+                  ns.min_y, ns.max_y, ns.max_flowing)
 
 
 def cmd_plan(ns: argparse.Namespace) -> int:
@@ -1039,6 +1150,13 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--world")
     _add_server(read)
 
+    heights = sub.add_parser("heights", help="write an x/z area's heights file (F2)")
+    heights.add_argument("--area", type=int, nargs=4, required=True,
+                         metavar=("X1", "Z1", "X2", "Z2"))
+    heights.add_argument("--out", required=True)
+    heights.add_argument("--world")
+    _add_server(heights)
+
     backup = sub.add_parser("backup", help="write a column backup (F1) of a box")
     backup.add_argument("--box", type=int, nargs=6, required=True,
                         metavar=("X1", "Y1", "Z1", "X2", "Y2", "Z2"))
@@ -1061,7 +1179,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
     handlers = {"check": cmd_check, "plan": cmd_plan, "place": cmd_place,
-                "read": cmd_read, "backup": cmd_backup, "restore": cmd_restore}
+                "read": cmd_read, "heights": cmd_heights, "backup": cmd_backup, "restore": cmd_restore}
     try:
         return handlers[ns.cmd](ns)
     except PlacerError as exc:

@@ -28,6 +28,8 @@ Environment knobs:
   FAKE_FAIL_ADD       1-based number of the forceload add that does not mark (replies
                       "No chunks were marked for force loading")
   FAKE_FAIL_REMOVE    when set, forceload remove removes nothing and says so
+  FAKE_QUERY_ECHO_SECRET  when set, forceload query replies 195 x's followed by
+                      MC_PLUGIN_TOKEN (a secret straddling a 200-character cut)
   mc_command (console, vanilla English replies, `execute in DIM run` honoured):
     forceload add|remove|query, place feature, fillbiome, execute if biome. The
     force-loaded set is world["forceloaded"] ([[cx, cz], ...], "forceloaded@DIM" for
@@ -220,6 +222,8 @@ def console(command, counters):
             return text(f"{verb} chunk {cx}, {cz} (at {cx * 16}, {cz * 16}) in {dim} {tail}")
         return text(f"{verb} {len(changed)} chunks in {dim} {tail}")
     if parts == ["forceload", "query"]:
+        if os.environ.get("FAKE_QUERY_ECHO_SECRET"):
+            return text("x" * 195 + os.environ.get("MC_PLUGIN_TOKEN", ""))
         if not loaded:
             return text(f"No force loaded chunks were found in {dim}")
         pairs = ", ".join(f"[{cx}, {cz}]" for cx, cz in sorted(loaded))

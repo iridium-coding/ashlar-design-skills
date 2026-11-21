@@ -201,7 +201,7 @@ def test_runner_server_error_still_removes_forceload_and_resumes(tmp_path):
     assert console(tmp_path)[-1].startswith("minecraft:forceload remove ")
     assert json.loads(world.read_text(encoding="utf-8"))["forceloaded"] == []
     assert [json.loads(line) for line in progress.read_text(encoding="utf-8").splitlines()] == [
-        {"index": 1, "ok": True}, {"index": 2, "ok": True}]
+        json.loads(header_of(path)), {"index": 1, "ok": True}, {"index": 2, "ok": True}]
     before = len(console(tmp_path))
     proc = run("commands", str(path), "--progress", str(progress), "--config",
                str(config(tmp_path, FAKE_WORLD=str(world))))
@@ -209,18 +209,44 @@ def test_runner_server_error_still_removes_forceload_and_resumes(tmp_path):
     placed = [c for c in console(tmp_path)[before:] if "place feature" in c]
     assert placed == [f"minecraft:place feature minecraft:oak {x} 64 8" for x in (42, 43)]
     assert report_of(proc)["skipped"] == 2
-    assert len(progress.read_text(encoding="utf-8").splitlines()) == 4
+    assert len(progress.read_text(encoding="utf-8").splitlines()) == 5  # header + 4
 
 
-def test_runner_resume_skips_failed_commands_too(tmp_path):
+def header_of(path):
+    import hashlib
+    return json.dumps({"commands_sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+
+
+def test_runner_resume_skips_recorded_and_keeps_earlier_failures(tmp_path):
     path = commands_file(tmp_path, trees(40, 41))
     progress = tmp_path / "progress.jsonl"
-    progress.write_text('{"index": 1, "ok": false}\n', encoding="utf-8")
+    progress.write_text(header_of(path) + '\n{"index": 1, "ok": false}\n', encoding="utf-8")
+    proc = run("commands", str(path), "--progress", str(progress), "--config",
+               str(config(tmp_path)))
+    assert proc.returncode == 6, proc.stderr
+    assert [c for c in console(tmp_path) if "place feature" in c] == [
+        "minecraft:place feature minecraft:oak 41 64 8"]
+    failed = report_of(proc)["failed"]
+    assert [f["index"] for f in failed] == [1] and failed[0]["earlier_run"] is True
+
+
+def test_runner_writes_a_header_and_refuses_a_foreign_progress_file(tmp_path):
+    path = commands_file(tmp_path, trees(40))
+    progress = tmp_path / "progress.jsonl"
     proc = run("commands", str(path), "--progress", str(progress), "--config",
                str(config(tmp_path)))
     assert proc.returncode == 0, proc.stderr
-    assert [c for c in console(tmp_path) if "place feature" in c] == [
-        "minecraft:place feature minecraft:oak 41 64 8"]
+    lines = progress.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == header_of(path) and json.loads(lines[1]) == {"index": 1, "ok": True}
+    other = commands_file(tmp_path, trees(50), name="other.json")
+    before = len(calls(tmp_path))
+    for text in (lines[0] + "\n", '{"index": 1, "ok": true}\n',
+                 json.dumps({"commands_sha256": "0" * 64}) + "\n"):
+        progress.write_text(text, encoding="utf-8")
+        proc = run("commands", str(other), "--progress", str(progress), "--config",
+                   str(config(tmp_path)))
+        assert proc.returncode == 2, proc.stderr
+    assert len(calls(tmp_path)) == before            # refused before any server contact
 
 
 def test_runner_stops_before_a_tile_with_a_player(tmp_path):
@@ -362,3 +388,38 @@ def test_biome_restore_tiles_chunks_within_limit(tmp_path):
         assert (int(g["x2"]) - int(g["x1"]) + 1) * (int(g["y2"]) - int(g["y1"]) + 1) \
             * (int(g["z2"]) - int(g["z1"]) + 1) <= 32_768
         assert int(g["x1"]) % 16 == 0 and int(g["x2"]) % 16 == 15
+
+
+# ------------------------------------------------- alignment and redaction
+
+@pytest.mark.parametrize("box", [
+    ["1", "60", "0", "47", "80", "15"], ["0", "60", "0", "46", "80", "15"],
+    ["0", "60", "3", "47", "80", "15"], ["0", "60", "0", "47", "80", "14"]])
+def test_biome_probe_refuses_an_unaligned_box_before_any_server_call(tmp_path, box):
+    heights, biomes = probe_inputs(tmp_path)
+    proc = run("biome-probe", "--box", *box, "--heights", str(heights), "--biomes", str(biomes),
+               "--out", str(tmp_path / "p.json"), "--config", str(config(tmp_path)))
+    assert proc.returncode == 2 and calls(tmp_path) == []
+
+
+@pytest.mark.parametrize("box, chunks", [
+    ([1, 0, 0, 31, 99, 15], {"0,0": "minecraft:plains"}),            # unaligned
+    ([16, 0, 0, 0, 99, 15], {"0,0": "minecraft:plains"}),             # unordered
+    ([0, 0, 0, 15, 99, 15], {"1,0": "minecraft:plains"}),             # chunk outside box
+    ([0, 0, 0, 15, 99, 15], {"0,-1": "minecraft:plains"}),
+])
+def test_biome_restore_refuses_a_bad_probe(tmp_path, box, chunks):
+    probe = tmp_path / "probe.json"
+    probe.write_text(json.dumps({"version": 1, "world": None, "box": box, "chunks": chunks}),
+                     encoding="utf-8")
+    proc = run("biome-restore", str(probe), "--out", str(tmp_path / "r.json"))
+    assert proc.returncode == 2 and not (tmp_path / "r.json").exists()
+
+
+def test_a_secret_across_the_truncation_point_is_redacted(tmp_path):
+    path = commands_file(tmp_path, trees(40))
+    proc = run("commands", str(path), "--config",
+               str(config(tmp_path, FAKE_QUERY_ECHO_SECRET="1")))
+    assert proc.returncode == 5
+    assert "tok-" not in proc.stderr and "SECRET" not in proc.stderr
+    assert "x" * 100 in proc.stderr and "***" in proc.stderr

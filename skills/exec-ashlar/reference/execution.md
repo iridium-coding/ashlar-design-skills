@@ -83,14 +83,21 @@ complete only when its `manifest.json` says so.
    2 blocks, stop and tell the user. Do not build around them.
 2. **Rollback point**, by the phase's `rollback` column (absent: `snapshot`):
    - `backup` phases: `place --backup <folder>` takes the backup after its
-     player check and before writing (an `mcp` phase runs `backup` first, then
-     its own `mc_build`). The folder is
+     player check and before writing. An `mcp` phase takes it first with
+     `python3 <skill>/scripts/ashlar_place.py backup --box <from x y z> <to x y z> --out <folder>`,
+     where the box is the phase's `from`/`to` and `<folder>` is the same one
+     rollback will restore. The folder is
      `.minecraft-builder/<project>/backups/<NN>-<phase-name>/`. The placer
      refuses (exit 3) if the folder already holds a complete backup, or if the
      backup cannot be completed; nothing is written then. Record the folder.
-   - `biome` phases: run `biome-probe` over the phase's box immediately before
-     the phase and record the probe file. Stop for the user if any chunk is
-     `unknown`.
+   - `biome` phases: run `biome-probe` over the phase's chunk-aligned box
+     immediately before the phase and record the probe file. Stop for the user
+     if any chunk is `unknown`:
+     `python3 <skill>/scripts/ashlar_place.py biome-probe --box <x1 y1 z1 x2 y2 z2> --heights .minecraft-builder/<project>/heights.json --biomes ../terrain-shape/tools/terrain/data/<version>/biomes.json --candidates <biomes the survey noted> --out .minecraft-builder/<project>/phases/<NN>-<element>-biome.probe.json`.
+     `--heights` is the survey's heights file (it must cover the box).
+     `--biomes` is the biome list for the server's Minecraft version (from
+     `mc_status`; if no folder matches, use the nearest older one and say so at
+     the gate). Its format is in [plan-format.md](plan-format.md#terrain-files).
    - `placer` phases: the placer takes snapshots (`--snapshot`).
    - `mcp` phases: tile the phase box into boxes of at most 200,000 cells
      (`ashlar_place.py plan` reports the tile count) and call `mc_snapshot`
@@ -181,7 +188,12 @@ complete only when its `manifest.json` says so.
   partial write records the partial state, so the interrupted phase keeps the
   one taken before its first write (its backup, snapshots or biome probe) and
   is placed again from the start. `place --backup` refuses to overwrite a
-  complete backup, so never rerun it with `--backup` on the same folder. The
+  complete backup, so never rerun it with `--backup` on the same folder. A
+  backup the interruption cut short is a folder with no `manifest.json` (or no
+  folder), and the backup always finishes before the phase's first write: if
+  the phase has no recorded or observed write, take the backup again and place;
+  if it did write and has no complete backup, take none, stop, and tell the
+  user this part has no rollback point. The
   resume gate says if any of the phase's original snapshots has been evicted
   since, and which part can no longer be rolled back. If replay could produce a different result,
   for instance with overlapping conditional fills, reconcile the partial
@@ -224,8 +236,11 @@ complete only when its `manifest.json` says so.
    biome reset (chunk resolution; chunks the probe marked `unknown` are
    skipped and keep the new biome), and any recorded snapshots that were
    evicted and cannot be restored. Wait for an explicit yes. Then restore
-   newest phase first: biome phases with `biome-restore <probe> --out <file>`
-   and the runner on that file; backup phases with
+   newest phase first: biome phases with
+   `biome-restore <probe> --out <restore-file>`, then
+   `python3 <skill>/scripts/ashlar_place.py commands <restore-file> --progress <new progress path>`
+   (a fresh progress path: the forward run's file belongs to another commands
+   file and is refused); backup phases with
    `python3 <skill>/scripts/ashlar_place.py restore <folder>` (placing the same
    backup twice gives the same result); snapshot phases with `mc_restore`.
    If the project is a host with a `<host>-ground` project, offer to roll the

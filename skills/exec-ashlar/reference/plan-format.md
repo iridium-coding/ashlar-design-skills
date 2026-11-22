@@ -255,7 +255,12 @@ to the project folder.
 - **Biome probe** (`biome-probe`): JSON with `version`, `world`, `box` and
   `chunks`, mapping `"cx,cz"` to a biome id or `unknown`. `biome-probe` and
   `biome-restore` need chunk-aligned boxes (x1 and z1 multiples of 16, x2 and z2
-  ending in 15); others are refused.
+  ending in 15); others are refused. `biome-probe` also reads a **biomes file**
+  (`--biomes`): a JSON list of biome ids (or `{"ids": [...]}`) valid for the
+  server's version, shipped with the terrain toolkit at
+  `../terrain-shape/tools/terrain/data/<version>/biomes.json`.
+  `--candidates A,B` names the biomes tried first, normally those the survey
+  noted.
 - **Expected surface** (`terrain/<element>.surface.json`): JSON with `version`,
   `origin`, `size`, `top` (the expected highest solid-or-liquid block, leaves
   ignored; integer or `null`) and `skip` (0 or 1), both at index `xi * nz + zi`.

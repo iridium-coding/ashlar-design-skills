@@ -52,7 +52,9 @@ vanilla building roles:
 - Match path material and lighting tone to the palette — soul lanterns suit
   snowy and spooky themes, ordinary lanterns suit the rest.
 - Grow trees and bushes in any style — never place or duplicate
-  a tree (see the `terrain-shape` skill if it is installed). Grow it with the
+  a tree (see the `terrain-ecology` skill if it is installed). Grow it with the
   allowlisted `place feature minecraft:<tree_type> <x> <y> <z>` console command
   (listed in the plan's `commands` table, inside a snapshotted box), or place a
   sapling with `mc_build` and let it grow. Buildings reuse; trees do not.
+For naturalistic planting, or for trees vanilla does not grow, use the
+`terrain-ecology` skill.

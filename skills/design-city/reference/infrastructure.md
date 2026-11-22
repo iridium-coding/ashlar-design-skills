@@ -62,6 +62,8 @@ Street trees must be grown from saplings, never placed or duplicated. Grow
 it with the allowlisted `place feature minecraft:<tree_type> <x> <y> <z>`
 console command (listed in the plan's `commands` table, inside a snapshotted
 box), or place a sapling with `mc_build` and let it grow.
+For naturalistic planting, or for trees vanilla does not grow, use the
+`terrain-ecology` skill.
 
 ## Sewers and the underside
 

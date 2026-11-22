@@ -307,3 +307,59 @@ def test_side_attachment_needs_adjacency(tmp_path):
     (t,) = find_trees(make_site(tmp_path / "g2", box, cells=cells,
                                 trees=[tree(5, 5, 65, radius=0)]))
     assert (7, 66, 5) not in t.cells
+
+
+def _col(tmp_path, name, cells, **kw):
+    return surfaces(make_site(tmp_path / name, BOX, cells=cells, **kw))
+
+
+def test_ice_on_water_is_water_not_ground(tmp_path):
+    ice = "minecraft:ice"
+    cells = {(2, y, 2): "minecraft:gravel" for y in range(50, 60)}
+    cells.update({(2, y, 2): "minecraft:water[level=0]" for y in range(60, 63)})
+    cells[(2, 63, 2)] = ice  # frozen surface; air above
+    cells.update({(4, y, 4): "minecraft:water[level=0]" for y in range(60, 62)})
+    cells.update({(4, 62, 4): ice, (4, 63, 4): ice})  # two ice cells over water
+    s = _col(tmp_path, "river", cells, water={(2, 2): 50, (4, 4): 50})
+    assert s.ground[2, 2] == 59 and s.water[2, 2] == 63
+    assert s.top[2, 2] == 63
+
+
+def test_ice_on_solid_and_packed_ice_stay_ground(tmp_path):
+    cells = {(1, 65, 1): "minecraft:ice",                       # on grass/stone
+             (3, 63, 3): "minecraft:water[level=0]", (3, 64, 3): "minecraft:packed_ice",
+             (5, 63, 5): "minecraft:water[level=0]", (5, 64, 5): "minecraft:blue_ice"}
+    s = _col(tmp_path, "solid", cells)
+    assert s.ground[1, 1] == 65 and np.isnan(s.water[1, 1])
+    assert s.ground[3, 3] == 64 and np.isnan(s.water[3, 3])
+    assert s.ground[5, 5] == 64 and np.isnan(s.water[5, 5])
+
+
+def test_waterlogged_non_ground_counts_as_water(tmp_path):
+    wl = "minecraft:mangrove_roots[waterlogged=true]"
+    cells = {(2, 64, 2): "minecraft:mud", (2, 65, 2): wl, (2, 66, 2): wl,
+             (4, 64, 4): "minecraft:sand",
+             (4, 65, 4): "minecraft:brain_coral_fan[waterlogged=true]",
+             (5, 64, 5): "minecraft:sand",
+             (5, 65, 5): "minecraft:tube_coral_wall_fan[facing=north,waterlogged=true]",
+             (6, 64, 6): "minecraft:mud", (6, 65, 6): "minecraft:mangrove_roots[waterlogged=false]",
+             (1, 65, 1): "minecraft:oak_stairs[waterlogged=true]",
+             (7, 64, 7): "minecraft:sand", (7, 65, 7): "minecraft:brain_coral_block"}
+    s = _col(tmp_path, "wl", cells)
+    assert s.ground[2, 2] == 64 and s.water[2, 2] == 66
+    assert s.ground[4, 4] == 64 and s.water[4, 4] == 65
+    assert s.ground[5, 5] == 64 and s.water[5, 5] == 65
+    assert s.ground[6, 6] == 64 and np.isnan(s.water[6, 6])
+    assert s.ground[1, 1] == 65 and np.isnan(s.water[1, 1])   # waterlogged ground-class
+    assert s.ground[7, 7] == 65 and np.isnan(s.water[7, 7])   # coral block is ground
+
+
+def test_water_predicates():
+    from terrain.site import is_water_state, water_run_flags
+    assert is_water_state("minecraft:water[level=3]") and is_water_state("minecraft:kelp[age=1]")
+    assert is_water_state("minecraft:mangrove_roots[waterlogged=true]")
+    assert not is_water_state("minecraft:oak_stairs[waterlogged=true]")
+    assert not is_water_state("minecraft:ice") and not is_water_state("minecraft:lava[level=0]")
+    runs = [(0, 3, "minecraft:stone"), (4, 5, "minecraft:water"), (6, 6, "minecraft:ice"),
+            (7, 9, "minecraft:air"), (10, 10, "minecraft:ice")]
+    assert water_run_flags(runs) == [False, True, True, False, False]

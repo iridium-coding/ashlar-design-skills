@@ -77,7 +77,7 @@ _FLOWERS = ("dandelion", "poppy", "blue_orchid", "allium", "azure_bluet", "red_t
             "open_eyeblossom", "closed_eyeblossom", "spore_blossom", "pink_petals",
             "wildflowers", "cactus_flower")
 _CORALS = tuple(f"{p}{c}_{k}" for p in ("", "dead_") for c in
-                ("tube", "brain", "bubble", "fire", "horn") for k in ("coral", "coral_fan"))
+                ("tube", "brain", "bubble", "fire", "horn") for k in ("coral", "coral_fan", "coral_wall_fan"))
 
 # Vegetation that never counts as ground (plants, aquatic plants, small fungi, cactus).
 PLANTS: frozenset[str] = _mc(
@@ -284,6 +284,30 @@ def load_heights(path: str | Path) -> dict:
 
 
 # ----------------------------------------------------------------- surfaces
+def is_water_state(state: str) -> bool:
+    """Water-like cell: water, bubble column, a water plant (kelp, seagrass) or any
+    non-ground block with ``waterlogged=true`` (mangrove roots, corals, coral fans).
+    A waterlogged ground-class block (stairs, slabs) is not water-like. Ice is handled
+    per column by `water_run_flags`."""
+    k = _kind(state)
+    if k == _WATER_K:
+        return True
+    if k == _PLANT_K and base_id(state) in _WATER_PLANTS:
+        return True
+    return k in (_TRUNK_K, _LEAF_K, _ATT_K, _PLANT_K) and "waterlogged=true" in state
+
+
+def water_run_flags(runs: list[Run]) -> list[bool]:
+    """Per run of one column (bottom to top): does it count as water? A run is water
+    if `is_water_state`, or if it is ``minecraft:ice`` lying directly on a water run
+    (ice over ice over water included). Ice on solid, packed and blue ice are ground."""
+    flags: list[bool] = []
+    for i, (_ya, _yb, state) in enumerate(runs):
+        flags.append(is_water_state(state)
+                     or (base_id(state) == "minecraft:ice" and i > 0 and flags[i - 1]))
+    return flags
+
+
 def surfaces(site: Site) -> Surfaces:
     """Existing ground (highest block that is not air, fluid, trunk, leaves, attachment
     or plant), water surface (where water lies above the ground) and top (highest
@@ -296,13 +320,15 @@ def surfaces(site: Site) -> Surfaces:
     for (x, z), runs in site.columns.items():
         xi, zi = x - x1, z - z1
         g = t = w = None
-        for ya, yb, state in reversed(runs):
+        flags = water_run_flags(runs)
+        for i in range(len(runs) - 1, -1, -1):
+            ya, yb, state = runs[i]
             k = _kind(state)
             if k == _AIR_K:
                 continue
             if t is None:
                 t = yb
-            if k == _WATER_K or (k == _PLANT_K and base_id(state) in _WATER_PLANTS):
+            if flags[i]:
                 if w is None:
                     w = yb
                 continue

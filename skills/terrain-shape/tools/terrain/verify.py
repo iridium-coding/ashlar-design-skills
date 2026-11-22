@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import masks as M
+from .site import surface_y
 
 
 @dataclass
@@ -148,7 +149,7 @@ def _ring_mask(shape) -> np.ndarray:
 def _edge_match(h: np.ndarray, ground: np.ndarray) -> tuple:
     """Outer ring: ``max |round(h) - ground|`` must be at most 1."""
     ring = _ring_mask(h.shape)
-    diff = np.abs(np.round(h) - ground)
+    diff = np.abs(surface_y(h) - ground)
     diff = np.where(ring, diff, 0.0)
     worst = float(np.nanmax(np.where(ring, diff, 0.0)))
     ok = worst <= 1.0 and not np.isnan(ground[ring]).any()
@@ -171,6 +172,10 @@ def _neighbour_pairs(shape):
 
 
 def _water_contained(h, water, existing_water) -> tuple:
+    """Planned water only. ``existing_water`` is L, the still liquid level of the
+    existing ground (``liquid_levels(site).level`` cropped to the grid), never
+    ``Surfaces.water``; heights compare through ``surface_y``."""
+    h = surface_y(h)
     wet = ~np.isnan(water)
     bad = []
     for src, dst in _neighbour_pairs(h.shape):
@@ -198,6 +203,7 @@ def _water_contained(h, water, existing_water) -> tuple:
 
 
 def _no_dry_shelf(h, water) -> tuple:
+    h = surface_y(h)
     wet = ~np.isnan(water)
     bad = set()
     for src, dst in _neighbour_pairs(h.shape):

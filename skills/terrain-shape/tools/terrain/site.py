@@ -18,12 +18,15 @@ import gzip
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+from typing import Iterable
 
 import numpy as np
+from scipy import ndimage
 
 from .field import HeightField, smoothstep
 
@@ -530,31 +533,246 @@ def ground_for(recipe: dict, project_dir: Path) -> tuple[Site, Surfaces, np.ndar
     return site, surf, ground
 
 
+def surface_y(h) -> np.ndarray:
+    """The block y a field height builds as: ``np.rint`` (half to even), NaN kept. Every
+    comparison of a field height with a block level (floods, water and edge checks,
+    hold_shores, planting) goes through this one helper."""
+    return np.rint(np.asarray(h, dtype=float))
+
+
+def integer_level(value, name: str) -> int:
+    """`value` as an int; bool, non-numbers and non-integral numbers are a ValueError."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) \
+            or not float(value).is_integer():
+        raise ValueError(f"{name} must be an integer, got {value!r}")
+    return int(value)
+
+
+def _label_below(sy: np.ndarray, level: float):
+    return ndimage.label(sy < level)    # 4-connected by default
+
+
 def water_levels(hf: HeightField, recipe: dict) -> np.ndarray:
-    """(nx, nz) water level or NaN: every column below `sea_level` holds `sea_level`;
-    each `water` basin floods 4-connected columns with h < level from its `at` cell."""
-    h = hf.h
-    levels = np.full(h.shape, np.nan)
-    if "sea_level" in recipe:
-        sea = float(recipe["sea_level"])
-        levels[h < sea] = sea
+    """(nx, nz) planned water level or NaN. Basins flood first: each ``water`` entry
+    claims the 4-connected columns (heights through `surface_y`) below its level from its
+    `at` cell (world x, z); two floods meeting at different levels are an error, in any
+    order. Then ``sea_level`` fills the unclaimed columns below it. A basin at another
+    level may not reach the open sea (columns below sea_level connected to the outer
+    ring); write the sea as a ``water`` entry instead. Levels must be integers (``sea_level``
+    too when the recipe has a ``site``). Never fed with retained (existing) liquid."""
+    sy = surface_y(hf.h)
+    nx, nz = sy.shape
     ox, oz = int(recipe["origin"][0]), int(recipe["origin"][2])
+    sea = None
+    if "sea_level" in recipe:
+        sea = (integer_level(recipe["sea_level"], "sea_level") if recipe.get("site")
+               else float(recipe["sea_level"]))
+    claims = np.full(sy.shape, np.nan)
     for entry in recipe.get("water") or []:
-        level = float(entry["level"])
+        level = integer_level(entry["level"], "water level")
         ax, az = int(entry["at"][0]) - ox, int(entry["at"][1]) - oz
-        if not (0 <= ax < hf.nx and 0 <= az < hf.nz):
+        if not (0 <= ax < nx and 0 <= az < nz):
             raise ValueError(f"water at {tuple(entry['at'])} is outside the grid")
-        if not h[ax, az] < level:
-            raise ValueError(f"water at {tuple(entry['at'])}: ground {h[ax, az]:.1f} "
-                             f"is not below level {level:g}")
-        seen = {(ax, az)}
-        stack = [(ax, az)]
-        while stack:
-            x, z = stack.pop()
-            levels[x, z] = level
-            for nx_, nz_ in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)):
-                if 0 <= nx_ < hf.nx and 0 <= nz_ < hf.nz and (nx_, nz_) not in seen \
-                        and h[nx_, nz_] < level:
-                    seen.add((nx_, nz_))
-                    stack.append((nx_, nz_))
+        if not sy[ax, az] < level:
+            raise ValueError(f"water at {tuple(entry['at'])}: ground {sy[ax, az]:g} "
+                             f"is not below level {level}")
+        labels, _ = _label_below(sy, level)
+        region = labels == labels[ax, az]
+        clash = region & ~np.isnan(claims) & (claims != level)
+        if clash.any():
+            cx, cz = (int(v) for v in np.argwhere(clash)[0])
+            raise ValueError(
+                f"water at {tuple(entry['at'])} (level {level}) meets a flood at level "
+                f"{claims[cx, cz]:g} at ({cx + ox}, {cz + oz}); put a sill (columns at or above "
+                f"the higher level) between them or give both the same level")
+        claims[region] = level
+    if sea is None:
+        return claims
+    labels, _ = _label_below(sy, sea)
+    ring = np.zeros(sy.shape, bool)
+    ring[0, :] = ring[-1, :] = ring[:, 0] = ring[:, -1] = True
+    open_labels = np.unique(labels[ring & (labels > 0)])
+    open_sea = np.isin(labels, open_labels) & (labels > 0)
+    clash = open_sea & ~np.isnan(claims) & (claims != sea)
+    if clash.any():
+        cx, cz = (int(v) for v in np.argwhere(clash)[0])
+        raise ValueError(
+            f"a water entry at level {claims[cx, cz]:g} reaches the open sea (level {sea:g}) "
+            f"at ({cx + ox}, {cz + oz}); write the sea as a `water` entry at its own level "
+            f"instead of relying on sea_level")
+    levels = claims.copy()
+    levels[(sy < sea) & np.isnan(claims)] = sea
     return levels
+
+
+# ----------------------------------------------------------- existing liquid
+_LEVEL_RE = re.compile(r"level=(\d+)")
+_N4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+
+def liquid_kind(state: str) -> str | None:
+    """``"water"`` for a water-like state (see `is_water_state`), ``"lava"`` for lava,
+    else None. Ice is not decided by its state alone: see `is_retained`."""
+    if _kind(state) == _LAVA_K:
+        return "lava"
+    return "water" if is_water_state(state) else None
+
+
+def is_retained(state: str, below_is_water: bool = False) -> bool:
+    """Does the cell count as existing surface liquid (when it lies above the column's
+    ground)? Water, bubble columns, water plants, waterlogged non-ground blocks and lava
+    always; ``minecraft:ice`` only with ``below_is_water=True`` (it lies on a water run)."""
+    return liquid_kind(state) is not None or (
+        below_is_water and base_id(state) == "minecraft:ice")
+
+
+def is_still(state: str) -> bool:
+    """A retained state that is not flowing: water and lava need ``level`` absent or 0
+    (a source); every other retained state (bubble column, plants, waterlogged blocks,
+    ice) is still."""
+    if _kind(state) in (_WATER_K, _LAVA_K):
+        m = _LEVEL_RE.search(state)
+        return m is None or int(m.group(1)) == 0
+    return True
+
+
+@dataclass
+class LiquidLevels:
+    """Existing surface liquid per column of the site box, arrays ``(nx, nz)``.
+
+    ``level`` L: top of the unbroken run of still retained cells starting at ground+1
+    (NaN if none). ``kind``: ``"water"``/``"lava"``/None, the kind at L. ``top``: the
+    highest retained cell above the ground, still or not (NaN if none). ``joined``:
+    removed-tree cells that count as still, mapped to their liquid kind."""
+    level: np.ndarray
+    kind: np.ndarray
+    top: np.ndarray
+    joined: dict[tuple[int, int, int], str]
+
+
+def _ground_int(surf: Surfaces, xi: int, zi: int, y1: int) -> int:
+    g = surf.ground[xi, zi]
+    return y1 - 1 if np.isnan(g) else int(g)
+
+
+def liquid_levels(site: Site, removed: Iterable[Cell] = (),
+                  surf: Surfaces | None = None) -> LiquidLevels:
+    """Retained liquid per column (above the ground only), with `removed` tree cells
+    joined into still liquid: a removed cell above its column's ground that touches a
+    still or joined cell horizontally at the same y, or lies directly below one (downward
+    only, never upward), counts as still with that liquid, repeated until stable. Linear in the cells of the site plus the removed cells."""
+    if surf is None:
+        surf = surfaces(site)
+    x1, y1, z1, x2, y2, z2 = site.box
+    shape = (x2 - x1 + 1, z2 - z1 + 1)
+    level = np.full(shape, np.nan)
+    kind = np.full(shape, None, dtype=object)
+    top = np.full(shape, np.nan)
+    items: dict[tuple[int, int], list[tuple[int, int, str, bool]]] = {}
+    for (x, z), runs in site.columns.items():
+        xi, zi = x - x1, z - z1
+        g = _ground_int(surf, xi, zi, y1)
+        flags = water_run_flags(runs)
+        col = []
+        for (ya, yb, state), is_water in zip(runs, flags):
+            k = "water" if is_water else ("lava" if _kind(state) == _LAVA_K else None)
+            lo = max(ya, g + 1)
+            if k is not None and lo <= yb:
+                col.append((lo, yb, k, is_still(state)))
+        if col:
+            items[(x, z)] = col
+            top[xi, zi] = max(c[1] for c in col)
+
+    def still_kind(x: int, z: int, y: int) -> str | None:
+        for lo, hi, k, st in items.get((x, z), ()):
+            if st and lo <= y <= hi:
+                return k
+        return None
+
+    pending = {(int(c[0]), int(c[1]), int(c[2])) for c in removed
+               if x1 <= c[0] <= x2 and y1 <= c[1] <= y2 and z1 <= c[2] <= z2}
+    pending = {c for c in pending if c[1] > _ground_int(surf, c[0] - x1, c[2] - z1, y1)}
+    joined: dict[Cell, str] = {}
+    queue: list[Cell] = []
+    for x, y, z in pending:
+        k = still_kind(x, z, y + 1)          # directly below a still cell
+        for dx, dz in _N4:
+            if k is not None:
+                break
+            k = still_kind(x + dx, z + dz, y)  # or beside one at the same y
+        if k is not None:
+            joined[(x, y, z)] = k
+            queue.append((x, y, z))
+    while queue:
+        x, y, z = queue.pop()
+        k = joined[(x, y, z)]
+        for n in ((x + 1, y, z), (x - 1, y, z), (x, y, z + 1), (x, y, z - 1), (x, y - 1, z)):
+            if n in pending and n not in joined:   # beside, or directly below (never above)
+                joined[n] = k
+                queue.append(n)
+    joined_by_col: dict[tuple[int, int], dict[int, str]] = {}
+    for (x, y, z), k in joined.items():
+        joined_by_col.setdefault((x, z), {})[y] = k
+
+    for key in items.keys() | joined_by_col.keys():
+        x, z = key
+        xi, zi = x - x1, z - z1
+        g = _ground_int(surf, xi, zi, y1)
+        col = items.get(key, ())
+        jy = joined_by_col.get(key, {})
+        cur, k_at = g + 1, None
+        while True:
+            for lo, hi, k, st in col:
+                if st and lo <= cur <= hi:
+                    cur, k_at = hi + 1, k
+                    break
+            else:
+                if cur in jy:
+                    k_at = jy[cur]
+                    cur += 1
+                else:
+                    break
+        if cur > g + 1:
+            level[xi, zi] = cur - 1
+            kind[xi, zi] = k_at
+    return LiquidLevels(level=level, kind=kind, top=top, joined=joined)
+
+
+def hold_shores(h: np.ndarray, site: Site, *, origin: tuple[int, int],
+                skip: np.ndarray | None = None) -> np.ndarray:
+    """A copy of grid heights `h` lifted so existing liquid keeps a bank. `origin` is the
+    grid's world (x1, z1); `skip` a boolean mask of columns to leave alone (pad
+    footprints). The outer ring is never changed. For each interior column (existing
+    liquid from ``liquid_levels(site)``, no removed trees; heights through `surface_y`):
+    liquid with no still level: raised to the ground; dry and 4-adjacent to liquid:
+    raised to min(ground, highest neighbouring top), a neighbour's top being the higher of
+    its retained ``top`` and any of its cells that would join still liquid if every tree
+    were removed."""
+    out = np.array(h, dtype=float)
+    nx, nz = out.shape
+    sx1, _, sz1, sx2, _, sz2 = site.box
+    ox, oz = int(origin[0]) - sx1, int(origin[1]) - sz1
+    if ox < 0 or oz < 0 or int(origin[0]) + nx - 1 > sx2 or int(origin[1]) + nz - 1 > sz2:
+        raise ValueError(f"grid at {tuple(origin)} size {nx}x{nz} is not inside the site read")
+    surf = surfaces(site)
+    ll = liquid_levels(site, surf=surf)
+    felled = liquid_levels(site, removed=[c for t in find_trees(site) for c in t.cells],
+                           surf=surf)
+    jtop = np.full(ll.top.shape, np.nan)
+    for (x, y, z) in felled.joined:
+        jtop[x - sx1, z - sz1] = np.fmax(jtop[x - sx1, z - sz1], y)
+    sl = (slice(ox, ox + nx), slice(oz, oz + nz))
+    g, top, lvl = surf.ground[sl], ll.top[sl], ll.level[sl]
+    liquid = ~np.isnan(top)
+    padded = np.full((nx + 2, nz + 2), np.nan)
+    padded[1:-1, 1:-1] = np.fmax(top, jtop[sl])    # retained top, or what felling joins
+    nbr = np.fmax(np.fmax(padded[2:, 1:-1], padded[:-2, 1:-1]),
+                  np.fmax(padded[1:-1, 2:], padded[1:-1, :-2]))
+    target = np.where(liquid, np.where(np.isnan(lvl), g, np.nan), np.minimum(g, nbr))
+    interior = np.ones((nx, nz), bool)
+    interior[0, :] = interior[-1, :] = interior[:, 0] = interior[:, -1] = False
+    move = interior & ~np.isnan(target) & (surface_y(out) < target)
+    if skip is not None:
+        move &= ~np.asarray(skip, dtype=bool)
+    out[move] = target[move]
+    return out

@@ -21,13 +21,14 @@ from pathlib import Path
 import numpy as np
 
 from .field import HeightField, Centerline
-from .site import auto_band, blend_to_existing, ground_for
+from .site import auto_band, blend_to_existing, ground_for, hold_shores, integer_level
 
 
 RECIPE_VERSION = 1
 
 
-def build_field(recipe: dict, project_dir: Path | None = None) -> HeightField:
+def build_field(recipe: dict, project_dir: Path | None = None,
+                info: dict | None = None) -> HeightField:
     """Evaluate a recipe into a HeightField: graph and/or belt, then erosion.
 
     The base surface comes from a sampler ``graph`` (``from_graph``) and/or a
@@ -44,14 +45,40 @@ def build_field(recipe: dict, project_dir: Path | None = None) -> HeightField:
     FBM so the otherwise-flat corridor/interior gently rolls (keeps the verify
     ziggurat score down and reads as natural ground).
 
-    After erosion, ``pads`` (each ``{center: [x, z] world, half: [hx, hz], level,
-    shoulder?}``) are flattened in, then a ``site`` key (``{read, band?}``;
-    ``band`` an int or ``"auto"``) blends the outer ring into the existing ground
-    read from ``project_dir / site["read"]``."""
+    A recipe with a ``site`` (``{read, band?}``; ``band`` an int or ``"auto"``, computed
+    on the field before pads) blends its outer ring into the existing ground read from
+    ``project_dir / site["read"]``, then stamps ``pads`` (each ``{center: [x, z] world,
+    half: [hx, hz], level, shoulder?}``; integer ``level``): all shoulders are applied,
+    then every footprint is re-stamped at its level. With a site a footprint, or a column
+    nearer than ``shoulder`` to one, on the outer ring is an error; pads overlapping at
+    different levels are always one. Without a site the pads come right after erosion.
+    ``"hold_shores": true`` (site only) then lifts banks of existing liquid outside the
+    pad footprints (`site.hold_shores`); ``info``, when given, gets ``held_columns``.
+    A site recipe without ``sea_level`` runs with ``hf.sea_level`` set below the lowest
+    height (never a water level); with it, ``sea_level`` must be an integer."""
     nx, nz = int(recipe["nx"]), int(recipe["nz"])
     sea = float(recipe.get("sea_level", 62))
     seed = int(recipe.get("seed", 0))
     belt = recipe.get("belt")
+    site_cfg = recipe.get("site")
+    pads = _parse_pads(recipe.get("pads") or [])
+    if "hold_shores" in recipe:
+        if not isinstance(recipe["hold_shores"], bool):
+            raise ValueError(f"hold_shores must be true or false, got {recipe['hold_shores']!r}")
+        if recipe["hold_shores"] and not site_cfg:
+            raise ValueError("hold_shores needs a recipe with a site")
+    if site_cfg:
+        if project_dir is None:
+            raise ValueError("a recipe with a 'site' needs a project_dir to resolve its read")
+        if "sea_level" in recipe:
+            integer_level(recipe["sea_level"], "sea_level")
+        elif belt:
+            for i, k in enumerate(belt.get("keypoints") or []):
+                if "base" not in k:
+                    raise ValueError(f"a site recipe without sea_level needs belt.keypoints[{i}].base")
+            if belt.get("interior_level") is None:
+                raise ValueError("a site recipe without sea_level needs belt.interior_level")
+    no_sea = bool(site_cfg) and "sea_level" not in recipe
 
     if recipe.get("graph"):
         hf = HeightField.from_graph(recipe["graph"], nx, nz, sea_level=sea, seed=seed)
@@ -95,6 +122,8 @@ def build_field(recipe: dict, project_dir: Path | None = None) -> HeightField:
                    base_freq=float(micro.get("base_freq", 0.03)),
                    seed=seed + 99)
 
+    if no_sea:
+        hf.sea_level = float(np.floor(hf.h.min()) - 8)
     ero = recipe.get("erosion") or {}
     if "thermal" in ero:
         hf.erode_thermal(**ero["thermal"])
@@ -103,22 +132,75 @@ def build_field(recipe: dict, project_dir: Path | None = None) -> HeightField:
     if "fluvial" in ero:
         hf.carve_rivers_from_flow(**ero["fluvial"])
 
-    pads = recipe.get("pads") or []
-    ox, oz = (int(v) for v in (recipe["origin"][0], recipe["origin"][2])) if pads else (0, 0)
-    for pad in pads:
-        hf.build_pad(center=(float(pad["center"][0]) - ox, float(pad["center"][1]) - oz),
-                     half=(float(pad["half"][0]), float(pad["half"][1])),
-                     level=float(pad["level"]), shoulder=float(pad.get("shoulder", 9.0)))
-
-    site = recipe.get("site")
-    if site:
-        if project_dir is None:
-            raise ValueError("a recipe with a 'site' needs a project_dir to resolve its read")
-        _, _, ground = ground_for(recipe, project_dir)
-        band = site.get("band", "auto")
+    origin = recipe.get("origin") or [0, 0, 0]
+    ox, oz = int(origin[0]), int(origin[2])
+    ground_site = None
+    if site_cfg:
+        ground_site, _surf, ground = ground_for(recipe, project_dir)
+        band = site_cfg.get("band", "auto")
         band = auto_band(hf.h, ground) if band == "auto" else int(band)
         hf = blend_to_existing(hf, ground, band)
+
+    footprints = _stamp_pads(hf, pads, ox, oz, on_site=bool(site_cfg))
+
+    held = 0
+    if recipe.get("hold_shores"):
+        skip = np.any(footprints, axis=0) if footprints else None
+        held_h = hold_shores(hf.h, ground_site, origin=(ox, oz), skip=skip)
+        held = int(np.count_nonzero(held_h != hf.h))
+        hf.h = held_h
+    if info is not None:
+        info["held_columns"] = held
+    if no_sea:
+        hf.sea_level = float(np.floor(hf.h.min()) - 8)
     return hf
+
+
+def _parse_pads(pads: list) -> list[dict]:
+    out = []
+    for i, pad in enumerate(pads):
+        out.append({"center": (float(pad["center"][0]), float(pad["center"][1])),
+                    "half": (float(pad["half"][0]), float(pad["half"][1])),
+                    "level": integer_level(pad["level"], f"pad {i} level"),
+                    "shoulder": float(pad.get("shoulder", 9.0))})
+    return out
+
+
+def _pad_distance(shape, center, half, ox: int, oz: int) -> np.ndarray:
+    """HeightField.build_pad's own distance from the footprint, in grid coordinates."""
+    x, z = np.meshgrid(np.arange(shape[0]), np.arange(shape[1]), indexing="ij")
+    dx = np.maximum(np.abs(x - (center[0] - ox)) - half[0], 0.0)
+    dz = np.maximum(np.abs(z - (center[1] - oz)) - half[1], 0.0)
+    return np.hypot(dx, dz)
+
+
+def _stamp_pads(hf: HeightField, pads: list[dict], ox: int, oz: int, *,
+                on_site: bool) -> list[np.ndarray]:
+    """Apply every pad's shoulder, then re-stamp each footprint at its level. Returns the
+    footprint masks. Errors: overlap at different levels; with a site, a footprint or a
+    column within its shoulder on the outer ring."""
+    shape = (hf.nx, hf.nz)
+    dists = [_pad_distance(shape, p["center"], p["half"], ox, oz) for p in pads]
+    feet = [d == 0.0 for d in dists]
+    ring = np.zeros(shape, bool)
+    ring[0, :] = ring[-1, :] = ring[:, 0] = ring[:, -1] = True
+    for i, (p, d) in enumerate(zip(pads, dists)):
+        if on_site and (ring & ((d == 0.0) | (d < p["shoulder"]))).any():
+            raise ValueError(
+                f"pad {i} (center {list(p['center'])}, shoulder {p['shoulder']:g}) reaches the "
+                f"edge of the field; keep it at least its shoulder away from the box edge")
+        for j in range(i):
+            both = feet[i] & feet[j]
+            if p["level"] != pads[j]["level"] and both.any():
+                cx, cz = (int(v) for v in np.argwhere(both)[0])
+                raise ValueError(f"pads {j} and {i} overlap at different levels "
+                                 f"({pads[j]['level']} and {p['level']}) at ({cx + ox}, {cz + oz})")
+    for p in pads:
+        hf.build_pad(center=(p["center"][0] - ox, p["center"][1] - oz), half=p["half"],
+                     level=float(p["level"]), shoulder=p["shoulder"])
+    for p, foot in zip(pads, feet):
+        hf.h[foot] = float(p["level"])
+    return feet
 
 
 def save(recipe: dict, path: str) -> None:

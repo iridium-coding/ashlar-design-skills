@@ -1,13 +1,13 @@
 """The terrain toolkit — author a heightfield from a recipe, *render-verify it
-offline*, then emit it as block_fill_columns plans for the Ashlar placer. The
-2.5-D counterpart of the ``voxel`` toolkit.
+offline*, then emit verified payloads (columns, biomes, scatter). The 2.5-D
+counterpart of the ``voxel`` toolkit.
 
     from terrain import recipe, render_views
 
     hf = recipe.build_field(spec)                 # spec: a recipe dict (see recipe.py)
     render_views(hf, "/abs/scratch/island")       # Read the 3 PNGs, then tune
-    # emit: the verified payloads go to Ashlar through ashlar_emit.emit_ashlar
-    # (the Ashlar output step, Task 11)
+    # emit: ashlar_emit.emit_ashlar writes the mc_build phase files and plan rows
+    # that the exec-ashlar skill places
 """
 from .noise import ValueNoise2D, fbm
 from .field import HeightField, Centerline, smoothstep

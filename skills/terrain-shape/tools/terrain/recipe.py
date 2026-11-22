@@ -16,16 +16,18 @@ so a structural fix no longer discards accreted richness.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 
 from .field import HeightField, Centerline
+from .site import auto_band, blend_to_existing, ground_for
 
 
 RECIPE_VERSION = 1
 
 
-def build_field(recipe: dict) -> HeightField:
+def build_field(recipe: dict, project_dir: Path | None = None) -> HeightField:
     """Evaluate a recipe into a HeightField: graph and/or belt, then erosion.
 
     The base surface comes from a sampler ``graph`` (``from_graph``) and/or a
@@ -40,7 +42,12 @@ def build_field(recipe: dict) -> HeightField:
     ``interior_level``, ``roughness``, ``roughness_freq``. An optional
     ``micro_relief`` (``{amplitude, octaves, base_freq}``) adds a low whole-field
     FBM so the otherwise-flat corridor/interior gently rolls (keeps the verify
-    ziggurat score down and reads as natural ground)."""
+    ziggurat score down and reads as natural ground).
+
+    After erosion, ``pads`` (each ``{center: [x, z] world, half: [hx, hz], level,
+    shoulder?}``) are flattened in, then a ``site`` key (``{read, band?}``;
+    ``band`` an int or ``"auto"``) blends the outer ring into the existing ground
+    read from ``project_dir / site["read"]``."""
     nx, nz = int(recipe["nx"]), int(recipe["nz"])
     sea = float(recipe.get("sea_level", 62))
     seed = int(recipe.get("seed", 0))
@@ -95,6 +102,22 @@ def build_field(recipe: dict) -> HeightField:
         hf.erode_hydraulic(**ero["hydraulic"])
     if "fluvial" in ero:
         hf.carve_rivers_from_flow(**ero["fluvial"])
+
+    pads = recipe.get("pads") or []
+    ox, oz = (int(v) for v in (recipe["origin"][0], recipe["origin"][2])) if pads else (0, 0)
+    for pad in pads:
+        hf.build_pad(center=(float(pad["center"][0]) - ox, float(pad["center"][1]) - oz),
+                     half=(float(pad["half"][0]), float(pad["half"][1])),
+                     level=float(pad["level"]), shoulder=float(pad.get("shoulder", 9.0)))
+
+    site = recipe.get("site")
+    if site:
+        if project_dir is None:
+            raise ValueError("a recipe with a 'site' needs a project_dir to resolve its read")
+        _, _, ground = ground_for(recipe, project_dir)
+        band = site.get("band", "auto")
+        band = auto_band(hf.h, ground) if band == "auto" else int(band)
+        hf = blend_to_existing(hf, ground, band)
     return hf
 
 

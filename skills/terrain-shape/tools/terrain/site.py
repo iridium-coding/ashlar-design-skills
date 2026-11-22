@@ -17,12 +17,15 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
+
+from .field import HeightField, smoothstep
 
 Box = tuple[int, int, int, int, int, int]
 Run = tuple[int, int, str]
@@ -456,3 +459,76 @@ def unnatural_blocks(site: Site, box: Box) -> dict[str, int]:
                     if b not in NATURAL:
                         counts[b] = counts.get(b, 0) + n
     return counts
+
+
+# ------------------------------------------------- meeting the existing ground
+def _ring_distance(nx: int, nz: int) -> np.ndarray:
+    xi, zi = np.meshgrid(np.arange(nx), np.arange(nz), indexing="ij")
+    return np.minimum(np.minimum(xi, zi), np.minimum(nx - 1 - xi, nz - 1 - zi))
+
+
+def auto_band(h: np.ndarray, ground: np.ndarray) -> int:
+    """Blend width: max(8, ceil(0.3 * largest |h - ground| over the 8 outermost
+    rings)), at most min(nx, nz) // 2."""
+    nx, nz = h.shape
+    outer = _ring_distance(nx, nz) < 8
+    diff = float(np.max(np.abs(h - ground)[outer]))
+    return int(min(max(8, math.ceil(0.3 * diff)), min(nx, nz) // 2))
+
+
+def blend_to_existing(hf: HeightField, ground: np.ndarray, band: int) -> HeightField:
+    """Return a new field equal to `ground` on the outer ring and to `hf` more than
+    `band` rings in: w = smoothstep(0, band, d), h = ground * (1 - w) + h * w."""
+    d = _ring_distance(hf.nx, hf.nz)
+    w = smoothstep(0.0, float(band), d.astype(float))
+    out = HeightField(hf.nx, hf.nz, sea_level=hf.sea_level)
+    out.h = ground * (1.0 - w) + hf.h * w
+    return out
+
+
+def ground_for(recipe: dict, project_dir: Path) -> tuple[Site, Surfaces, np.ndarray]:
+    """Load the recipe's site read and crop its ground to the recipe grid."""
+    site = load_site(Path(project_dir) / recipe["site"]["read"])
+    surf = surfaces(site)
+    nx, nz = int(recipe["nx"]), int(recipe["nz"])
+    gx, gz = int(recipe["origin"][0]), int(recipe["origin"][2])
+    sx1, _, sz1, sx2, _, sz2 = site.box
+    if gx < sx1 or gz < sz1 or gx + nx - 1 > sx2 or gz + nz - 1 > sz2:
+        raise ValueError(f"recipe grid x {gx}..{gx + nx - 1}, z {gz}..{gz + nz - 1} is not "
+                         f"inside the site read x {sx1}..{sx2}, z {sz1}..{sz2}")
+    ox, oz = gx - sx1, gz - sz1
+    ground = surf.ground[ox:ox + nx, oz:oz + nz].copy()
+    if np.isnan(ground).any():
+        xi, zi = (int(v) for v in np.argwhere(np.isnan(ground))[0])
+        raise ValueError(f"no solid block in the site read at x {gx + xi}, z {gz + zi}")
+    return site, surf, ground
+
+
+def water_levels(hf: HeightField, recipe: dict) -> np.ndarray:
+    """(nx, nz) water level or NaN: every column below `sea_level` holds `sea_level`;
+    each `water` basin floods 4-connected columns with h < level from its `at` cell."""
+    h = hf.h
+    levels = np.full(h.shape, np.nan)
+    if "sea_level" in recipe:
+        sea = float(recipe["sea_level"])
+        levels[h < sea] = sea
+    ox, oz = int(recipe["origin"][0]), int(recipe["origin"][2])
+    for entry in recipe.get("water") or []:
+        level = float(entry["level"])
+        ax, az = int(entry["at"][0]) - ox, int(entry["at"][1]) - oz
+        if not (0 <= ax < hf.nx and 0 <= az < hf.nz):
+            raise ValueError(f"water at {tuple(entry['at'])} is outside the grid")
+        if not h[ax, az] < level:
+            raise ValueError(f"water at {tuple(entry['at'])}: ground {h[ax, az]:.1f} "
+                             f"is not below level {level:g}")
+        seen = {(ax, az)}
+        stack = [(ax, az)]
+        while stack:
+            x, z = stack.pop()
+            levels[x, z] = level
+            for nx_, nz_ in ((x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)):
+                if 0 <= nx_ < hf.nx and 0 <= nz_ < hf.nz and (nx_, nz_) not in seen \
+                        and h[nx_, nz_] < level:
+                    seen.add((nx_, nz_))
+                    stack.append((nx_, nz_))
+    return levels

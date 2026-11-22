@@ -45,6 +45,7 @@ def verify(hf, spec=None, recipe=None, *,
            min_height: float = -64.0, silhouette_var_min: float = 3.0,
            require_relief: bool = True, max_collinear_run: int = 12,
            palette_max_single: float = 0.92, seam_max_step: float = 12.0,
+           ground=None, water=None, existing_water=None,
            **_ignored) -> Report:
     """Check a heightfield against the non-negotiables. Returns a ``Report``;
     ``report.ok`` is the gate. Tunable thresholds default to the skill's rules.
@@ -123,8 +124,93 @@ def verify(hf, spec=None, recipe=None, *,
         checks.append(("seam_max_step", seam_ok,
                        f"{step:.1f} blocks (max {seam_max_step})"))
 
+    if ground is not None:
+        ok_e, detail = _edge_match(h, np.asarray(ground, dtype=float))
+        checks.append(("edge_match", ok_e, detail))
+
+    if water is not None:
+        water = np.asarray(water, dtype=float)
+        ok_w, detail = _water_contained(h, water, existing_water)
+        checks.append(("water_contained", ok_w, detail))
+        ok_s, detail = _no_dry_shelf(h, water)
+        checks.append(("no_dry_shelf", ok_s, detail))
+
     ok = all(c[1] for c in checks)
     return Report(ok=ok, checks=checks)
+
+
+def _ring_mask(shape) -> np.ndarray:
+    ring = np.zeros(shape, dtype=bool)
+    ring[0, :] = ring[-1, :] = ring[:, 0] = ring[:, -1] = True
+    return ring
+
+
+def _edge_match(h: np.ndarray, ground: np.ndarray) -> tuple:
+    """Outer ring: ``max |round(h) - ground|`` must be at most 1."""
+    ring = _ring_mask(h.shape)
+    diff = np.abs(np.round(h) - ground)
+    diff = np.where(ring, diff, 0.0)
+    worst = float(np.nanmax(np.where(ring, diff, 0.0)))
+    ok = worst <= 1.0 and not np.isnan(ground[ring]).any()
+    if ok:
+        return True, f"outer ring within {worst:.0f} of the existing ground (max 1)"
+    bad = np.argwhere(ring & ~(diff <= 1.0))
+    cells = ", ".join(f"({x},{z}) h {np.round(h[x, z]):.0f} vs ground {ground[x, z]:.0f}"
+                      for x, z in bad[:3])
+    return False, f"outer ring differs from the existing ground by {worst:.0f} (max 1): {cells}"
+
+
+def _neighbour_pairs(shape):
+    """Yield (src, dst) slice pairs so that a[src] is each cell and a[dst] its
+    4-neighbour in one direction, over the cells that have one."""
+    nx, nz = shape
+    yield (slice(0, nx - 1), slice(None)), (slice(1, nx), slice(None))
+    yield (slice(1, nx), slice(None)), (slice(0, nx - 1), slice(None))
+    yield (slice(None), slice(0, nz - 1)), (slice(None), slice(1, nz))
+    yield (slice(None), slice(1, nz)), (slice(None), slice(0, nz - 1))
+
+
+def _water_contained(h, water, existing_water) -> tuple:
+    wet = ~np.isnan(water)
+    bad = []
+    for src, dst in _neighbour_pairs(h.shape):
+        lvl = water[src]
+        leak = wet[src] & ~(wet[dst] & (water[dst] == lvl)) & ~(h[dst] >= lvl)
+        for x, z in np.argwhere(leak):
+            x0, z0 = src[0].start or 0, src[1].start or 0
+            bad.append((int(x) + x0, int(z) + z0, float(lvl[x, z])))
+    edge_bad = []
+    ring = _ring_mask(h.shape)
+    for x, z in np.argwhere(wet & ring):
+        ex = np.nan if existing_water is None else existing_water[x, z]
+        if not ex == water[x, z]:
+            edge_bad.append((int(x), int(z), float(water[x, z]), float(ex)))
+    if not bad and not edge_bad:
+        return True, f"{int(wet.sum())} water columns contained"
+    parts = []
+    if bad:
+        parts.append("water spills at " + ", ".join(
+            f"({x},{z}) level {l:g}" for x, z, l in bad[:3]))
+    if edge_bad:
+        parts.append("water on the edge without matching existing water at " + ", ".join(
+            f"({x},{z}) level {l:g}" for x, z, l, _ in edge_bad[:3]))
+    return False, "; ".join(parts)
+
+
+def _no_dry_shelf(h, water) -> tuple:
+    wet = ~np.isnan(water)
+    bad = set()
+    for src, dst in _neighbour_pairs(h.shape):
+        lvl = water[dst]
+        shelf = ~wet[src] & wet[dst] & (h[src] < lvl)
+        x0, z0 = src[0].start or 0, src[1].start or 0
+        for x, z in np.argwhere(shelf):
+            bad.add((int(x) + x0, int(z) + z0))
+    if not bad:
+        return True, "no dry column below a neighbouring water level"
+    first = sorted(bad)[:3]
+    return False, f"{len(bad)} dry columns below a neighbour's water level, e.g. " + ", ".join(
+        f"({x},{z}) h {h[x, z]:.1f}" for x, z in first)
 
 
 def _ziggurat_score(h: np.ndarray) -> float:

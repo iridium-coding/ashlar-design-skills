@@ -60,7 +60,7 @@ def _classify(t: float, m: float, cont: float, ero: float, height: float,
 # ground. Used by palette_for() and the scatter pass.
 BIOME_CONTENT = {
     "minecraft:plains": dict(surface={"minecraft:grass_block": 0.92, "minecraft:coarse_dirt": 0.08},
-                             features=["minecraft:oak", "minecraft:flower_plains"], density=0.10),
+                             features=["minecraft:oak", "minecraft:flower_plain"], density=0.10),
     "minecraft:forest": dict(surface={"minecraft:grass_block": 0.85, "minecraft:podzol": 0.1, "minecraft:moss_block": 0.05},
                              features=["minecraft:oak", "minecraft:birch", "minecraft:fancy_oak"], density=0.55),
     "minecraft:birch_forest": dict(surface={"minecraft:grass_block": 0.9, "minecraft:coarse_dirt": 0.1},

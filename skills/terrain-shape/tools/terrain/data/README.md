@@ -1,6 +1,6 @@
 # Per-version id lists
 
-The terrain toolkit checks configured-feature ids and biome ids against a list for
+The terrain toolkit checks feature ids and biome ids against a list for
 each Minecraft version. `terrain/ids.py` reads these lists.
 
 ## Layout
@@ -8,7 +8,7 @@ each Minecraft version. `terrain/ids.py` reads these lists.
 ```
 data/
   <version>/             e.g. 26.1  (dotted numbers only)
-    features.json        configured-feature ids
+    features.json        feature ids (what `/place feature` takes; configured features in older versions)
     biomes.json          biome ids
 ```
 

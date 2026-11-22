@@ -1,4 +1,5 @@
-"""Per-Minecraft-version lists of configured-feature ids and biome ids.
+"""Per-Minecraft-version lists of feature ids (what ``/place feature`` takes; configured
+features in older versions) and biome ids.
 
 The lists live in ``data/<version>/features.json`` and ``data/<version>/biomes.json``,
 each ``{"version": str, "source": str, "ids": [sorted ids]}``. A version without its

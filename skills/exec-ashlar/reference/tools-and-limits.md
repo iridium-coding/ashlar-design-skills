@@ -29,9 +29,10 @@ rejected before anything changes: split and retry rather than guess.
 | Chunk footprint per write call | 1,024 chunks (a 512 × 512 area) |
 | Cells per `mc_inspect` call and per side/slice `mc_render` | 200,000 |
 | Area per `mc_survey` call and per top/heightmap `mc_render` | 200,000 x/z cells |
-| Columns per `mc_inspect` `format: "columns"` call | 1,024 |
+| Columns per `mc_inspect` `format: "columns"` call | 1,024 (also the unit of a column backup's reads: at most 1,024 columns and 200,000 cells per call, fewer columns when the box is taller than 195 blocks) |
 | Distinct block types in an `mc_inspect` ASCII slice | 47 (narrow the region if a slice has more) |
-| Flowing liquids per call (`liquids: "flow"`) | 2,000 |
+| Flowing liquids per call (`liquids: "flow"`) | 2,000; the placer pages so no page holds more than 2,000 water or lava cells (`--max-flowing`) |
+| `fillbiome` blocks per command (vanilla) | 32,768 by default; the command's error says if the server differs |
 | Queued operations | 16 |
 | Snapshots kept | 20, oldest evicted first, shared by everything on the server |
 | Cells per snapshot | 200,000 |
@@ -40,6 +41,9 @@ rejected before anything changes: split and retry rather than guess.
 
 ## Behaviour to plan around
 
+- The heights file's source is `mc_survey` with `matrix: true`, read for
+  `SOLID`, `SOLID_OR_LIQUID_NO_LEAVES` and `ANY` in tiles of at most 200,000
+  cells. A column backup's source is `mc_inspect` `columns`.
 - `mc_build` runs, in order: the snapshot (if `snapshot: true`), all fills, all
   text, then all blocks. If the snapshot box exceeds the snapshot cap, the
   whole call fails before writing.

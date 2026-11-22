@@ -32,6 +32,31 @@ the minimum corner at `[0, 0, 0]`:
   entry with a `sign` object is allowed in a module.
 - Palette variants are separate module files (`small-house-a-birch.json`).
 
+## Vegetation modules
+
+A module with `"kind": "vegetation"` is a tree or shrub. Instead of `fills` and
+`blocks` it has three parts, `ground`, `wood` and `leaves`, each with its own
+`fills` and `blocks`, plus an `anchor` (`[ax, ay, az]`, the trunk base cell).
+There are no air cells.
+
+```json
+{"name": "oak-a", "size": [7, 9, 7], "kind": "vegetation", "anchor": [3, 0, 3],
+ "ground": {"fills": [], "blocks": [{"pos": [3, 0, 3], "block": "minecraft:dirt"}]},
+ "wood": {"fills": [], "blocks": []},
+ "leaves": {"fills": [], "blocks": []}}
+```
+
+- Vegetation placements may overlap each other, never another module.
+- Stamping writes the whole phase in this order: every placement's `ground`
+  part, then every `wood` part, then every `leaves` part. Wood and leaves are
+  fills with `"filter": "minecraft:air"`, so they never replace terrain or
+  another tree's wood, and wood never gives way to leaves. Single cells become
+  1 x 1 x 1 fills (merged where possible), because `blocks` entries cannot carry
+  a filter. `ground` is placed without the filter.
+- Rotation and mirroring work as for any module (log `axis` turns).
+- A placement's origin comes from the tree's `anchor` and the surface height at
+  the trunk, which the terrain skill computes.
+
 ## Placement convention
 
 For each placement, `stamp.py`:
@@ -45,7 +70,8 @@ stair and rail `shape`, door `hinge`, crafter `orientation`, and the side
 properties of vines, lichen and mushroom blocks. Fence, wall, pane, bar and
 redstone-wire connections are dropped because Ashlar's connection pass
 recomputes them. Chest `type` becomes `single`; Ashlar pairs chests itself.
-Placements must not overlap; `stamp.py` refuses overlapping instances.
+Placements must not overlap; `stamp.py` refuses overlapping instances (vegetation
+placements may overlap each other; see above).
 
 ## Running it
 

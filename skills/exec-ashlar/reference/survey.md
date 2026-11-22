@@ -39,6 +39,22 @@ Run when a design skill asks for `survey <project>`, before it designs.
    before the plan is approved. (`mc_command` is not pre-approved in this
    skill's `allowed-tools`; if it is unavailable, record "not read" and infer
    from surface materials.)
+6a. **Terrain**, when the plan reshapes ground (a terrain plan or any plan
+   with a terrain box). In addition to the steps above:
+   - write a heights file (`ashlar_place.py heights`) over the terrain box plus
+     16 blocks on every side, as `heights.json`;
+   - write the site read (`ashlar_place.py backup --box … --out
+     .minecraft-builder/<project>/site`) over the box plus 8 blocks on every
+     side (full height of the work);
+   - note existing water levels (from the heights file's `surface` against
+     `ground`, and the site read);
+   - run
+     `uv run --no-project --with numpy --with scipy --with pillow --with opensimplex python ../terrain-shape/scripts/terrain.py survey --site .minecraft-builder/<project>/site --box x1 y1 z1 x2 y2 z2`
+     over the terrain box for the non-natural block counts, the trees and the
+     height ranges. It exits 1 when it finds a non-natural block (planks, glass,
+     wool, rails, doors, beds and so on);
+   - **stop** for the user's decision if a village or other player structure is
+     inside the box. The gate repeats the finding.
 7. **Players**: note how many players are online and how close the nearest is
    (no names).
 8. **Other worlds**: before designing for the Nether or the End, call
@@ -66,5 +82,8 @@ Write `.minecraft-builder/<project>/survey.md`:
 - Block entities a restore would empty: <list with coordinates, or "none">
 - Biome: <id and how it was read, or "not read">
 - Players near the site: <count online and the nearest distance, no names, or "none">
+- Terrain (terrain plans): heights file `<path>`, site read `<path>`, water
+  levels <list or "none">, non-natural blocks inside the box <counts or "none">,
+  trees <count>
 - Notes for the design: <site preparation, hazards, views>
 ```

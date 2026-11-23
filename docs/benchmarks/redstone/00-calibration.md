@@ -14,8 +14,11 @@ It checks:
 | 6 | Two same-facing chests side by side; two barrels side by side | The chests pair, the barrels stay separate | Update the chest rule |
 | 7 | A hopper written `enabled=false` under a lit torch, with items above it | It moves nothing | Record it |
 
-Rung 0 writes to the world, so it goes through the gate like any build, and it
-is rolled back afterwards.
+Run the normal checks and present the actual coordinate and both torch states
+for check 5 at the ordinary build gate. Obtain explicit approval for that
+preview. Follow the [check 5 procedure](../../../skills/exec-ashlar/reference/verification.md#rung-0-calibration-check-5)
+for the exact allowed diagnostic, loaded diff and `at_rest` verdict. Roll
+back the build afterwards with approval.
 
 ## Prompt
 

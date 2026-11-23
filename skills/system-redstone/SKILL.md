@@ -64,7 +64,8 @@ version and use the timing table in `reference/java-redstone.md`.
    `ashlar_place.py read` before building. Save the read in the local project,
    record its path in the plan notes and pass it to `check` with `--background`.
    Run `redstone_rest.py check`, fix mismatches and structural errors, and
-   re-run. A block the checker does not know is listed as unmodelled and
+   re-run (see the Rung 0 exception under Hard rules). A block the checker
+   does not know is listed as unmodelled and
    treated as a non-conductor, so choose power-path blocks the checker knows;
    a mismatch at or next to an unmodelled block is a hand check, never a state
    to write. If the report says `loaded ... cannot settle`, resolve that loop
@@ -153,7 +154,8 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
 - Every redstone component is written at rest. Hand off to `exec-ashlar build`
   only after `redstone_rest.py check` is clean for as-built modelled parts,
   the loaded baseline settles, and every unmodelled part is checked by hand
-  and noted.
+  and noted. The sole exception is the deliberate unlit torch in Rung 0
+  calibration check 5. Follow the [execution gate for that fixture](../exec-ashlar/reference/verification.md#rung-0-calibration-check-5).
 - Never call a machine working without a passed functional test. When Ashlar
   cannot drive a machine, say "needs your test" and give the exact steps.
 - All world changes go through `exec-ashlar`. Console commands only as

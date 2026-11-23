@@ -30,6 +30,8 @@ Before the first write, show the user:
   cleanup. Show the combined budget when tests share a force-load, with
   enough time reserved to remove and verify the run's additions;
 - any test input or fixture, and where it is;
+- for Rung 0 calibration check 5 only, the exact torch coordinate, written
+  state and checker expectation per [verification.md](verification.md#rung-0-calibration-check-5);
 - the manual steps the user will be asked to do;
 - what will remain unverified;
 - for a plan outside the server's main world: that its console steps need
@@ -73,8 +75,9 @@ tests.
      in the area, or the player list could not be read. Exit 2: the phase file
      is invalid. Exit 3: the file needs more snapshots than allowed, or a
      shell fill (`outline`, `hollow`, `walls`) is too large to split; split it
-     into smaller phase files or fills. Exit 5: the server failed part way; the
-     report lists the pages already written and the snapshot ids.
+     into smaller phase files or fills. Exit 5 can occur before placement or
+     during a build call. Read the error, confirmed page count and snapshot
+     ids, then follow the recovery procedure below.
    - `commands`: run ordinary rows in order, one exact approved
      `mc_command` per row, with the `minecraft:` prefix and any approved
      dimension wrapper. Use `forceload query` before adding chunks. Use the
@@ -108,7 +111,7 @@ tests.
 - Water and lava are placed still. Use `liquids: "flow"` only for a few source
   blocks (a fountain head, a waterfall source): at most 2,000 flowing blocks per
   call.
-- Ashlar places redstone without physics. Write each component in its resting
+- Ashlar places redstone without physics. Write each machine component in its resting
   state with inputs as built (normally off) and containers empty. Load setup
   containers in a `commands` phase so their comparators receive real updates.
   The connection pass sets shape properties.
@@ -122,18 +125,31 @@ tests.
 
 ## Resuming and fixing
 
-- **An interrupted block placement** (placer exit 5, an MCP error, the user
-  stops it): record the known writes and snapshot ids. Confirm that replaying
-  the fills and blocks would produce the same final cells. When it would,
-  offer to resume from the start or roll back and ask before either. Resume
-  using the original snapshots without taking new ones (`--no-snapshot` for
-  the placer, omit `snapshot` for `mc_build`). That keeps the original
-  rollback point and avoids spending slots on the half-written state. If any
-  original snapshot has been evicted, tell the user at the gate which part
-  can no longer be rolled back. If replay could produce a different result,
-  for instance with overlapping conditional fills, reconcile the partial
-  writes first and show the exact remaining writes, restore or correction at
-  a fresh gate.
+- **An interrupted block placement** (placer exit 5, an MCP error or a user
+  stop) goes to a recovery gate before any resume or restore. Reconcile the
+  phase and placer logs with `mc_snapshot` (`action: "list"`). Match retained
+  pre-write ids, world and tile bounds to the approved phase. Record confirmed
+  writes and any build call with an unknown outcome. The placer takes all
+  snapshots before its first build call. A player-check or snapshot failure
+  can leave zero or partial coverage. Zero confirmed pages alone does not
+  establish that no write occurred.
+  - If pre-write snapshots cover the entire phase and replay produces the
+    same final cells, show the coverage and offer resume or rollback. Wait for
+    explicit approval and recheck players. For resume, reuse the verified
+    snapshots (`--no-snapshot` for the placer, omit `snapshot` for `mc_build`).
+  - If coverage is incomplete and the phase definitely sent no writes, show
+    the missing tile bounds, retained ids and slot/eviction impact. Stop if a
+    new snapshot would evict a required original. Obtain explicit approval,
+    check players, then snapshot only the missing bounds. Log the new ids and
+    recheck the entire retained coverage before an approved resume.
+  - If a write occurred or might have occurred and original coverage is
+    missing or uncertain, stop. Report the affected bounds and what can
+    actually be restored. A new snapshot of a possibly changed cell cannot
+    recover its pre-write state. Present any proposed partial restore or
+    correction for separate approval.
+  - If replay could change the result (for example, overlapping conditional
+    fills), reconcile the writes and preview the exact remaining writes or
+    restore at a fresh gate.
 - **An interrupted `commands` phase:** release this phase's confirmed
   force-load additions. Reconcile each confirmed or uncertain operation
   against the console log and observed state. Use the available block,

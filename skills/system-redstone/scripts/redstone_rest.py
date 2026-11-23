@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from redstone_model import (CAPACITY, CHESTS, HORIZONTAL, POWER_PROPS, Contents, Report, World,
-                            check_world, modelled, name, power_diff, power_keys, solve, switch_on,
+                            check_world, name, power_diff, power_keys, solve, switch_on,
                             validate_state, value)
 from redstone_plan import (Plan, PlanError, Pos, Stack, State, format_state, load_plan, load_read,
                            setup_loads, written_cells)
@@ -130,12 +130,15 @@ def run_diff_plan(plan_path: Path, read_path: Path, loaded: bool, background: Pa
 
 def run_diff_reads(a: Path, b: Path) -> list[Change]:
     first, second = _read_world(a), _read_world(b)
-    common = (p for p in first.keys() & second.keys() if modelled(name(first[p])) and modelled(name(second[p])))
     changes = []
-    for pos in sorted(common):
+    for pos in sorted(first.keys() & second.keys()):
         before, after = first[pos], second[pos]
-        keys = set(power_keys(name(before))) | set(power_keys(name(after)))
-        if any(value(before, key) != value(after, key) for key in keys):
+        keys = power_keys(name(before))
+        if before.id != after.id:
+            differs = bool(keys or power_keys(name(after)))
+        else:
+            differs = any(value(before, key) != value(after, key) for key in keys)
+        if differs:
             changes.append((pos, format_state(before), format_state(after)))
     return changes
 

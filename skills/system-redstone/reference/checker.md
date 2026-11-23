@@ -44,9 +44,11 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
   properties against the loaded model. If setup cannot settle, the baseline
   is undefined and this command exits 2. Read inventories separately with
   `data get block`.
-- **Return to rest.** Diff two JSON reads spanning the same full box to compare
-  power properties at common modelled positions. Neither plan-only option
-  applies to this form. Keep the geometry check alongside it.
+- **Return to rest.** Use two full reads of the same box. At each cell observed
+  in both reads, the diff reports a block ID change if either block has
+  modelled power properties. For an unchanged ID it compares only those
+  properties. A cell omitted from a partial read is unobserved; a cell read
+  as air is an observation. Keep the geometry check alongside it.
 - **Inventories.** `containers` prints one `X Y Z minecraft:block_id` line for
   each supported container written by the plan, to identify baseline, settle
   and conservation reads.

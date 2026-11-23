@@ -7,14 +7,37 @@ Before the first write, show the user:
 - the project, world and bounding box;
 - the phases in order, each with its cell count, its `via`, and the snapshot
   tiles it needs;
-- the total snapshot slots needed, and what they evict. Call `mc_snapshot` with
+- the total snapshot slots needed (`backup` phases need none), and what they evict. Call `mc_snapshot` with
   `action: "list"` and count the stored snapshots. If stored + needed is more
   than 20, the oldest (stored + needed - 20) snapshots are evicted, oldest
   first. Name each one (id, label, age), say they belong to other builds'
   rollback points, and offer to split the build, wait, or accept. Also, if the
   build needs more than 20 slots, its own oldest phases' snapshots are evicted
   before it ends, so those phases cannot be rolled back; say so. Count one slot
-  for each `commands` phase that runs `place feature`;
+  for each snapshot-rollback `commands` phase that runs `place feature`. For a
+  snapshot phase whose snapshots would evict other builds' rollback points,
+  offer to switch it to a column backup;
+- per `backup` phase: its box, the number of column reads and the estimated
+  disk size, instead of snapshot slots;
+- for a terrain flow phase, the source count and the full possible flow
+  area included in its backup and player checks;
+- for terrain liquids, the planned counts kept, covered and added. List
+  each drain by its body ID, liquid, location, volume and exact recorded
+  approval. Explain that rollback restores blocks and cannot restore any
+  creatures lost in the drain;
+- per commands file: its path (so the user can open it), the count per form and
+  per feature id, the exact chunk rectangles and count from `commands --check`,
+  and what happens when a tree fails to grow. The runner continues, lists
+  failed commands, and exits 6;
+- a biome change: the exact biome ID named in the user's recorded approval,
+  the chunk-aligned box, and its approximate
+  rollback. The probe records one biome per chunk, so the reset is at chunk
+  resolution, and chunks the probe cannot identify keep the new biome; if any
+  chunk is `unknown` at build time the biome phase stops for the user;
+- the non-natural blocks found inside the terrain box (from the site read);
+- how many existing trees will be removed whole, and the farthest any write
+  reaches outside the terrain box;
+- an estimated duration for big jobs;
 - any other registry project whose `bbox` overlaps this build's box (a build
   over another build overwrites it);
 - every ordinary console command in a `commands` phase, exactly as it will
@@ -54,31 +77,79 @@ steps and the results that need a new test. Wait for an explicit yes, update
 `build-log.md`. Keep the registry status `built` and run only the approved
 tests.
 
+## Sizing backup phases
+
+For each `backup` phase, from its box: the column reads are
+`ceil(columns / 1,024)` or more when the box is taller than 195 blocks (each
+read covers at most 200,000 cells), and the disk size is estimated from the
+column count (the runs compress well; say it is an estimate). Show both at the
+gate. `ashlar_place.py backup` and `place --backup` do the reading; a backup is
+complete only when its `manifest.json` says so.
+
 ## Each phase
 
 1. **Players**: call `mc_players`. If anyone is inside the phase's box grown by
    2 blocks, stop and tell the user. Do not build around them.
-2. **Snapshots**:
-   - `placer` phases: the placer takes them (`--snapshot`).
+   Before the first write that drains a body, read the entire recipe footprint
+   and its original site-read margin again. Recompute the drain manifest from those
+   columns and match its ID, extent and liquid kinds to the user's recorded
+   approval. A backup box alone cannot show that the body is unchanged.
+   If it differs, pause for a new preview and approval. If this is a resume
+   after a partial write, reconcile what changed against the original
+   complete rollback point and the approved body.
+2. **Rollback point**, by the phase's `rollback` column (absent: `snapshot`):
+   - `backup` phases: `place --backup <folder>` takes the backup after its
+     player check and before writing. For `mcp` or a phase whose rollback
+     box extends beyond the direct writes, first take a separate backup:
+     `python3 <skill>/scripts/ashlar_place.py backup --box <from x y z> <to x y z> --out <folder>`.
+     Use the plan's full phase box and pass `--world <name>` when named.
+     Confirm the complete manifest covers that box in that world before
+     sending any placement. The folder is
+     `.minecraft-builder/<project>/backups/<NN>-<phase-name>/`. The placer
+     refuses (exit 3) if the folder already holds a complete backup, or if the
+     backup cannot be completed; nothing is written then. Record the folder.
+   - `biome` phases: run `biome-probe` over the phase's chunk-aligned box
+     immediately before the phase and record the probe file. Stop for the user
+     if any chunk is `unknown`:
+     `python3 <skill>/scripts/ashlar_place.py biome-probe --box <x1 y1 z1 x2 y2 z2> --heights .minecraft-builder/<project>/heights.json --biomes <terrain-shape>/tools/terrain/data/<version>/biomes.json --candidates <biomes the survey noted> --out .minecraft-builder/<project>/phases/<NN>-<element>-biome.probe.json`.
+     Resolve `<terrain-shape>` to the sibling terrain-shape skill directory.
+     `--heights` is the survey's heights file (it must cover the box).
+     `--biomes` is the biome list for the server's Minecraft version (from
+     `mc_status`; if no folder matches, use the nearest older one and say so at
+     the gate). Its format is in [plan-format.md](plan-format.md#terrain-files).
+   - `placer` phases: the placer takes snapshots (`--snapshot`).
    - `mcp` phases: tile the phase box into boxes of at most 200,000 cells
      (`ashlar_place.py plan` reports the tile count) and call `mc_snapshot`
      with `action: "create"` for each, labelled with the project and phase. For
      a single small box, `mc_build`'s own `snapshot: true` does the same.
-   - `commands` phases: snapshot the box only when a command changes blocks
-     (`place feature`).
-   Record every snapshot id in `build-log.md` and the registry.
+   - `commands` phases: take the rollback point only when a command changes
+     blocks (`place feature`). Its box is the feature positions grown by the
+     reach of the largest tree it plants (default: 8 blocks sideways and 32
+     up); that box is the phase's `from`/`to`.
+   Record every snapshot id, backup folder and probe file in `build-log.md`
+   and the registry.
 3. **Place**:
    - `mcp`: one `mc_build` call with the phase file's contents.
    - `placer`:
-     `python3 <skill>/scripts/ashlar_place.py place <file> --snapshot --label "<project> phase <n>" --log .minecraft-builder/<project>/placer.log`,
+     `python3 <skill>/scripts/ashlar_place.py place <file> <rollback option> --log .minecraft-builder/<project>/placer.log`.
+     Use `--snapshot --label "<project> phase <n>"` for snapshots or
+     `--backup <folder>` for an inline backup. If a separate complete backup
+     already covers the full phase, use `--no-snapshot`.
      adding `--world <name>` when the plan names a world. Exit 4: a player is
      in the area, or the player list could not be read. Exit 2: the phase file
      is invalid. Exit 3: the file needs more snapshots than allowed, or a
      shell fill (`outline`, `hollow`, `walls`) is too large to split; split it
-     into smaller phase files or fills. Exit 5 can occur before placement or
-     during a build call. Read the error, confirmed page count and snapshot
-     ids, then follow the recovery procedure below.
-   - `commands`: run ordinary rows in order, one exact approved
+     into smaller phase files or fills. Exit 5 can occur before or during
+     placement. Read the error, confirmed page count and available snapshot
+     ids or backup manifest, then follow the recovery procedure below.
+   - `commands` with a commands file: run
+     `python3 <skill>/scripts/ashlar_place.py commands <file> --progress .minecraft-builder/<project>/phases/<file>.progress --log .minecraft-builder/<project>/placer.log`,
+     adding `--world <name>`, and `--dimension <dim>` only when the user agreed
+     at the gate. The runner applies the prefix, force-load and player rules
+     itself ([commands.md](commands.md#the-runner)). Exit 6 means some commands
+     failed and the report lists them. Exit 5 includes force-loads the runner
+     could not remove. Release those first. Exit 4 means a player is in a tile.
+   - `commands` with `file` set to `-`: run ordinary rows in order, one exact approved
      `mc_command` per row, with the `minecraft:` prefix and any approved
      dimension wrapper. Use `forceload query` before adding chunks. Use the
      approved range when every eligible chunk is absent. If the range
@@ -110,7 +181,8 @@ tests.
 
 - Water and lava are placed still. Use `liquids: "flow"` only for a few source
   blocks (a fountain head, a waterfall source): at most 2,000 flowing blocks per
-  call.
+  call. The placer enforces the cap: it pages so no page holds more than 2,000
+  water or lava cells (`--max-flowing`), and `plan` reports `liquid_cells`.
 - Ashlar places redstone without physics. Write each machine component in its resting
   state with inputs as built (normally off) and containers empty. Load setup
   containers in a `commands` phase and verify the inventory and actual
@@ -125,36 +197,48 @@ tests.
 
 ## Resuming and fixing
 
+- **A project found `building`:** show the phases recorded as placed. Use
+  the recovery procedure for the first phase whose placement is unconfirmed.
+  Present the resume or rollback choices and wait for approval.
 - **An interrupted block placement** (placer exit 5, an MCP error or a user
-  stop) goes to a recovery gate before any resume or restore. Reconcile the
-  phase and placer logs with `mc_snapshot` (`action: "list"`). Match retained
-  pre-write ids, world and tile bounds to the approved phase. Record confirmed
-  writes and any build call with an unknown outcome. The placer takes all
-  snapshots before its first build call. A player-check or snapshot failure
-  can leave zero or partial coverage. Zero confirmed pages alone does not
-  establish that no write occurred.
-  - If pre-write snapshots cover the entire phase and replay produces the
-    same final cells, show the coverage and offer resume or rollback. Wait for
-    explicit approval and recheck players. For resume, reuse the verified
-    snapshots (`--no-snapshot` for the placer, omit `snapshot` for `mc_build`).
-  - If coverage is incomplete and the phase definitely sent no writes, show
-    the missing tile bounds, retained ids and slot/eviction impact. Stop if a
-    new snapshot would evict a required original. Obtain explicit approval,
-    check players, then snapshot only the missing bounds. Log the new ids and
-    recheck the entire retained coverage before an approved resume.
+  stop) goes to the recovery gate before any resume or restore. Reconcile the
+  phase and placer logs with the live block read and the snapshot list
+  (`mc_snapshot` with `action: "list"`) or the backup manifest. Match the
+  retained original recovery points, world and bounds to the approved phase.
+  Record confirmed writes and calls with an uncertain outcome. The placer
+  takes all rollback reads before its first build call. Zero confirmed pages
+  can still include a build call that may have written blocks.
+  - If retained pre-write snapshots or backups cover the entire phase and
+    replay produces the same final cells, show the coverage and offer resume
+    or rollback. After approval, recheck players. For resume, reuse the original
+    coverage from the start (`--no-snapshot` for the placer, omit `snapshot`
+    for `mc_build`).
+  - If the phase definitely sent no writes and original coverage is
+    incomplete, keep the original recovery points and show the missing bounds
+    and any snapshot slot or eviction cost. Stop if a new snapshot would evict
+    a required original. With approval and a fresh player check, capture only
+    the missing bounds and verify the complete coverage before replay.
   - If a write occurred or might have occurred and original coverage is
-    missing or uncertain, stop. Report the affected bounds and what can
-    actually be restored. A new snapshot of a possibly changed cell cannot
-    recover its pre-write state. Present any proposed partial restore or
-    correction for separate approval.
-  - If replay could change the result (for example, overlapping conditional
-    fills), reconcile the writes and preview the exact remaining writes or
-    restore at a fresh gate.
+    missing or uncertain, stop. Report the affected bounds and which original
+    states remain recoverable. Present any partial restore or correction for
+    separate approval.
+  - If replay could change the result, for example with overlapping conditional
+    fills or water that could flow beyond the previous bounds, reconcile the
+    writes and preview the exact remaining writes or restore at a fresh gate.
 - **An interrupted `commands` phase:** release this phase's confirmed
   force-load additions. Reconcile each confirmed or uncertain operation
   against the console log and observed state. Use the available block,
   inventory and tagged-entity reads.
   Never replay summons, feature placement or inventory loads wholesale.
+  A runner commands file resumes with the same `--progress` file: the runner
+  skips every command already attempted, and still reports (exit 6) commands
+  that failed in an earlier run. That is the reconcile step for feature
+  placement. A progress file from a different commands file is refused. The
+  runner always pairs its force-load adds with removes, even after a failure;
+  if it reports a force-load it could not remove (exit 5), release that first.
+  A resumed biome phase reuses its original probe file and never probes again
+  after a partial `fillbiome`: the probe taken before the first write is the
+  only record of the old biomes.
   Show the precise remaining commands or recovery actions at a fresh gate
   and wait for approval before continuing.
 - **A failed test:** [`system-redstone`](../../system-redstone/SKILL.md)
@@ -173,16 +257,28 @@ tests.
 
 0. `mc_players`. If anyone is inside any box to be restored, grown by 2
    blocks, stop and tell the user.
-1. Show the user the snapshots to be restored (ids, labels, boxes) and any
-   recorded snapshots that were evicted and cannot be restored. Wait for an
-   explicit yes. Then `mc_restore` each recorded snapshot, newest phase first.
+1. Show the user the rollback points to be restored: snapshots (ids, labels,
+   boxes), backup folders with their sizes, biome probes with the approximate
+   biome reset (chunk resolution; chunks the probe marked `unknown` are
+   skipped and keep the new biome), and any recorded snapshots that were
+   evicted and cannot be restored. Wait for an explicit yes. Then restore
+   newest phase first: biome phases with
+   `biome-restore <probe> --out <restore-file>`, then
+   `python3 <skill>/scripts/ashlar_place.py commands <restore-file> --progress <new progress path>`
+   (a fresh progress path: the forward run's file belongs to another commands
+   file and is refused); backup phases with
+   `python3 <skill>/scripts/ashlar_place.py restore <folder>` (placing the same
+   backup twice gives the same result); snapshot phases with `mc_restore`.
+   If the project is a host with a `<host>-ground` project, offer to roll the
+   grounding project back first.
 2. Remove the build's entities: `forceload add` over the columns the plan's
    entity phases used, `kill @e[tag=ashlar.<project>]`, confirm with
    `execute if entity @e[tag=ashlar.<project>]` (`Test failed`), then
    `forceload remove` the same columns. If any of these calls fails, still run
    the `forceload remove` before reporting.
 3. Tell the user that sign text and container contents inside restored boxes
-   are gone, including ones that were there before the build, which phases'
+   are gone (a backup restores every block state exactly but loses what a
+   snapshot loses), including ones that were there before the build, which phases'
    snapshots were evicted and could not be restored, and that entities which
    wandered outside the force-loaded columns may survive the `kill`.
 4. Set the registry status to `rolled-back`.

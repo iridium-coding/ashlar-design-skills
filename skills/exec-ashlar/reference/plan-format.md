@@ -54,7 +54,20 @@ quality_contract:
     stamped module phase, uses `placer`.
   - `placer`: `python3 <skill>/scripts/ashlar_place.py place <file> --snapshot …`,
     for anything larger or generated.
-  - `commands`: a phase made only of `commands` rows; `file` is `-`.
+  - `commands`: a phase made of `commands` rows, with `file` set to `-` (you
+    run the rows), or a phase whose `file` is a commands file
+    ([below](#terrain-files)) that the placer's runner runs
+    (`ashlar_place.py commands`). A commands file may hold only `place feature`
+    and `fillbiome` commands.
+
+  An optional `rollback` column says how a phase is rolled back:
+  `snapshot`, `backup` (a column backup, exact for every block state) or
+  `biome` (a `fillbiome` phase, rolled back from its probe). A plan without the
+  column behaves as it always did: every phase is `snapshot`. Terrain phases
+  use `backup`.
+  A terrain flow phase lists its source count under `blocks`. Its
+  `from`/`to` and the plan's `bbox` must also cover the possible water reach,
+  which is included in its separate pre-write backup.
 
   For a module-based phase that has not been stamped yet, write the intended
   `file` path and a hand estimate in `blocks`; `build` step 1 stamps it and step
@@ -70,6 +83,9 @@ quality_contract:
   its inner double quotes as `\"` (TOON quoting). A
   table with no rows (`commands`, `modules`, `placements`) may be omitted; write
   `commands[0]:` only if you want it explicit.
+- `notes` for a terrain plan also carry: the recipe path, the design approval
+  token, the feature-id version check, the placements JSON path, and a pointer
+  to the user's biome yes in `requirements.md` when there is one.
 - `acceptance`: spot checks, one cell each.
 - `quality_contract`: the property checks below.
 - `tests`: ordered functional test steps (see [tests](#tests)). Plans from
@@ -115,6 +131,9 @@ fails the build.
 | `silhouette` | `region_a,region_b,sample_count,min_y_variance` | the variance of the top y at `sample_count` evenly spaced columns is at least `min_y_variance` |
 | `connectivity` | `site_a,site_b,via` | the named route between the two sites is walkable end to end |
 | `edge_irregularity` | `edge_name,from,to,max_collinear_run` | no run of identical x or z along the edge is longer than `max_collinear_run` (terrain) |
+| `surface_match` | `region_a,region_b,file,tolerance,min_ratio` | at least `min_ratio` of the region's columns (outside the file's skip mask) have a built top within `tolerance` of the expected top in `file` |
+| `seam` | `from,to,max_step[,outward]` | along the edge from `from` to `to`, adjacent ground differs by at most `max_step`. For apron rows `outward` names the adjacent direction as `x`, `-x`, `z` or `-z`. At a protected edge it points toward the host. At an outer edge it points outside the terrain box. |
+| `water_continuity` | `region_a,region_b,level` | every sampled column whose bed is below `level` holds water from the bed up to `level`, with no air gap, and no water cell borders air at the region's edge |
 
 Coordinates in rows are `x y z` triples; regions are two corners. If you cannot
 write a row because you do not know the answer (is this door reachable?), the
@@ -207,6 +226,51 @@ rolls back. The plan never clears containers through the console.
 The sole calibration baseline exception is the approved [Rung 0 check 5
 torch](verification.md#rung-0-calibration-check-5).
 
+## Terrain files
+
+Terrain plans use these files, all inside `.minecraft-builder/<project>/`.
+Skills and tools write them as described here; paths in plan rows are relative
+to the project folder.
+
+- **Column backup** (a folder): `manifest.json` holds `version`, `box`
+  (`[x1, y1, z1, x2, y2, z2]`), `world`, `created` (UTC time), `columns` (the
+  count), `sha256` (of `columns.json.gz`), `plugin` (the Ashlar version, or
+  null) and `complete`. `columns.json.gz` is gzip JSON with `version`, `world`,
+  `box` and `columns`, mapping `"x,z"` to runs `[y1, y2, "minecraft:<state>"]`
+  from bottom to top, contiguous, covering the box's full height. A backup is
+  complete only when `complete` is `true`. Phase backups live in
+  `backups/<NN>-<phase-name>/`; the design-time **site read** is the same
+  format in `site/`.
+- **Heights file** (`ashlar_place.py heights`): JSON with `version`, `world`,
+  `origin` (`[x1, z1]`), `size` (`[nx, nz]`) and three lists of `nx * nz`
+  entries at index `xi * nz + zi`, each an integer or `null`: `ground`
+  (`mc_survey` type `SOLID`), `surface` (`SOLID_OR_LIQUID_NO_LEAVES`) and `top`
+  (`ANY`).
+- **Commands file**: JSON with `version`, `kind` (`features` or `biomes`),
+  `box`, `world` and `commands`, a list of command strings with no leading `/`
+  and no `minecraft:` prefix (the runner adds it). Only `place feature <id> <x>
+  <y> <z>` and `fillbiome <x1> <y1> <z1> <x2> <y2> <z2> <biome>` are accepted,
+  with namespaced ids. Names:
+  `phases/<NN>-<element>-features.commands.json` and
+  `phases/<NN>-<element>-biome.commands.json`.
+- **Progress file** (`commands --progress`): JSON lines. The first line is a
+  header `{"commands_sha256": …}` naming the commands file's hash; each later
+  line is `{"index": n, "ok": true|false}` for one command attempted. A
+  progress file from another commands file is refused.
+- **Biome probe** (`biome-probe`): JSON with `version`, `world`, `box` and
+  `chunks`, mapping `"cx,cz"` to a biome id or `unknown`. `biome-probe` and
+  `biome-restore` need chunk-aligned boxes (x1 and z1 multiples of 16, x2 and z2
+  ending in 15); others are refused. `biome-probe` also reads a **biomes file**
+  (`--biomes`): a JSON list of biome ids (or `{"ids": [...]}`) valid for the
+  server's version, shipped with the terrain toolkit at
+  `../terrain-shape/tools/terrain/data/<version>/biomes.json`.
+  `--candidates A,B` names the biomes tried first, normally those the survey
+  noted.
+- **Expected surface** (`terrain/<element>.surface.json`): JSON with `version`,
+  `origin`, `size`, `top` (the expected highest solid-or-liquid block, leaves
+  ignored; integer or `null`) and `skip` (0 or 1), both at index `xi * nz + zi`.
+  `surface_match` reads it.
+
 ## Validation (start of `build`)
 
 Stop and report if any of these fails:
@@ -244,3 +308,16 @@ Stop and report if any of these fails:
     any `repeat` rows.
 12. A plan written by `system-redstone` has at least one test for each input, or
     a note saying why the input cannot be tested.
+13. Every commands file passes `ashlar_place.py commands <file> --check` (forms,
+    integer coordinates, positions inside the file's box, a `fillbiome` volume
+    within the block limit). For a biome-painting phase, every command targets
+    the exact biome ID and stays inside the chunk-aligned box named in the
+    dedicated approval in `requirements.md`. Biome restore uses the IDs
+    recorded by the probe.
+14. Every `surface_match` file exists, and every `backup` phase's box is known.
+    Validate the full rollback box for flow phases before placement.
+15. A fill's `filter`, where present, is a `minecraft:` block state string.
+16. Each `drain` note carries the body ID emitted for this site. Verify that
+    `requirements.md` records a separate user approval for that ID in this
+    build. Stop if the body, its observed cells or its retained rollback
+    coverage changes before the write.

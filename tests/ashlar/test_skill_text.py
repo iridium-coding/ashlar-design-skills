@@ -10,10 +10,14 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 SKILLS = ["design-building", "design-city", "design-grounds", "design-house",
           "design-monument", "design-village", "exec-ashlar", "survey-research",
-          "system-redstone"]
+          "system-redstone", "terrain-shape", "terrain-landmark", "terrain-ecology",
+          "terrain-integrate"]
 IDS = [skill.replace("-", "_") for skill in SKILLS]
+TERRAIN_SKILLS = {"terrain-shape", "terrain-landmark", "terrain-ecology", "terrain-integrate"}
 CLIENTS_FILE = "skills/exec-ashlar/reference/clients.md"
 VOXEL_TOOLKIT = "skills/design-monument/tools/voxel/"
+TERRAIN_TOOLKIT = "skills/terrain-shape/tools/terrain/"
+CAVE = re.compile(r"\bterrain-cave\b")
 
 CHAPMAN_TOOLS = [
     "block_fill_region", "block_set_state", "block_fill_batch", "block_clone_region",
@@ -29,6 +33,10 @@ CHAPMAN_TOOLS = [
     "function_list", "function_get_definition", "inventory_get", "inventory_count_items",
     "entity_get", "datapack_enable", "datapack_list_enabled", "level_get_mob_spawns",
     "schedule_function", "loot_table_generate", "mcp_place",
+    "level_fill_biome", "level_place_feature", "level_place_features_batch",
+    "block_erode_region", "block_erode_hydraulic_start", "block_erode_hydraulic_status",
+    "block_erode_hydraulic_result", "block_replace_in_region",
+    "structure_create_from_blocks", "structure_list", "place_terrain", "emit_plan_toon",
 ]
 FORBIDDEN = [
     re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(CHAPMAN_TOOLS) + r")\b"),
@@ -37,6 +45,9 @@ FORBIDDEN = [
     re.compile(r"minecraft-mcp-setup"),
     re.compile(r"\bexec-(?:plan|blueprint|worker|inspect|reflect)\b"),
     re.compile(r"\bsurvey-site\b"),
+    re.compile(r"\bbuild-(?:natural-world|settlement|structure|systems)\b"),
+    re.compile(r"\bGATE B\b"),
+    re.compile(r"\bharness\b"),
     re.compile(r"32,768"),
     re.compile(r"\bmcb:"),
     re.compile(r"\bmcbuilder\b"),
@@ -63,14 +74,18 @@ LABELLED = re.compile(r"^\s*(?:[-*]\s+)?(?:\*\*)?(?:Claude Code|Codex):")
 NEW_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+")
 
 
-def leftovers(text: str, allow_fabric: bool = False) -> list[tuple[int, str]]:
+def leftovers(text: str, allow_fabric: bool = False,
+              cave_forbidden: bool = False) -> list[tuple[int, str]]:
     """(line, match) for every Chapman-pipeline reference in `text`."""
     patterns = FORBIDDEN if allow_fabric else FORBIDDEN + [FABRIC]
+    if cave_forbidden:
+        patterns = patterns + [CAVE]
     hits = []
     for number, line in enumerate(text.splitlines(), 1):
         for pattern in patterns:
             match = pattern.search(line)
-            if match:
+            # the vanilla fillbiome cap (32,768) is a valid number on a fillbiome line
+            if match and not (match.group(0) == "32,768" and "fillbiome" in line):
                 hits.append((number, match.group(0)))
     for pattern in WRAPPED_FORBIDDEN:
         for match in pattern.finditer(text):
@@ -105,6 +120,15 @@ def frontmatter(path: Path) -> tuple[dict, int]:
     return yaml.safe_load(match.group(1)) or {}, match.group(0).count("\n")
 
 
+SKILL_PATH = re.compile(
+    r"(?<![\w/.-])((?:<terrain-shape>/|\.\./[a-z0-9-]+/)?(?:reference|scripts|tools)/[\w./-]+\.(?:md|py|json))")
+
+
+def skill_paths(text: str) -> list[str]:
+    """Every skill-folder file path cited in `text`, in order."""
+    return [match.group(1) for match in SKILL_PATH.finditer(text)]
+
+
 def _markdown(skill: str) -> list[Path]:
     root = REPO / "skills" / skill
     assert root.is_dir(), f"missing skill folder {root.relative_to(REPO)}"
@@ -113,12 +137,33 @@ def _markdown(skill: str) -> list[Path]:
 
 @pytest.mark.parametrize("skill", SKILLS, ids=IDS)
 def test_no_chapman_leftovers(skill: str) -> None:
-    problems = [f"{path.relative_to(REPO)}:{number}: {hit!r}"
-                for path in _markdown(skill)
-                for number, hit in leftovers(
-                    path.read_text(encoding="utf-8"),
-                    allow_fabric=VOXEL_TOOLKIT in path.relative_to(REPO).as_posix())]
+    problems = []
+    for path in _markdown(skill):
+        rel = path.relative_to(REPO).as_posix()
+        for number, hit in leftovers(
+                path.read_text(encoding="utf-8"),
+                allow_fabric=VOXEL_TOOLKIT in rel or TERRAIN_TOOLKIT in rel,
+                cave_forbidden=skill in TERRAIN_SKILLS):
+            problems.append(f"{rel}:{number}: {hit!r}")
     assert not problems, "Chapman pipeline references left:\n" + "\n".join(problems)
+
+
+TERRAIN_IDS = sorted(TERRAIN_SKILLS)
+
+
+@pytest.mark.parametrize("skill", TERRAIN_IDS, ids=[s.replace("-", "_") for s in TERRAIN_IDS])
+def test_reference_links_resolve_in_skill_folder(skill: str) -> None:
+    problems = []
+    for path in _markdown(skill):
+        rel = path.relative_to(REPO).as_posix()
+        for cited in skill_paths(path.read_text(encoding="utf-8")):
+            if cited.startswith("<terrain-shape>/"):
+                target = REPO / "skills" / "terrain-shape" / cited[len("<terrain-shape>/"):]
+            else:
+                target = REPO / "skills" / skill / cited
+            if not target.is_file():
+                problems.append(f"{rel}: {cited}")
+    assert not problems, "Unresolved skill-folder paths:\n" + "\n".join(problems)
 
 
 @pytest.mark.parametrize("skill", SKILLS, ids=IDS)
@@ -201,3 +246,26 @@ def test_leftovers_world_top_is_319() -> None:
     assert leftovers("Y\u221264 to 320") == [(1, "\u221264 to 320")]
     assert leftovers("The world spans Y -64 to 319") == []
     assert leftovers("a 320-block axis, 3200 blocks") == []
+
+
+def test_leftovers_detects_cave_and_harness_names() -> None:
+    assert leftovers("use level_place_features_batch") == [(1, "level_place_features_batch")]
+    assert leftovers("the harness lint") == [(1, "harness")]
+    assert leftovers("run build-natural-world") == [(1, "build-natural-world")]
+    assert leftovers("GATE B runs") == [(1, "GATE B")]
+    assert leftovers("see terrain-cave", cave_forbidden=True) == [(1, "terrain-cave")]
+    assert leftovers("see terrain-cave") == []
+
+
+def test_32768_allowed_only_with_fillbiome() -> None:
+    assert leftovers("fills of 32,768 blocks") == [(1, "32,768")]
+    assert leftovers("fillbiome: at most 32,768 blocks") == []
+
+
+def test_skill_paths_found_and_resolved() -> None:
+    text = ("Read `reference/terrain/method.md` and `../terrain-shape/reference/terrain/palettes.md`;\n"
+            "run `<terrain-shape>/scripts/terrain.py` and `../exec-ashlar/scripts/ashlar_place.py`.")
+    assert skill_paths(text) == ["reference/terrain/method.md",
+                                 "../terrain-shape/reference/terrain/palettes.md",
+                                 "<terrain-shape>/scripts/terrain.py",
+                                 "../exec-ashlar/scripts/ashlar_place.py"]

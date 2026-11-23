@@ -194,6 +194,10 @@ this order, handling the dependency seams:
    a `site-prep` phase that gives a flat, true datum (clearing, levelling,
    filling holes, soft-edged terraces) and tell the user if the site needs more
    than that (more than light levelling, a pad and a few terraces).
+   If a pad would sit more than about 1–2 blocks above or below the surveyed
+   ground at any edge, offer the `terrain-integrate` skill for the site
+   preparation instead: it designs the pad and a natural apron around it as the
+   first phases of this plan.
 2. **Roofed structures and statuary**: run the `design-building` and
    `design-monument` skills for them.
 3. **Build the garden**: use the `exec-ashlar` skill (`build <project>`), with

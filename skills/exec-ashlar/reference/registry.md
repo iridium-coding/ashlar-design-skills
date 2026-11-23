@@ -17,6 +17,8 @@ so there is one history.
     modules/            module files (modules.md)
     build-log.md        what was placed, snapshot ids, warnings, checks
     placer.log          JSON reports from the placer
+    site/               site read (column backup format), terrain plans
+    backups/<NN>-<phase>/   phase backups (plan-format.md)
 ```
 
 ## registry.json
@@ -55,6 +57,14 @@ so there is one history.
 - If the file does not exist when you read it, create it as
   `{"version": 1, "projects": {}}` and add your entry. If a write fails or the
   file changed meanwhile, read again and redo the change.
+- A phase entry may also record `rollback` (`snapshot`, `backup` or `biome`),
+  `backup` (the backup folder, relative to the project folder) and
+  `biome_probe` (the probe file, relative to the project folder). A phase that
+  has a `backup` or `biome_probe` carries no snapshot ids. Example:
+  `{"id": 2, "name": "terrain", "rollback": "backup", "backup": "backups/02-terrain", "cells": 900000, "placed_at": "…"}`.
+- An after-the-fact `<host>-ground` project records `grounds: "<host>"` in its
+  own entry. A project can also record `terrain` with its recipe path,
+  expected-surface file and placements file. Preserve unknown keys.
 - `citations` holds the sources for replicas, so the build can be checked
   against them.
 - A project may carry extra keys the design skill needs (for example `rooms`,

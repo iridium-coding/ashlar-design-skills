@@ -156,10 +156,12 @@ village assets:
    the village can be extended or repaired later.
 
 Grow any trees in or around the village rather than placing or duplicating a
-tree (see the `terrain-shape` skill if it is installed). Use the allowlisted
+tree (see the `terrain-ecology` skill if it is installed). Use the allowlisted
 `place feature minecraft:<tree_type> <x> <y> <z>` console command, listed in
 the plan and inside a snapshotted box, or place a sapling with `mc_build` and
 let it grow. Buildings reuse; trees do not.
+For naturalistic planting, or for trees vanilla does not grow, use the
+`terrain-ecology` skill.
 
 ## Hard rules
 
@@ -195,6 +197,10 @@ the next steps yourself, in this order:
    installed; otherwise add a `site-prep` phase (clearing, levelling, pads,
    filling holes, soft-edged terraces) and tell the user if the site needs
    more than that (more than light levelling, a pad and a few terraces).
+   If a pad would sit more than about 1–2 blocks above or below the surveyed
+   ground at any edge, offer the `terrain-integrate` skill for the site
+   preparation instead: it designs the pad and a natural apron around it as the
+   first phases of this plan.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). The buildings are
    stamped from the templates first; the population phase (villagers, then
    animals, then any iron golem — see `reference/population.md`) runs last as

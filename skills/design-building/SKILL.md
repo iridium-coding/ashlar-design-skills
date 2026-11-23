@@ -185,6 +185,10 @@ this order:
    it is installed; otherwise add a `site-prep` phase (clearing, levelling,
    pads, filling holes, soft-edged terraces) and tell the user if the site
    needs more than that (more than light levelling, a pad and a few terraces).
+   If a pad would sit more than about 1–2 blocks above or below the surveyed
+   ground at any edge, offer the `terrain-integrate` skill for the site
+   preparation instead: it designs the pad and a natural apron around it as the
+   first phases of this plan.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). It runs the
    approval gate, the phased build and the verification, including the
    recorded signatures and citations.

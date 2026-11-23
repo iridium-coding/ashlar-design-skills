@@ -4,9 +4,10 @@ description: >-
   Surveys Minecraft build sites and builds approved plans on a Paper server
   through the Ashlar MCP tools (mc_status, mc_players, mc_survey, mc_render,
   mc_inspect, mc_snapshot, mc_restore, mc_build, mc_command): site surveys,
-  plan validation, an approval gate, snapshots, phased placement (directly or
-  through a local placer script for large or generated geometry),
-  verification and rollback. Use when a design skill hands off a survey or an
+  plan validation, an approval gate, snapshots and column backups, phased
+  placement (directly or through a local placer script for large or generated
+  geometry, with a runner for feature and biome commands), verification and
+  rollback. Use when a design skill hands off a survey or an
   approved plan, or when the user asks to build, test, verify or roll back a
   planned build through Ashlar.
 allowed-tools: mcp__ashlar__mc_status mcp__ashlar__mc_players mcp__ashlar__mc_survey mcp__ashlar__mc_render mcp__ashlar__mc_inspect
@@ -32,7 +33,7 @@ Run as `<mode> <project>`. Project names are kebab-case
 | `build <project>` | Validate `plan.toon`, run the approval gate, build, verify, record |
 | `verify <project>` | Re-run the acceptance and `quality_contract` checks on a built project |
 | `test <project> [<test>…] [--manual]` | Run selected functional tests from the approved plan, with `--manual` for manual tests only |
-| `rollback <project>` | Restore the project's snapshots and remove its tagged entities |
+| `rollback <project>` | Restore the project's snapshots, backups and biome probes, and remove its tagged entities |
 
 ## Scripts
 
@@ -45,6 +46,26 @@ need Python 3.11 or newer; on an older `python3`, run them as
 - Claude Code: `<skill>` is `${CLAUDE_SKILL_DIR}`.
 - Codex: `<skill>` is the folder holding this `SKILL.md`.
 - Otherwise: `<skill>` is the folder holding this `SKILL.md`.
+
+The placer's subcommands (file formats are in `reference/plan-format.md`,
+limits in `reference/tools-and-limits.md`):
+
+| Subcommand | Use |
+| --- | --- |
+| `check` | Connect and run `mc_status` |
+| `plan FILE` | Validate a phase file offline: box, cells, pages, snapshot tiles, flowing-liquid cells |
+| `place FILE (--snapshot \| --no-snapshot \| --backup DIR)` | Place a phase file under a snapshot, none (resume only), or a column backup taken first |
+| `read x1 y1 z1 x2 y2 z2 --out FILE` | Write a small box's exact block states to JSON (redstone checks) |
+| `heights --area X1 Z1 X2 Z2 --out FILE` | Write a heights file for an x/z area |
+| `backup --box X1 Y1 Z1 X2 Y2 Z2 --out DIR` | Write a column backup of a box (survey reads use the same format) |
+| `restore DIR` | Put a column backup back exactly |
+| `commands FILE [--check] [--progress PATH] [--dimension DIM]` | Run a commands file (`place feature`, `fillbiome`) through the runner; `--check` validates offline |
+| `biome-probe --box … --heights FILE --biomes FILE --out FILE [--candidates A,B]` | Record each chunk's biome before a biome change |
+| `biome-restore PROBE --out FILE` | Write the `fillbiome` commands file that undoes a probe |
+
+Exit codes: 0 done, 2 invalid input, 3 refused by a limit or rule, 4 a player
+is in the area, 5 server error, 6 the run finished but some commands failed
+(the report lists them).
 
 ## Preflight (every mode)
 
@@ -80,28 +101,40 @@ overwrites the old entry and shares its entity tag.
    yet, produce it with `<skill>/scripts/stamp.py` (`reference/modules.md`).
    For a redstone plan, confirm the pre-build checker evidence in
    [verification.md](reference/verification.md#redstone).
+   For a terrain plan, also run the checks in
+   [plan-format.md](reference/plan-format.md#validation-start-of-build): every
+   commands file passes `commands --check`, biome painting and each exact
+   drain body have their separate recorded approvals, every
+   `surface_match` file exists, and every `backup` phase's full box is known.
    Report problems and stop; fix nothing silently.
 2. **Size the run.** For each phase file, run
    `python3 <skill>/scripts/ashlar_place.py plan <phase file>` and note its
-   box, cells, pages and snapshot tiles. Add up the snapshot slots, counting
+   box, cells, pages and snapshot tiles. Add up the snapshot slots for the
+   phases that use snapshots, counting
    one more for each `commands` phase that runs `place feature` (its
-   snapshotted box). Then call
+   snapshotted box). A `backup` phase uses no slots; size it as
+   [execution.md](reference/execution.md#sizing-backup-phases) says. Then call
    `mc_snapshot` with `action: "list"` so the gate can say which existing
    snapshots would be evicted.
 3. **Approval gate** (`reference/execution.md`): show the summary and wait for
    an explicit yes. Then set `approved:` in `plan.toon` to today's date.
 4. **Build each phase in order** (`reference/execution.md`): player check,
-   snapshots, placement (`mcp`, `placer` or `commands`), fix every
-   unsupported-attachment warning, look with `mc_render`, record.
+   rollback point (snapshots, a column backup, or a biome probe), placement
+   (`mcp`, `placer`, or `commands` run by hand or by the runner from a commands
+   file), fix every unsupported-attachment warning, look with `mc_render`,
+   record. A biome phase stops for the user when its probe leaves any chunk
+   `unknown`.
    If a phase stops part way, follow the
-   [resume procedure](reference/execution.md#resuming-and-fixing).
+   [resume procedure](reference/execution.md#resuming-and-fixing), which keeps
+   its original rollback point.
 5. **Verify** (`reference/verification.md`). Fix failures and verify again.
    Never report a build done while a check fails.
    In an approved [Rung 0 calibration](reference/verification.md#rung-0-calibration-check-5),
    fix any other build failures. Once acceptance, quality and the full geometry
    diff pass, set the registry status to `built`, record `at_rest: fail` for
    the deliberate check 5 diagnostic, and run the approved calibration tests.
-6. **Report** the bounding box, materials, snapshot ids, and anything the user
+6. **Report** the bounding box, materials, snapshot ids, backup folders and
+   probe files, the runner's report for any planting, and anything the user
    must do in game (for example, flip a redstone start lever). For a redstone
    build, report all four verdicts (`built`, `at_rest`, `agent_tested`,
    `manual`). Call the machine working only when every verdict that is not
@@ -178,9 +211,14 @@ queues at most 16 operations).
 
 Follow the rollback steps in `reference/execution.md`. First call
 `mc_players`; if anyone is inside any restored box grown by 2 blocks, stop and
-tell the user. Show the user the snapshots to be restored (ids, labels, boxes)
-and any recorded snapshots that were evicted, and wait for an explicit yes.
-Then restore the snapshots newest first, remove the project's entities with
+tell the user. Show the user the rollback points to be restored (snapshot ids, labels and
+boxes; backup folders with their sizes; biome probes and the approximate biome
+reset) and any recorded snapshots that were evicted, and wait for an explicit
+yes.
+Then restore newest first: biome phases from their probes, backup phases with
+`restore`, snapshot phases with `mc_restore`. If the project is a host with a
+`<host>-ground` project, offer to roll that one back first. Remove the
+project's entities with
 `kill @e[tag=ashlar.<project>]` inside a paired force-load, tell the user what
 a restore cannot bring back, and set the registry status to `rolled-back`.
 
@@ -189,13 +227,19 @@ a restore cannot bring back, and set the registry status to `rolled-back`.
 - No world write before the user approves the plan at the gate.
 - `mc_players` before every write phase. If anyone is inside the phase's box
   grown by 2 blocks, stop and tell the user; do not build around them.
-- Snapshots before every write phase (`reference/execution.md`).
+- No write without a complete rollback point: snapshots, a column backup whose
+  manifest says complete, or, for a biome change, a probe of the same box
+  (`reference/execution.md`). A phase never writes first and records the
+  rollback point afterwards.
 - Console commands only in the forms in `reference/commands.md`. Commands that
   change the world only as listed in the approved plan's `commands` table or
   its `tests` table for test `load` rows. The read-only checks may run
   whenever surveying or verification needs them, with paired force-loads
   as described in `reference/commands.md`. Rollback mode runs its own
   `kill @e[tag=ashlar.<project>]`.
+- `fillbiome` is a last resort: only in a commands file of an approved plan,
+  only after the user's separate yes recorded in `requirements.md`, and only
+  under the other conditions in `reference/commands.md`.
 - Use the `minecraft:` prefix for console commands. Keep the columns
   touched by position and entity commands loaded as described in
   `reference/commands.md`. Pair every `forceload add` with its matching
@@ -226,11 +270,11 @@ Read the file for the step you are on:
 | File | Covers |
 | --- | --- |
 | `reference/tools-and-limits.md` | The nine Ashlar tools, limits, block-state orientation rules, warnings and caveats |
-| `reference/survey.md` | The survey procedure and the `survey.md` format |
-| `reference/plan-format.md` | `plan.toon`, phase files, `quality_contract` and `tests` rows, validation |
-| `reference/execution.md` | Approval gate, phases, ordering, snapshots, liquids, redstone, rollback |
-| `reference/verification.md` | Acceptance, `quality_contract` and redstone checks |
-| `reference/commands.md` | The console allowlist with exact command forms |
-| `reference/modules.md` | Module files and stamping |
+| `reference/survey.md` | The survey procedure, the terrain additions and the `survey.md` format |
+| `reference/plan-format.md` | `plan.toon`, phase files, `rollback` column, `quality_contract` and `tests` rows, the backup, heights, commands, progress, probe and expected-surface files, validation |
+| `reference/execution.md` | Approval gate, phases, ordering, snapshots and backups, liquids, redstone, resume, rollback |
+| `reference/verification.md` | Acceptance, `quality_contract`, terrain and redstone checks |
+| `reference/commands.md` | The console allowlist with exact command forms, including `fillbiome` and the runner |
+| `reference/modules.md` | Module files, vegetation modules and stamping |
 | `reference/registry.md` | The `.minecraft-builder` layout and `registry.json` |
 | `reference/clients.md` | Claude Code and Codex specific tools, with fallbacks |

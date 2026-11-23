@@ -38,6 +38,14 @@ flowers, grass).
 | `silhouette{region_a,region_b,sample_count,min_y_variance}` | `mc_survey` with `matrix: true` over the region's x/z (or `sample_count` evenly spaced columns along the region's longer horizontal side); the population variance of the top y values must be at least `min_y_variance` |
 | `connectivity{site_a,site_b,via}` | Follow the route the plan names for `via` as a polyline and check it like `walkability` |
 | `edge_irregularity{edge_name,from,to,max_collinear_run}` | `mc_survey` matrix along the edge; the longest run holding the same x (or z) must not exceed `max_collinear_run` |
+| `surface_match{region_a,region_b,file,tolerance,min_ratio}` | Write a fresh heights file over the region (`ashlar_place.py heights`), then run `../terrain-shape/scripts/terrain.py compare <file> <heights> --tolerance <tolerance> --min-ratio <min_ratio>`; it passes when the ratio of matching columns outside the skip mask reaches `min_ratio` |
+| `seam{from,to,max_step[,outward]}` | Take a fresh read-only column backup over the edge and the adjacent unchanged columns, from below ground through air above the canopy. Run `../terrain-shape/scripts/terrain.py seam --site <post-build-site> --from X Z --to X Z --outward x\|-x\|z\|-z --max-step <max_step>`. Use the row's direction when supplied. For an ordinary outer seam it points away from the terrain box, and for a protected apron seam it points toward the host. The column read measures ground under water and trees. |
+| `water_continuity{region_a,region_b,level}` | `mc_inspect` `columns` over sampled columns (at most 1,024 per call), including columns at the region's edge: every column whose bed is below `level` is water from the bed to `level`, with no air gap, and no water cell borders air at the edge |
+
+The terrain toolkit runs as
+`uv run --no-project --with numpy --with scipy --with pillow --with opensimplex python ../terrain-shape/scripts/terrain.py <command>`.
+`heights` reads `mc_survey` with `matrix: true` in tiles of at most 200,000
+cells.
 
 ## Look at it
 
@@ -51,6 +59,31 @@ renders):
 
 Map colours are approximate and different blocks can share one; check exact
 blocks with `mc_inspect` where it matters. `mc_render` does not show entities.
+
+## Looking at terrain
+
+Check terrain at eye level, never from the top alone:
+
+- `mc_render` `top` and `heightmap` over the box, for the overall relief;
+- `slice` views along a few x and z lines, as profiles (the shape of the ground
+  and the water against it);
+- facades of edge strips, to see the seam with the untouched ground (keep each
+  within the 200,000-cell side-view limit);
+- the terrain toolkit's offline renders, for comparison with what was built;
+- for hero terrain, ask the user to look in game and say what they see.
+
+Looking at the offline renders:
+
+- Claude Code: `Read` the PNG files.
+- Codex: `view_image` on them.
+- Otherwise: report the numbers and ask the user to open the files.
+
+## Planting
+
+The runner's report (commands placed, failed, and unknown feature ids) is the
+evidence for planted trees and features: report those counts, list the failures
+(a tree with no room to grow is not an error in the run), and do not claim a
+count the report does not show. Spot-check a few positions with `mc_inspect`.
 
 ## Entities and NBT
 

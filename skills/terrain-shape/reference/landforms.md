@@ -1,7 +1,7 @@
 # Landforms
 
 Shaping rock and land. Every technique here assumes the non-negotiable rules
-from `SKILL.md` (7-block rule, asymmetry, no 45°, double-layer).
+for natural silhouettes (7-block rule, asymmetry, no 45°, double-layer).
 
 ## The heightmap method — default for anything over ~30 blocks
 
@@ -10,20 +10,13 @@ horizontal axis, **build it from a per-column heightmap**, not from stacked
 rectangular fills. This is the technique that took Cape Aurelia from a flat
 ziggurat to "1000× better" in one rebuild.
 
-**Use the `terrain` toolkit, and render-verify it offline before placing
-anything** — `${CLAUDE_PLUGIN_ROOT}/tools/terrain` (numpy + Pillow; the 2.5-D
-counterpart of the `voxel` toolkit). You cannot see the world, and a stack of
-fills *looks* fine in a plan but builds a ziggurat. Authoring the heightfield in
-the toolkit lets you **render it and catch that in seconds**, not after a
-demolition. Read `tools/README.md` for the full API. The loop:
+Use the terrain toolkit to render and inspect the heightfield offline. `reference/terrain/toolkit-api.md` gives the launcher and import context. Follow the live-site method in `reference/terrain/method.md`.
 
 1. **Author the heightfield.** Compose the surface from primitives that encode
    the rules by construction:
 
    ```python
-   import os, sys
-   sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "tools"))
-   from terrain import HeightField, TerrainLayers, render_views, write_terrain_fills
+   from terrain import HeightField, render_views
 
    hf = (HeightField(nx, nz, sea_level=62)
          .add_fbm(46, octaves=5, base_freq=0.02, warp=20, seed=7)      # rolling base
@@ -49,7 +42,7 @@ demolition. Read `tools/README.md` for the full API. The loop:
    is right (it's the slow step).
 
 3. **Render-verify offline — mandatory.** `render_views(hf, "/abs/scratch/site")`
-   writes three PNGs; **Read them and judge against the references and the
+   writes five PNGs; **Read them and judge against the references and the
    non-negotiables before placing a block:**
    - **hillshade** — terraces, flat tops, and the ziggurat artifact show as flat
      bands; good erosion reads as branching valleys. Look here first.
@@ -58,46 +51,13 @@ demolition. Read `tools/README.md` for the full API. The loop:
    - **profile** — cross-sections: proof the slopes are compound, not flat-
      topped or pure 45°.
 
-   Tune one parameter, re-render. This replaces guessing — and is far cheaper
-   than the in-world prototype patch (do that too, but *after* the render reads
-   right).
+   - **slope** — find steep exposed faces that need rock or strata.
+   - **eye-level** — judge walls and joins from the intended approach.
 
-4. **Materialise and place.** `write_terrain_fills(hf, path, layers, origin=(x,z))`
-   bakes in the rules — double-layer substrate, a no-monoculture surface mix,
-   rock on steep faces, beaches, and **water columns continuous to the seabed**
-   — and emits the same fills JSON the `voxel` placer uses. Place it with one
-   call:
+   Tune one parameter, then re-render.
 
-   ```sh
-   python ${CLAUDE_PLUGIN_ROOT}/tools/voxel/mcp_place.py place /abs/scratch/site_fills.json
-   ```
-
-   The heights are absolute world Y, so `sea_level=62` and real coordinates work
-   directly, and coastal columns reach the floor by construction.
-
-   **On a v0.3.0+ mod, prefer `block_fill_columns`** — send the height grid +
-   palette and the server materialises the columns in one pass, with **no
-   8192-entry cap** and no client-side box decomposition (tile to ≤65,536
-   columns). Probe `tools/list` first; **fall back** to the `mcp_place.py` /
-   `block_fill_batch` path above on older mods. See `${CLAUDE_PLUGIN_ROOT}/reference/execution/engine-limits.md`
-   § Terrain helpers.
-
-   **"Generated offline" means the *heightmap math* runs offline, not via a
-   datapack.** Place with `mcp_place.py` / `block_fill_batch` / `block_fill_region`.
-   **Never generate `.mcfunction` files and `/function` them in:** the mod can
-   refuse to execute datapack functions (`/function` → "should not run",
-   `/reload` → `successCount 0`), leaving terrain patchy and half-built.
-
-5. **For reusable tiles, scratch-and-capture.** When a tile will be stamped many
-   times, place it once, `structure_save_from_world` it as
-   `mcb:<project>_terrain_<tile_id>`, then `structure_load_to_world` with varied
-   rotation / mirror / `integrity` (see `command-budget.md`). Keep tiles under
-   64×384×64. The heightfield script + its `.npy` are the reusable artifact for
-   a one-off landform too large to be a single template — record them in the
-   registry, exactly as for a large voxel model.
-
-This is fast, repeatable, and produces organic terrain by construction. Stacked
-rectangular fills produced the v1 ziggurat — do not return to that method.
+4. **Materialise and place.** Use the launcher's live-site emission. Its column stacks include substrate, mixed surfaces, rock on steep faces, beaches and closed, level water. Existing caves beneath the seal and retained bodies of water are part of the site. Inspect emitted bounds before the build approval.
+5. **For reusable details**, author reusable module files with seeded variants and stamp them into phases. Save the recipe and seeds for a one-off landform.
 
 **Import real elevation.** For a *named* real-world feature, `HeightField.from_image()`
 loads a greyscale DEM heightmap PNG (exported from QGIS / Tangram Heightmapper /
@@ -112,7 +72,7 @@ must abut seamlessly** — a ring of biomes, a valley grading into mountains, fo
 parks around a loop — do **not** author each as its own heightfield and stitch
 them: every boundary and corner becomes a wall, and dithering the palette across
 the seam blends *colour* while the *shape* discontinuity stays (terrain-shape
-hard rule 4). Author the whole span as **one field parameterised by `(s, perp)`.**
+continuous-field rule). Author the whole span as **one field parameterised by `(s, perp)`.**
 
 `s` is arc-length along a centerline (or closed loop) through the span; `perp` is
 signed perpendicular distance from it. Every cross-section parameter — base
@@ -123,8 +83,6 @@ segments, regions morph gradually and corners blend by construction.
 The `terrain` toolkit ships the primitive:
 
 ```python
-import os, sys
-sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "tools"))
 from terrain import HeightField, Centerline, render_views
 
 loop = Centerline([(20,20),(140,20),(140,108),(20,108)], closed=True)   # the rail ring
@@ -151,9 +109,7 @@ render_views(hf, "/abs/scratch/loop")             # Read the PNGs; tune; only th
 
 Layer the per-region richness (strata, hoodoos, couloirs) on top **driven by the
 same `(s, perp)`** so it stays seam-free — continuity is a base-layer property,
-richness a detail-layer one (see `SKILL.md` § Continuity belongs in the base
-layer). Render-verify offline, then place via `mcp_place.py` /
-`block_fill_columns` exactly as for the heightmap method.
+richness a detail-layer one. Render the belt as part of the same field and emit through the terrain launcher.
 
 ### Closing a canyon or valley end — same generator, not a new one
 
@@ -187,13 +143,11 @@ Hm = np.maximum(H, hf.h)                     # keep tall existing walls, raise t
 # then re-run the SAME materializer over the end window
 ```
 
-Don't re-implement this per build — `${CLAUDE_PLUGIN_ROOT}/tools/terrain/close.py`
+Don't re-implement this per build — `tools/terrain/close.py`
 ships `close_belt_end(field, centerline, keypoints, end, ...)` (also
 `from terrain import close_belt_end`), which reuses the same fbm (identical seeds,
 global grid coords) and the same thermal/hydraulic erosion via a caller-supplied
-regen callback, then merges with `np.maximum`. When you replace an old cap, also
-clear its *entire* prior footprint first — the headwall often reaches farther out
-than the new one (and survives past the world border if it was force-loaded).
+regen callback, then merges with `np.maximum`. For a re-sculpt, survey the old cap's full footprint and include its removal in the approved recipe and rollback bounds.
 
 ## Naturalising an existing rectangular mass — the talus-skirt rescue
 
@@ -291,12 +245,10 @@ bands is the sweet spot for a cliff face.
 
 - **Arches:** lay a horizontal plank of stone 1–3 blocks thick, then carve a
   parabolic profile out of the underside.
-- **Overhangs:** `block_clone_region` the top 2 strata of a cliff and
-  translate them outward 3–8 blocks (use `masked` mode).
+- **Overhangs:** extend the top two cliff strata outward 3–8 blocks in a voxel build-up form.
 - **Sea stacks:** isolated stratified columns standing in water, 5–15 across,
   12–40 tall, capped with grass and a sparse tree.
-- **Cave shells:** `fill ... hollow` to carve a chamber, then break the
-  regularity with notches and dripstone.
+- **Cave mouths:** break the rim’s regularity with notches and dripstone. Designed subterranean caves are outside this workflow.
 
 ## Coastlines
 

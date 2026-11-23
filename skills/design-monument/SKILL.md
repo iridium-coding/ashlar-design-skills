@@ -280,6 +280,10 @@ next steps yourself, in this order:
    tell the user if the site needs more than that (more than light levelling, a
    pad and a few terraces). A habitable pedestal goes to
    the `design-building` skill. They meet the figure at the recorded anchor.
+   If a pad would sit more than about 1–2 blocks above or below the surveyed
+   ground at any edge, offer the `terrain-integrate` skill for the site
+   preparation instead: it designs the pad and a natural apron around it as the
+   first phases of this plan.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). Voxelized forms
    go through the placer; armor stands and display entities run last as
    allowlisted `summon` commands.

@@ -123,3 +123,98 @@ def test_out_creates_the_parent_folder(tmp_path):
                            "--out", str(out)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     assert json.loads(out.read_text(encoding="utf-8"))["blocks"][0]["pos"] == [0, 64, 0]
+
+
+TREE = {"name": "t", "size": [3, 4, 3], "kind": "vegetation", "anchor": [1, 0, 1],
+        "ground": {"fills": [], "blocks": []},
+        "wood": {"fills": [{"from": [1, 0, 1], "to": [1, 2, 1], "block": "minecraft:oak_log[axis=y]"}],
+                 "blocks": []},
+        "leaves": {"fills": [{"from": [0, 3, 0], "to": [2, 3, 2],
+                              "block": "minecraft:oak_leaves[persistent=true]"}],
+                   "blocks": [{"pos": [1, 2, 0], "block": "minecraft:oak_leaves[persistent=true]"}]}}
+HUT = {"name": "hut", "size": [3, 2, 2],
+       "fills": [{"from": [0, 0, 0], "to": [2, 1, 1], "block": "minecraft:stone"}]}
+
+
+def _write_modules(tmp_path, modules):
+    folder = tmp_path / "modules"
+    folder.mkdir(exist_ok=True)
+    for name, module in modules.items():
+        (folder / f"{name}.json").write_text(json.dumps(module), encoding="utf-8")
+    return folder
+
+
+def _row(module, origin, rotation=0, mirror="none", phase=1):
+    return {"module": module, "origin": origin, "rotation": rotation, "mirror": mirror,
+            "phase": phase}
+
+
+def test_vegetation_overlap_allowed_and_ordered(tmp_path):
+    modules = _write_modules(tmp_path, {"tree": TREE})
+    out = st.stamp_all([_row("tree", [0, 64, 0]), _row("tree", [2, 64, 0])], modules)
+    assert out["blocks"] == []
+    wood = [i for i, f in enumerate(out["fills"]) if f["block"].startswith("minecraft:oak_log")]
+    leaves = [i for i, f in enumerate(out["fills"]) if "oak_leaves" in f["block"]]
+    assert len(wood) == 2 and len(leaves) == 4
+    assert max(wood) < min(leaves)
+
+
+def test_vegetation_parts_carry_the_air_filter(tmp_path):
+    tree = json.loads(json.dumps(TREE))
+    tree["ground"] = {"fills": [], "blocks": [{"pos": [0, 0, 0], "block": "minecraft:dirt"},
+                                              {"pos": [1, 0, 0], "block": "minecraft:dirt"}]}
+    modules = _write_modules(tmp_path, {"tree": tree})
+    out = st.stamp_all([_row("tree", [0, 64, 0])], modules)
+    assert out["blocks"] == []
+    assert out["fills"][0] == {"from": [0, 64, 0], "to": [1, 64, 0], "block": "minecraft:dirt"}
+    assert "filter" not in out["fills"][0]
+    rest = out["fills"][1:]
+    assert rest and all(f["filter"] == "minecraft:air" for f in rest)
+    assert rest[0] == {"from": [1, 64, 1], "to": [1, 66, 1], "block": "minecraft:oak_log[axis=y]",
+                       "filter": "minecraft:air"}
+    assert rest[-1] == {"from": [1, 66, 0], "to": [1, 66, 0],
+                        "block": "minecraft:oak_leaves[persistent=true]", "filter": "minecraft:air"}
+
+
+def test_vegetation_cannot_overlap_a_building(tmp_path):
+    modules = _write_modules(tmp_path, {"tree": TREE, "hut": HUT})
+    with pytest.raises(st.StampError):
+        st.stamp_all([_row("hut", [0, 64, 0]), _row("tree", [2, 64, 0])], modules)
+    with pytest.raises(st.StampError):
+        st.stamp_all([_row("tree", [2, 64, 0]), _row("hut", [0, 64, 0])], modules)
+
+
+@pytest.mark.parametrize("rotation,axis", [(90, "z"), (270, "z"), (180, "x")])
+def test_vegetation_rotation_turns_log_axis(tmp_path, rotation, axis):
+    tree = json.loads(json.dumps(TREE))
+    tree["wood"] = {"fills": [{"from": [0, 1, 1], "to": [2, 1, 1], "block": "minecraft:oak_log[axis=x]"}],
+                    "blocks": []}
+    modules = _write_modules(tmp_path, {"tree": tree})
+    out = st.stamp_all([_row("tree", [0, 64, 0], rotation=rotation)], modules)
+    log = next(f for f in out["fills"] if "oak_log" in f["block"])
+    assert log["block"] == f"minecraft:oak_log[axis={axis}]"
+
+
+def test_vegetation_mirror_flips_cells(tmp_path):
+    tree = json.loads(json.dumps(TREE))
+    tree["leaves"]["blocks"] = [{"pos": [0, 2, 0], "block": "minecraft:oak_leaves[persistent=true]"}]
+    modules = _write_modules(tmp_path, {"tree": tree})
+    out = st.stamp_all([_row("tree", [0, 64, 0], mirror="x")], modules)
+    leaf = out["fills"][-1]
+    assert leaf["from"] == [2, 66, 0] and leaf["to"] == [2, 66, 0]
+    assert leaf["filter"] == "minecraft:air"
+    wood = next(f for f in out["fills"] if "oak_log" in f["block"])
+    assert wood["from"] == [1, 64, 1] and wood["to"] == [1, 66, 1]
+
+
+@pytest.mark.parametrize("change", [
+    lambda m: m.pop("anchor"),
+    lambda m: m.update(anchor=[3, 0, 0]),
+    lambda m: m.update(roots={"fills": [], "blocks": []}),
+    lambda m: m.update(fills=[]),
+])
+def test_vegetation_module_needs_anchor_and_parts(change):
+    module = json.loads(json.dumps(TREE))
+    change(module)
+    with pytest.raises(st.StampError):
+        st.stamp(module, [0, 64, 0], 0, "none")

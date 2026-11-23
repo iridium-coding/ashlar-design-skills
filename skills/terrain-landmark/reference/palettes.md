@@ -1,1 +1,1 @@
-Moved to the shared core: `${CLAUDE_PLUGIN_ROOT}/reference/terrain/palettes.md`. See there.
+See the shared [terrain palettes](../../terrain-shape/reference/terrain/palettes.md).

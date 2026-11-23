@@ -1,0 +1,231 @@
+"""Give yourself eyes on the *terrain* before you place a block — the single
+habit that turns a 3-iteration ziggurat into a 1-iteration headland.
+
+Three views, each catching a different class of error:
+
+- **hillshade** — relief shading from the surface normals. The make-or-break
+  view: terraces, flat tops, and the ziggurat artifact show up instantly as
+  flat bands; organic erosion reads as branching drainage. Look here first.
+- **relief** — hypsometric colour (sea → beach → green → brown → snow) with the
+  hillshade multiplied over it and water filled to sea level. Reads as a map;
+  good for massing, coastline shape, lake/island outlines.
+- **profile** — cross-section line(s). The proof a slope is compound and not a
+  pure 45° wall or a flat-topped step. Plots a few slices with the sea line.
+
+All numpy + Pillow. Images are oriented +x → right, +z → down (a plan view, like
+the ``top`` voxel render). Render, ``Read`` the PNGs, judge them against the
+references and the non-negotiable rules, tune one parameter, re-render.
+"""
+from __future__ import annotations
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+from .field import HeightField
+
+_SEA = (40, 90, 150)
+
+
+def _hillshade(h, azimuth=315.0, altitude=45.0, z_factor=2.0):
+    gx, gz = np.gradient(h * z_factor)
+    slope = np.pi / 2.0 - np.arctan(np.hypot(gx, gz))
+    aspect = np.arctan2(-gz, gx)
+    az = np.radians(360.0 - azimuth + 90.0)
+    alt = np.radians(altitude)
+    shade = (np.sin(alt) * np.sin(slope)
+             + np.cos(alt) * np.cos(slope) * np.cos(az - aspect))
+    return np.clip(shade, 0.0, 1.0)
+
+
+def _to_image(arr_xz):
+    """arr indexed [x, z] → PIL image with +x right, +z down."""
+    return Image.fromarray(np.ascontiguousarray(arr_xz.transpose(1, 0, 2)
+                                                if arr_xz.ndim == 3
+                                                else arr_xz.T))
+
+
+def _upscale(im, px):
+    if px > 1:
+        im = im.resize((im.width * px, im.height * px), Image.NEAREST)
+    return im
+
+
+def render_hillshade(hf: HeightField, out: str, *, azimuth: float = 315.0,
+                     altitude: float = 45.0, z_factor: float = 2.0,
+                     px: int = 3, water=None) -> str:
+    shade = _hillshade(hf.h, azimuth, altitude, z_factor)
+    g = (shade * 255).astype(np.uint8)
+    rgb = np.stack([g, g, g], axis=-1)
+    wet = hf.h < hf.sea_level if water is None else np.isfinite(water)
+    rgb[wet] = _SEA
+    _upscale(_to_image(rgb), px).save(out)
+    return out
+
+
+def _hypsometric(t):
+    """Map normalised land height t∈[0,1] → RGB (beach→green→brown→snow)."""
+    stops = [
+        (0.00, (198, 186, 130)),   # sand / beach
+        (0.12, (96, 150, 70)),     # lowland green
+        (0.45, (120, 142, 78)),    # upland
+        (0.70, (140, 120, 92)),    # rock brown
+        (0.88, (150, 146, 140)),   # bare grey rock
+        (1.00, (240, 240, 245)),   # snow
+    ]
+    for (t0, c0), (t1, c1) in zip(stops[:-1], stops[1:]):
+        if t <= t1:
+            f = (t - t0) / max(t1 - t0, 1e-9)
+            return tuple(int(c0[i] + (c1[i] - c0[i]) * f) for i in range(3))
+    return stops[-1][1]
+
+
+def render_relief(hf: HeightField, out: str, *, px: int = 3,
+                  z_factor: float = 2.0, water=None) -> str:
+    h = hf.h
+    levels = np.where(h < hf.sea_level, hf.sea_level, np.nan) if water is None else water
+    wet = np.isfinite(levels)
+    land = ~wet
+    lo = hf.sea_level if water is None or not land.any() else float(h[land].min())
+    hi = max(float(h[land].max()) if land.any() else lo + 1, lo + 1)
+    norm = np.clip((h - lo) / (hi - lo), 0.0, 1.0)
+
+    # build a small lookup for speed
+    ramp = np.array([_hypsometric(i / 255.0) for i in range(256)], dtype=float)
+    idx = (norm * 255).astype(int)
+    rgb = ramp[idx]
+
+    shade = _hillshade(h, z_factor=z_factor)[..., None]
+    rgb = rgb * (0.45 + 0.55 * shade)                  # multiply hillshade over colour
+
+    # water: depth-tinted blue
+    depth = np.clip((np.where(wet, levels, h) - h) / 12.0, 0.0, 1.0)[..., None]
+    blue = np.array(_SEA, float) * (1.0 - 0.4 * depth)
+    rgb = np.where(wet[..., None], blue, rgb)
+
+    _upscale(_to_image(np.clip(rgb, 0, 255).astype(np.uint8)), px).save(out)
+    return out
+
+
+def render_profile(hf: HeightField, out: str, *, axis: str = "x",
+                   slices: int = 3, scale: int = 3, pad: int = 8, water=None) -> str:
+    """Cross-section line plot. ``axis='x'`` profiles run along x at evenly
+    spaced z (and vice-versa). Flat tops and pure-45° walls are obvious here;
+    compound convex/concave slopes are the goal."""
+    h = hf.h if axis == "x" else hf.h.T
+    length, width = h.shape
+    indices = np.linspace(width * 0.2, width * 0.8, slices).astype(int)
+    if water is not None:
+        liquid = water if axis == "x" else water.T
+        wet_count = np.isfinite(liquid).sum(axis=0)
+        if wet_count.any() and not wet_count[indices].any():
+            indices[len(indices) // 2] = wet_count.argmax()
+        wet_lines = liquid[:, indices].T
+    lines = h[:, indices].T
+
+    y_lo = float(min(l.min() for l in lines))
+    y_hi = float(max(l.max() for l in lines))
+    if water is None:
+        y_lo = min(y_lo, hf.sea_level)
+    elif np.isfinite(wet_lines).any():
+        y_hi = max(y_hi, float(np.nanmax(wet_lines)))
+    span = max(y_hi - y_lo, 1.0)
+    W = length * scale + 2 * pad
+    H = int(span * scale) + 2 * pad
+    img = Image.new("RGB", (W, H), (245, 245, 245))
+    d = ImageDraw.Draw(img)
+
+    def to_xy(i, y):
+        return pad + i * scale, H - pad - (y - y_lo) * scale
+
+    if water is None:
+        sy = to_xy(0, hf.sea_level)[1]
+        d.line([(pad, sy), (W - pad, sy)], fill=_SEA, width=1)
+
+    palette = [(20, 20, 20), (180, 60, 60), (60, 110, 200)]
+    for k, line in enumerate(lines):
+        col = palette[k % len(palette)]
+        pts = [to_xy(i, float(line[i])) for i in range(len(line))]
+        d.line(pts, fill=col, width=2)
+        if water is not None:
+            for i in np.flatnonzero(np.isfinite(wet_lines[k])):
+                x, sy = to_xy(i, wet_lines[k, i])
+                d.line([(x, sy), (x + scale - 1, sy)], fill=_SEA, width=1)
+    img.save(out)
+    return out
+
+
+def render_slope(hf: HeightField, out: str, *, px: int = 3,
+                 steep_deg: float = 50.0, water=None) -> str:
+    """Slope-map view (Pillar 8): green = gentle, yellow = moderate, red = steep
+    (≥ ``steep_deg``), blue = water. The view that exposes the bare-vertical-wall
+    failure mode — anything red must be materialised as rock by the slant
+    palette, not left as default surface."""
+    from .masks import slope_deg
+    s = slope_deg(hf.h)
+    t = np.clip(s / 90.0, 0.0, 1.0)
+    # green→yellow→red ramp
+    r = np.clip(t * 2.0, 0, 1)
+    g = np.clip(2.0 - t * 2.0, 0, 1)
+    rgb = np.stack([r, g, np.zeros_like(t)], axis=-1) * 255.0
+    rgb[s >= steep_deg] = (220, 30, 30)
+    wet = hf.h < hf.sea_level if water is None else np.isfinite(water)
+    rgb[wet] = _SEA
+    _upscale(_to_image(np.clip(rgb, 0, 255).astype(np.uint8)), px).save(out)
+    return out
+
+
+def render_eye_level(hf: HeightField, out: str, *, axis: str = "x",
+                     at: float | None = None, scale: int = 3, pad: int = 10,
+                     water=None) -> str:
+    """A single filled cross-section drawn as a *side elevation* — what a player
+    standing beside the landform actually sees (the view top-down renders hide).
+    Fills terrain solid below the surface line and water to sea level, so flat
+    vertical faces and hidden cliffs are unmistakable."""
+    h = hf.h if axis == "x" else hf.h.T
+    length, width = h.shape
+    index = int(width * (0.5 if at is None else at))
+    if water is not None:
+        liquid = water if axis == "x" else water.T
+        wet_count = np.isfinite(liquid).sum(axis=0)
+        if at is None and not wet_count[index] and wet_count.any():
+            index = int(wet_count.argmax())
+        levels = liquid[:, index]
+    else:
+        levels = np.full(length, hf.sea_level)
+    line = h[:, index]
+    wet = np.isfinite(levels)
+    y_lo = float(min(line.min(), hf.sea_level)) if water is None else float(line.min())
+    y_hi = float(max(line.max(), levels[wet].max())) if wet.any() else float(line.max())
+    span = max(y_hi - y_lo, 1.0)
+    W = length * scale + 2 * pad
+    H = int(span * scale) + 2 * pad
+    img = Image.new("RGB", (W, H), (200, 220, 240))      # sky
+    d = ImageDraw.Draw(img)
+
+    def yx(i, y):
+        return pad + i * scale, H - pad - (y - y_lo) * scale
+
+    for i in np.flatnonzero(wet):
+        x, water_y = yx(i, levels[i])
+        d.rectangle([x, water_y, x + scale - 1, H - pad], fill=(60, 110, 170))
+    # solid terrain columns
+    for i in range(len(line)):
+        x0 = pad + i * scale
+        top = H - pad - (float(line[i]) - y_lo) * scale
+        col = (120, 110, 95) if wet[i] and line[i] < levels[i] else (110, 160, 70)
+        d.rectangle([x0, top, x0 + scale - 1, H - pad], fill=col)
+    img.save(out)
+    return out
+
+
+def render_views(hf: HeightField, prefix: str, *, px: int = 3, water=None) -> list:
+    """Write the standard terrain views and return their paths. Now includes the
+    slope map and an eye-level elevation — never judge terrain from the top-down
+    views alone (the parks-grand-loop lesson)."""
+    return [
+        render_hillshade(hf, f"{prefix}_hillshade.png", px=px, water=water),
+        render_relief(hf, f"{prefix}_relief.png", px=px, water=water),
+        render_profile(hf, f"{prefix}_profile.png", water=water),
+        render_slope(hf, f"{prefix}_slope.png", px=px, water=water),
+        render_eye_level(hf, f"{prefix}_eye.png", water=water),
+    ]

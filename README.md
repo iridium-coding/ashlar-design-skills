@@ -3,27 +3,36 @@
 </p>
 
 > **This fork** ([iridium-coding/ashlar-design-skills](https://github.com/iridium-coding/ashlar-design-skills))
-> adapts the six `design-*` skills and `survey-research` to build through the
-> [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on a Paper server,
-> and adds the `exec-ashlar` skill and ports `system-redstone`. Chapman's other
-> skills are unchanged and not needed. To use the adapted skills in a workspace
-> with Claude Code and Codex, clone this repo into the workspace as
+> uses the [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on Paper.
+> Its thirteen Ashlar skills include the six `design-*` skills,
+> `survey-research`, `exec-ashlar`, `system-redstone`, `terrain-shape`,
+> `terrain-landmark`, `terrain-ecology`, and `terrain-integrate`.
+> To use them with Claude Code and Codex, clone this repo into the workspace as
 > `ashlar-design-skills/`, then from the workspace root:
 >
 > ```bash
 > mkdir -p .claude/skills .agents/skills
-> for s in design-building design-city design-grounds design-house design-monument design-village exec-ashlar survey-research system-redstone; do
+> for s in design-building design-city design-grounds design-house design-monument design-village \
+>          exec-ashlar survey-research system-redstone \
+>          terrain-shape terrain-landmark terrain-ecology terrain-integrate; do
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".claude/skills/$s"
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".agents/skills/$s"
 > done
 > ```
 >
-> Start Claude Code or Codex from the workspace root. Personal copies under
-> `~/.claude/skills` with the same names override the linked project skills, so
-> remove them. The scripts need Python 3.11 or newer (or
-> `uv run --no-project --python 3.11 python <script> ...`), and the voxel
-> toolkit runs through `uv`. The design and the rules
-> for these skills are in `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
+> Start Claude Code or Codex from the workspace root. If a skill has a
+> personal copy with the same name, check which source the client loaded.
+> The scripts need Python 3.11 or newer. From the workspace root, run the
+> terrain launcher with its dependencies.
+>
+> ```bash
+> uv run --no-project --with numpy --with scipy --with pillow --with opensimplex \
+>   python ashlar-design-skills/skills/terrain-shape/scripts/terrain.py --help
+> ```
+>
+> The design and rules are in the [foundation spec](docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md),
+> [terrain spec](docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md),
+> and [redstone spec](docs/superpowers/specs/2026-11-19-ashlar-redstone-design.md).
 
 # Minecraft Java — Claude Plugin
 

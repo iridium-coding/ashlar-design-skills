@@ -67,6 +67,8 @@ reading as an empty shell.
   organic, varied results. Mix flower types and planters; keep paths and
   bushes irregular (see also the `terrain-shape` skill's weathering guidance,
   if it is installed).
+  For naturalistic planting, or for trees vanilla does not grow, use the
+  `terrain-ecology` skill.
 
 ---
 

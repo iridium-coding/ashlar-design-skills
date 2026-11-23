@@ -1,65 +1,50 @@
 ---
 name: terrain-shape
 description: >-
-  Authors naturalistic terrain in a live Minecraft Java world — mountains,
-  valleys, hills, rivers, lakes, coastlines, islands, plateaus — as one
-  continuous sampler-graph recipe, verifies it offline, and emits executable
-  phases. Produces eroded, mask-materialized, biome-blended terrain that reads as
-  real, never stacked rectangles or terraced ziggurats. Tier-3 leaf, invoked by
-  the build-* orchestrators (was: terraforming).
+  Use when shaping or re-sculpting natural Minecraft Java terrain, including mountains,
+  valleys, hills, rivers, lakes, coasts, islands, plateaus or the ground under a build.
+  Builds through Ashlar with the exec-ashlar skill.
 model: sonnet
 effort: high
-context: fork
-color: green
+metadata:
+  short-description: Shape natural terrain around the measured land and water.
 ---
 
-# terrain-shape (Tier-3 leaf)
+# Shape natural terrain
 
-You author naturalistic terrain as a **recipe** (a sampler graph), verify it
-offline, and emit phases — you never hand-place fills or stack rectangles. You are
-a forked leaf driving `${CLAUDE_PLUGIN_ROOT}/tools/terrain`. Read
-`${CLAUDE_PLUGIN_ROOT}/reference/terrain/method.md` (the pipeline) and
-`toolkit-api.md` (the API). These are your single source of truth — do not restate
-the method, follow it.
+Run `mc_status`. If Ashlar is unreachable, stop and tell the user. For a standalone request, start a project in `.minecraft-builder/<project>/`. For a design skill's build, use its project, datum, footprint as a pad, palette and plan. Add the terrain phases to that plan.
 
-## The method (see method.md)
+Run `exec-ashlar survey <project>` using `../exec-ashlar/reference/survey.md`. Capture heights over the terrain box plus at least 16 blocks and an exact site read with an eight-block horizontal margin, from the lowest seal through air above the tallest canopy. Check the top of the exact columns; extend a read that clips foliage. Run `terrain.py survey --site DIR --box X1 Y1 Z1 X2 Y2 Z2` on the actual terrain box. Record surface materials, liquid levels, trees, block entities and non-natural blocks. If the box contains a village or player structure, stop for the user's decision. Inspect ambiguous blocks and the approaches players use.
 
-```
-recipe (sampler graph) → HeightField.from_graph → erosion (thermal→hydraulic,
-pad_cells) → fluvial rivers → climate/biome → seam blend → masks → materialize
-(block_fill_columns + slant) → scatter → verify (GATE A) → emit plan.toon phases
-```
+For standalone work, ask which landform, extent, character and viewing position the user wants. For a recognisable named wonder, hand the composition of its signature forms to `terrain-landmark`. For a joint build, resolve any missing dimensions against its footprint.
 
-Use `terrain.emit.emit_plan_toon(recipe, prefix)` to run the whole pipeline + the
-verify gate and write the `plan.toon` terrain phase (pre-tiled `columns`/`strata`
-steps, `fillbiome`, `scatter`, the `recipe.json`, and the offline verify token) that
-`exec-worker` runs through the harness; `emit_world(recipe)` returns just the raw
-payloads if you need them. `render_views(field, prefix)` shows the 5 PNGs
-(hillshade, relief, profile, **slope**, **eye-level**). Fix the recipe, not the blocks.
+- Claude Code: use `AskUserQuestion` for choices.
+- Codex: use `request_user_input` when available.
+- Otherwise: ask in plain text.
 
-## Non-negotiables (the verify gate enforces these — HALT on fail)
+## Author and review
 
-1. **One continuous field** — never butt independent regions; blend with the belt
-   (`Centerline`+`belt_from_path`) or `blend.sparse_convolution_blend`. A seam is
-   a SHAPE problem; a colour pass cannot fix it.
-2. **No ziggurats** — heightfield → `block_fill_columns`, never stacked Y-band
-   fills. The verify gate detects and rejects terracing.
-3. **Mask-driven surface** — rock on steep faces (slant palette), snow above the
-   snowline, beach near water, mix everywhere. No monoculture.
-4. **Verify at eye-level, never top-down alone** — judge the slope + eye-level
-   renders; they expose the bare-wall failure top-down hides.
-5. **Erosion is the realism multiplier** — thermal then hydraulic (pad_cells to
-   kill edge seams) before materializing.
-6. **Save the recipe** — persist `recipe.json`; a re-sculpt edits one node and
-   re-evaluates, never discards detail.
+Write `terrain/<element>.recipe.json` as one continuous sampler graph. Set `element`, world `origin: [x1, 0, z1]`, `nx`, `nz`, `site.read` and `site.band`. Add `pads`, seeded `water` basins, `falls`, carve/build `forms` and `material.strata_top` where called for. Use a mask-driven MaterialSpec. See `reference/terrain/method.md` for the field, shore and approval rules, `reference/terrain/toolkit-api.md` for invocation and recipe keys, and `reference/landforms.md` for shape examples.
 
-## Contract with the orchestrator
+Design around existing water and lava first. Keep isolated water, its shore and trees according to the measured site. For a necessary drain, follow the dedicated per-body question and manifest checks in `reference/terrain/water.md`. Keep the existing biome for grading. Biome labels guide the palette and planting only.
 
-Honour the shared coherence context (one datum/sea_level, one palette family, one
-biome plan). Write `terrain/<element>.recipe.json`, the verified terrain phases
-into `plan.toon` (`columns`/`strata`/`fillbiome`/`scatter` ops), and the
-`quality_contract` rows from `${CLAUDE_PLUGIN_ROOT}/reference/terrain/validation.md`.
-Return the recipe path + a one-line summary to the orchestrator (which sequences
-`terrain-ecology` for planting and `terrain-integrate` for grounding). Flag reusable
-terrain modules to save as `mcb:<project>_terrain_<element>` (the orchestrator runs
-`exec-blueprint`).
+Run `terrain.py field RECIPE --project DIR` for GATE A. Review the current files under `terrain/previews/`. Correct a failed check in the recipe and repeat. Review hillshade, relief and profile along with slope and eye-level views.
+
+- Claude Code: use `Read` on the PNG files.
+- Codex: use `view_image` on the PNG files.
+- Otherwise: give the verify report's measurements and ask the user to open the files.
+
+Get **design approval** on the renders, world and bounds, relief, changed cells, palette, planned water, liquid kept/covered/added, any drains, trees removed and reach, planting counts, custom-tree previews and phase order. Identify pending planting choices. Hand off to `terrain-ecology` with the field and recipe. A bare landform may need no planting. Show any revised counts, previews or scope and get approval of the final design before emission.
+
+Emit with `terrain.py emit RECIPE --project DIR --first-phase N` (add `--standalone` for its own plan). For each approved drain, append `--drain-approved BODY_ID` once, for example `--drain-approved FIRST_ID --drain-approved SECOND_ID` for two approved bodies. Merge the phase and quality rows from `terrain/<element>.plan-rows.toon` with the host plan. Order site preparation and terrain mass, carve/build forms, flowing sources, host build, custom trees, vanilla features, ground cover, any separately approved biome phase, then entities. Hand off to `exec-ashlar build <project>` for **separate build approval** and fresh per-phase rollback points before any world write.
+
+After building, verify the measured surface and seams, top and heightmap views, vertical x/z slices and edge-strip facades. Ask for an in-game look at hero terrain. Re-sculpt by editing the saved recipe and re-emitting as an iteration with fresh backups. A full rollback restores phases newest first.
+
+## Six non-negotiables
+
+1. Use one continuous field. Blend neighbouring shapes with a belt or sparse convolution.
+2. No ziggurats. Materialise the heightfield into column stacks.
+3. Drive the surface with masks for cliffs, snow, beaches and material mixes.
+4. Verify at eye level. Review slope and eye-level views even when the top looks right.
+5. Erode thermally, then hydraulically with `pad_cells`, before materialising.
+6. Save the recipe, including the seeds, so a later edit preserves detail.

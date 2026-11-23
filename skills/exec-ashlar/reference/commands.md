@@ -21,6 +21,7 @@ force-load (below), unless a player is near the site.
 | Change one of the build's entities | `data merge entity @e[tag=ashlar.<project>,…,limit=1] {…}` |
 | Put an item in a container slot | `item replace block <x> <y> <z> container.<n> with <item>[<components>] [count]` |
 | Grow a tree or other feature | `place feature <feature> <x> <y> <z>` |
+| Change a region's biome (last resort) | `fillbiome <x1> <y1> <z1> <x2> <y2> <z2> <biome>` |
 | Remove the build's entities | `kill @e[tag=ashlar.<project>…]` |
 | Keep chunks loaded for position and entity commands | `forceload add <x1> <z1> [<x2> <z2>]` |
 | Release those chunks | `forceload remove <x1> <z1> [<x2> <z2>]` |
@@ -29,7 +30,7 @@ Read-only checks:
 
 | Purpose | Form |
 | --- | --- |
-| Test the biome at a position | `execute if biome <x> <y> <z> <biome>` |
+| Test the biome at a position (also the biome probe's test, inside its paired force-loads) | `execute if biome <x> <y> <z> <biome>` |
 | Read block-entity NBT | `data get block <x> <y> <z> [path]` |
 | Read one of the build's entities | `data get entity @e[tag=ashlar.<project>,…,limit=1] [path]` |
 | Count the build's entities | `execute if entity @e[tag=ashlar.<project>,…]` |
@@ -97,13 +98,58 @@ Read-only checks:
   a chunk that is not force-loaded and has no player nearby proves nothing: the
   chunk may just be unloaded. Repeat the check inside a force-load. For manual
   test evidence, repeat it with the user close enough to load the chunk.
-- `place feature` changes blocks: keep it inside a snapshotted box.
+- `place feature` changes blocks: keep it inside a snapshotted or backed-up
+  box.
 - Never clear containers through the console.
 - Write commands without a leading `/`.
 - Snapshots do not capture entities or block-entity contents: rollback removes
   entities with `kill` and cannot bring NBT back (`execution.md`).
 - In `plan.toon`, wrap each command in double quotes and escape its inner double
   quotes as `\"`, because commands contain commas (see `plan-format.md`).
+
+## `fillbiome`
+
+A last resort, for when a biome change is the only way to get the result. Use
+it only when all five hold:
+
+1. It is in a commands file of an approved plan.
+2. Every position is inside the plan's terrain box.
+3. The user gave a separate yes to the biome change, recorded in
+   `requirements.md` (the plan's notes point at it).
+4. A biome probe of the same box was taken immediately before (it is the only
+   way back).
+5. The boxes are chunk-aligned and each command stays within the server's
+   `fillbiome` block limit, 32,768 blocks by default (the command's error says
+   if the server uses another).
+
+`fillbiome` only changes the stored biome, not blocks, but it is not undone by
+snapshots or backups; `biome-restore` rolls it back at chunk resolution.
+
+## The runner
+
+`place feature` and `fillbiome` in a commands file run through
+`ashlar_place.py commands`, which applies the prefix, force-load and player
+rules itself; do not wrap them by hand. It:
+
+1. adds the `minecraft:` prefix to each command;
+2. queries force-loads first and never adds or removes a chunk that was already
+   force-loaded;
+3. groups the commands into tiles of at most 256 chunks, with a one-chunk margin
+   so trees can grow across chunk edges;
+4. checks players before each tile (a player inside the tile's box grown by the
+   margin stops the run, exit 4), adds the force-load, runs the tile's commands
+   one at a time, and removes the force-load, even after a failure; a removal
+   it could not make is reported with its chunks (exit 5);
+5. continues after a failed command (a tree with no room to grow), records each
+   result in the progress file, and exits 6 listing the failures.
+
+`--dimension DIM` wraps every command it sends in `execute in DIM run …`; use
+it only when the user agreed at the gate (see the rule above). `--check` runs
+offline and prints `eligible_forceloads` as inclusive chunk rectangles
+`[x1, z1, x2, z2]` in execution order. `eligible_chunks` counts the unique
+chunks in those rectangles, including the feature margin. Use these values
+for the approval preview. `biome-probe` force-loads like the runner and checks
+players too.
 
 ## Examples
 

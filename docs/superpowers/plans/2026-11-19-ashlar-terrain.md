@@ -8,7 +8,7 @@
 
 **Tech Stack:** Markdown Agent Skills (Claude Code and Codex); Python 3.11+ standard library for `ashlar_place.py` and `stamp.py`; numpy, scipy, Pillow and opensimplex through `uv run` for the toolkit; the voxel toolkit already in `skills/design-monument/tools/voxel/`; pytest; Ashlar 0.4.9 on Paper 26.3; Node 20+ for upstream's `scripts/validate-plugin.mjs`.
 
-**Spec:** `docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md` (committed as `b15a004`). Executors read the spec and this plan together; "spec §N" means that section. Spec 1 is `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
+**Spec:** `docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md` (original at `b15a004`). Read the current spec with this plan. The 2026-11-22 amendments require separate approval for each drain body and limit biome painting to the user's approved biome ID. Spec 1 is `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
 
 ## Global Constraints
 
@@ -961,14 +961,14 @@ def plan_features(hf: HeightField, surface_ids: np.ndarray, mix: dict[str, dict[
                   origin: tuple[int, int], seed: int, known: frozenset[str],
                   water: np.ndarray | None = None) -> list[Feature]
 def features_file(features: list[Feature], *, world: str | None, reach: tuple[int, int] = (8, 32)) -> dict   # F3 "features"; box = points grown by 8 sideways, 32 up, 2 down
-def biome_commands(labels: np.ndarray, *, origin: tuple[int, int], y_range: tuple[int, int],
-                   limit: int = 32_768) -> list[str]     # chunk-aligned; majority label per chunk; ≤ limit / 256 high per command
+def biome_commands(biome: str, *, origin: tuple[int, int], size: tuple[int, int], y_range: tuple[int, int],
+                   limit: int = 32_768) -> list[str]     # chunk-aligned; paint only the approved ID; ≤ limit / 256 high per command
 def mark_trunks(surface: dict, points: Iterable[tuple[int, int]], radius: int = 2) -> dict           # F6 skip mask
 ```
 
 `plan_features` runs canopy, then understory, then ground cover, using `scatter.density_map` (no trees on steep ground or under water, a boost near water) and `scatter.poisson` per layer with `LAYER_SPACING`; later layers keep `r_min` away from earlier points; points land only on `GROWABLE` surfaces; `y = surface + 1`. Any id in `mix` not in `known` raises `ValueError` naming it.
 
-Launcher: `plant (--recipe RECIPE | --site DIR --box X1 Z1 X2 Z2) --project DIR --phase N --mix MIX.json [--version V] [--biome-change]`. A recipe plants the designed field (surface ids from `resolve_surface`); `--site` plants existing land (ground and surface blocks from the site read, so it uses the site read where spec §8.4 says heights file — the exact surface blocks are needed). It writes `phases/<NN>-<element>-features.commands.json`, updates the surface file, and prints the phase row (`via: commands`, `file` = the commands file, `rollback: backup`, `from`/`to` = the file's box). Only with `--biome-change` does it also write `phases/<NN+1>-<element>-biome.commands.json` and its row (`rollback: biome`).
+Launcher: `plant (--recipe RECIPE | --site DIR --box X1 Z1 X2 Z2) --project DIR --phase N --mix MIX.json [--version V] [--biome-change ID]`. A recipe plants the designed field using `resolve_surface`. The `--site` option plants existing land using the exact surface blocks in the site read. It writes `phases/<NN>-<element>-features.commands.json`, updates the surface file, and prints the phase row (`via: commands`, `rollback: backup`, `from`/`to` from the commands file). Only with the approved ID in `--biome-change ID` does it also write `phases/<NN+1>-<element>-biome.commands.json` and its row (`rollback: biome`). Validate the ID against the selected version and use it in every biome command.
 
 **Acceptance Criteria:**
 - [ ] No feature on a slope over the cliff threshold, under water, or on a non-growable surface.
@@ -976,7 +976,7 @@ Launcher: `plant (--recipe RECIPE | --site DIR --box X1 Z1 X2 Z2) --project DIR 
 - [ ] An unknown id is refused before anything is written.
 - [ ] The features file's box contains every feature grown by the reach.
 - [ ] Biome commands are chunk-aligned (`x1 % 16 == 0`, `x2 % 16 == 15`) and each covers at most 32,768 blocks.
-- [ ] Without `--biome-change`, no biome file is written.
+- [ ] Without `--biome-change ID`, no biome file is written. With it, every command paints the approved ID.
 
 **Verify:** `uv run --no-project --with pytest --with numpy --with scipy --with pillow --with opensimplex pytest tests/ashlar/terrain/test_plant.py -q` → all pass
 

@@ -1,7 +1,8 @@
 # Ashlar design skills — sub-project 2: terrain
 
 - **Date:** 2026-11-19
-- **Status:** approved by the user on 2026-11-19
+- **Status:** approved by the user on 2026-11-19. The user confirmed the drain
+  and named-biome amendments on 2026-11-22 (§7.7 and §8.4).
 - **Branch:** `terrain`, in the worktree `ashlar-design-skills-terrain`, cut from the
   fork's `main` at `db3e8a1` (the merge of PR #1)
 - **Sub-projects:** 1 foundation and design skills (merged) · 2 terrain (this
@@ -118,6 +119,8 @@ choice made while writing this spec, open to correction.
 | `terrain-integrate` | Offered, not mandatory: with a design skill's site prep when a pad sits more than about 1–2 blocks off the surrounding ground, or after the fact as its own small project | user |
 | Commands at the gate | A commands file is summarised by count per feature, not printed line by line | user |
 | Trees crossing the box edge | Judged by where the trunk stands: a tree rooted on ground that changes is removed whole, even the part outside the box; a tree rooted on unchanged ground stays whole (§7.5) | user |
+| Existing water and lava | Kept by default; drained only with the user's separate yes, asked every time for each body (§7.7) | user |
+| Biome changes | Keep the existing biome by default. Paint only the biome named in the user's dedicated approval (§8.4). | user |
 | Resume | `build` continues a project left `building` after a failure, after the user's OK | user |
 | Where the toolkit lives | Copied into `skills/terrain-shape/tools/terrain/`; the other three skills reach it through `../terrain-shape/` | approved in the design review |
 | Project rule | Terrain made for a design skill's build joins that build's plan (one gate, one rollback); a standalone request is its own project | approved in the design review |
@@ -157,6 +160,7 @@ choice made while writing this spec, open to correction.
   new land meets old (Chapman's documented failure modes).
 - A biome change proposed as a first instinct, or made without the user's
   separate yes.
+- Existing water or lava drained without the user's separate yes for that body.
 - A write without a complete rollback point, or snapshots evicted without the
   user being told.
 - Terrain written over a player's structure without the user knowing.
@@ -309,7 +313,8 @@ level `w` (if any) and `n` the lowest new surface among its four neighbours:
   neighbour; the seal closes cave pockets just under the new surface.
 - **Water** from `s + 1` to `w` where `s < w` inside a closed basin.
 - **Air** from `max(s, w) + 1` to `t` where `t` is higher, which clears lowered
-  ground, plants and overhangs; existing trees follow the rule below.
+  ground, plants and overhangs. It does not clear existing water or lava, which
+  follow §7.7; existing trees follow the rule below.
 - Everything below `b` stays as the world has it.
 
 **Existing trees** (the user's decision). From the site read, the toolkit groups
@@ -319,8 +324,8 @@ connects to, the way vanilla measures leaf distance. Each tree is then judged by
 where its trunk meets the ground:
 
 - **Rooted on ground that changes** (any trunk column whose new surface differs
-  from the old one): every cell of the tree becomes air, including cells outside
-  the terrain box. Writes therefore reach past the box edge by up to a tree's
+  from the old one): every cell of the tree becomes air, or the liquid it stood
+  in (§7.7), including cells outside the terrain box. Writes therefore reach past the box edge by up to a tree's
   reach (about 8 blocks sideways), but only into that tree's own cells.
 - **Rooted on ground that does not change** (outside the box, or on the
   unchanged outer ring): the tree stays whole. The air rule skips its cells, so
@@ -366,8 +371,27 @@ them.
   Niagara. The depth becomes a look choice: a few blocks, deeper for big falls,
   at most about 12 (my call). `sequencing.md` is edited to say this and why —
   the one place this port changes Chapman's design knowledge.
-- GATE A gains water checks: every water cell is contained (no still water next
-  to air or to an open box edge), and no basin has a dry shelf below its level.
+- GATE A gains water checks on planned water: every water cell is contained (no
+  still water next to air or to an open box edge), and no basin has a dry shelf
+  below its level.
+- **Existing water and lava stay** (the user's decision; the mechanics are the
+  plan author's). Liquid above the old ground is left as it is unless new ground
+  covers it. That includes water plants, waterlogged plants and roots, and ice
+  lying on water. Where a bed is lowered, or a removed tree stood in the liquid,
+  the opened cells are filled with that liquid, up to the still surface that
+  rests on the bed. Planned water may raise a level, never lower one. An offline
+  check refuses, before any file is written, a write that puts liquid beside or
+  above open space where the site had no such contact. `hold_shores` (always on
+  for aprons, optional in a recipe) keeps banks from being lowered.
+- **Draining happens only with the user's yes** (the user's decision). It is
+  never a first instinct, nor a fix for a failed spill check: design around the
+  water first, and never raise ground over a body to avoid asking. When a design
+  needs a drain, ask a separate question every time, one per body, naming the
+  liquid, the place and the size, and saying that creatures in it may die and
+  that a rollback does not bring them back. Record the answer in
+  `requirements.md`; a yes covers that body in that build only. A body is all
+  its connected liquid, falls and outlets included. One that reaches the box's
+  outer ring cannot be drained, because it would flow back in.
 
 ### 7.8 Plants
 
@@ -467,8 +491,8 @@ go into `plan.toon` tables (my call), so a human can still read the plan.
   them), then a biome change, with entities after all blockwork as
   `execution.md` already requires.
 - **Two approvals.** The user first approves the design (renders and a summary:
-  box, relief, cells changed, palette, water, planting counts, custom trees, the
-  phases); only then does `exec-ashlar build` run its own approval gate. No world
+  box, relief, cells changed, palette, water, existing liquid kept, covered and
+  added, any drains, planting counts, custom trees, the phases); only then does `exec-ashlar build` run its own approval gate. No world
   write happens before that gate.
 - **Looking at offline renders:**
   - Claude Code: `Read` the PNG files.
@@ -553,15 +577,18 @@ the home of custom trees and of the biome decision.
 - **The biome rule.** The skill text says, in this order:
   1. The world's existing biome is the default. Choose palettes, species and
      water so the terrain works in it.
-  2. Propose a change only when the look depends on something only a biome gives
+  2. Consider a change only when the look depends on something only a biome gives
      (snowfall and snow cover; grass, foliage and water colour; fog and sky; mob
-     spawning) and the user asked for terrain that should read that way. Never
-     for site preparation or grading.
-  3. Ask a dedicated question every time: the biome, the box, why, and that a
-     rollback resets it only approximately (to the biome recorded per chunk just
-     before the change). Never fold it into another approval.
-  4. Record the answer in `requirements.md`. Without a yes, build with the
-     existing biome and tell the user what will look different.
+     spawning) and the user asked for terrain that should read that way.
+     Keep the existing biome for site preparation and grading. The elevation
+     model's biome labels guide offline design and never choose what to paint.
+  3. Ask a dedicated question every time. Have the user name the biome.
+     Verify its ID against the running Minecraft version and show the exact
+     chunk-aligned box, the purpose, and the approximate rollback (one
+     recorded biome per chunk). Wait for that dedicated approval.
+  4. Record the approved ID and box in `requirements.md`. Every biome
+     command paints that ID. Without a yes, build with the existing biome
+     and tell the user what will look different.
   5. Tell the user that biome colours appear once players' chunks reload.
 
 ### 8.5 `terrain-integrate`
@@ -588,6 +615,8 @@ existing land that looks artificial look natural.
   renders, a profile across the seam, and the height changes (largest, mean,
   columns moved). Any column moving more than 6 blocks (my default) needs the
   user's explicit OK.
+- Existing water and lava follow §7.7, with shores held. `terrain-integrate`
+  never drains.
 - Chapman's note on carving a ledge into a wall (a sloped-back bench; all clears
   before all ledge fills) stays as design knowledge.
 - The output step and `quality_contract` rows are the same as terrain's, with a
@@ -744,7 +773,8 @@ format, and for the backups themselves.
   check, the placements JSON path, and a pointer to the biome yes in
   `requirements.md` when there is one.
 - **Validation** (start of `build`) adds: every commands file passes
-  `commands --check`; a `fillbiome` file needs the recorded yes; every
+  `commands --check`; a `fillbiome` file needs the recorded yes; every drain
+  in the notes needs the recorded yes for that body and build; every
   `surface_match` file exists; every `backup` phase's box is known.
 - **Survey** (`survey.md`) gains a terrain section: write the heights file over
   the box plus a 16-block margin and the site read over the box plus 8 blocks
@@ -765,6 +795,8 @@ The gate adds, for terrain builds:
 - a biome change again, with the recorded yes, the box, and its approximate
   rollback (chunk resolution; chunks the probe cannot identify keep the new
   biome — if any are unknown at build time the biome phase stops for the user);
+- existing water and lava kept, covered and added, and each drain again with
+  its recorded yes;
 - the non-natural blocks found inside the box;
 - how many existing trees will be removed whole, and the farthest any write
   reaches outside the terrain box;
@@ -875,6 +907,9 @@ it; `mc_survey`'s matrix as the source of the heights file.
      removed whole, canopy outside the box included; a tree rooted outside the
      box keeps every cell, including canopy over the box; nothing else outside
      the box is written.
+   - Existing liquid: kept by default (river, lava, ice, waterlogged cells); a
+     new spill is refused; a drain needs its approval and is refused when the
+     body reaches the outer ring.
    - Edge match, water containment, the gravity-block check, and the heights-file
      loader (from a fixture of `mc_survey` matrix text, with trunk spikes).
    - The tree generator: same seed, same tree; no air cells; every leaf within six
@@ -943,6 +978,7 @@ it; `mc_survey`'s matrix as the source of the heights file.
 | A backup is incomplete or unreadable when needed | The backup is checked before any write; no complete backup, no write |
 | Backups do not keep entities, sign text or container contents | Same as snapshots; the survey lists block entities and the gate warns |
 | Animals or dropped items inside the box are buried or left floating | The gate says so; terrain boxes avoid farms and builds |
+| Draining kills creatures in the water, which a rollback cannot restore | Only with the user's separate yes, which names that loss; backups restore the liquid itself |
 | A biome rollback is approximate | The user hears it before agreeing; chunks the probe cannot identify stop the biome phase |
 | Sand and gravel fall at the next block update | Never left above air (offline check) |
 | Stepped still water starts to flow when something updates it | Rivers are level reaches; flow only at steps and falls |

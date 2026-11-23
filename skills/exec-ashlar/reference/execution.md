@@ -88,6 +88,13 @@ complete only when its `manifest.json` says so.
 
 1. **Players**: call `mc_players`. If anyone is inside the phase's box grown by
    2 blocks, stop and tell the user. Do not build around them.
+   Before the first write that drains a body, read the entire recipe footprint
+   and its original site-read margin again. Recompute the drain manifest from those
+   columns and match its ID, extent and liquid kinds to the user's recorded
+   approval. A backup box alone cannot show that the body is unchanged.
+   If it differs, pause for a new preview and approval. If this is a resume
+   after a partial write, reconcile what changed against the original
+   complete rollback point and the approved body.
 2. **Rollback point**, by the phase's `rollback` column (absent: `snapshot`):
    - `backup` phases: `place --backup <folder>` takes the backup after its
      player check and before writing. For `mcp` or a phase whose rollback

@@ -37,7 +37,7 @@ Cell = tuple[int, int, int]
 
 # ------------------------------------------------------------ block classes
 _OVERWORLD_WOODS = ("oak", "spruce", "birch", "jungle", "acacia", "dark_oak",
-                    "mangrove", "cherry", "pale_oak")
+                    "mangrove", "cherry", "pale_oak", "poplar")
 _NETHER_WOODS = ("crimson", "warped")
 
 
@@ -63,7 +63,8 @@ TRUNK: frozenset[str] = frozenset(_wood_blocks()) | _mc("mushroom_stem", "mangro
 
 # Leaves and other canopy blocks that decay or hang off a trunk by distance.
 LEAVES: frozenset[str] = frozenset(
-    f"minecraft:{w}_leaves" for w in _OVERWORLD_WOODS) | _mc(
+    f"minecraft:{w}_leaves" for w in _OVERWORLD_WOODS if w != "poplar") | _mc(
+    "red_poplar_leaves", "orange_poplar_leaves", "yellow_poplar_leaves",
     "azalea_leaves", "flowering_azalea_leaves", "brown_mushroom_block",
     "red_mushroom_block", "nether_wart_block", "warped_wart_block", "shroomlight")
 
@@ -72,7 +73,7 @@ ATTACHED: frozenset[str] = _mc(
     "vine", "cave_vines", "cave_vines_plant", "weeping_vines", "weeping_vines_plant",
     "twisting_vines", "twisting_vines_plant", "cocoa", "bee_nest", "glow_lichen",
     "moss_carpet", "pale_moss_carpet", "hanging_roots", "mangrove_propagule", "snow",
-    "pale_hanging_moss")
+    "pale_hanging_moss", "shelf_mushroom")
 
 _FLOWERS = ("dandelion", "poppy", "blue_orchid", "allium", "azure_bluet", "red_tulip",
             "orange_tulip", "white_tulip", "pink_tulip", "oxeye_daisy", "cornflower",
@@ -91,7 +92,7 @@ PLANTS: frozenset[str] = _mc(
     "tall_seagrass", "lily_pad", "brown_mushroom", "red_mushroom", "azalea",
     "flowering_azalea", "big_dripleaf", "big_dripleaf_stem", "small_dripleaf", "cactus",
     "sea_pickle", "crimson_fungus", "warped_fungus", "crimson_roots", "warped_roots",
-    "nether_sprouts", "pale_oak_sapling",
+    "nether_sprouts", "pale_oak_sapling", "poplar_sapling", "red_shrub",
     *(f"{w}_sapling" for w in ("oak", "spruce", "birch", "jungle", "acacia", "dark_oak",
                                "cherry")),
     *_FLOWERS, *_CORALS)

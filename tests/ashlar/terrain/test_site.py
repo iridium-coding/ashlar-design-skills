@@ -161,6 +161,28 @@ def test_block_class_lists():
     assert "minecraft:oak_planks" not in NATURAL
 
 
+def test_wilderness_bound_poplar_and_understory_are_natural(tmp_path):
+    trunk = {(3, y, 3): "minecraft:poplar_log[axis=y]" for y in range(65, 70)}
+    leaves = {
+        (2, 69, 3): "minecraft:red_poplar_leaves[distance=1]",
+        (4, 69, 3): "minecraft:orange_poplar_leaves[distance=1]",
+        (3, 69, 2): "minecraft:yellow_poplar_leaves[distance=1]",
+    }
+    shelf = (3, 67, 4)
+    cells = {
+        **trunk,
+        **leaves,
+        shelf: "minecraft:shelf_mushroom[facing=south]",
+        (0, 65, 0): "minecraft:red_shrub",
+        (6, 65, 6): "minecraft:poplar_sapling",
+    }
+    site = make_site(tmp_path / "poplar", BOX, cells=cells)
+    assert unnatural_blocks(site, BOX) == {}
+    assert surfaces(site).ground[3, 3] == 64
+    group, = find_trees(site)
+    assert group.cells == set(trunk) | set(leaves) | {shelf}
+
+
 def test_write_site_bytes_match_the_placer_and_load_backup_accepts(tmp_path):
     site = make_site(tmp_path / "s", BOX, trees=[tree(2, 2, 65)], world="world")
     payload = {"version": 1, "world": "world", "box": list(BOX),

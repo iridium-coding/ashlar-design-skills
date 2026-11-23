@@ -19,9 +19,10 @@ import hashlib
 import json
 import math
 import re
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Iterable
 
@@ -636,6 +637,118 @@ def is_still(state: str) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class DrainBody:
+    """One complete component of retained cells, identified independently of its seed."""
+    id: str
+    seed: tuple[int, int]
+    cells: dict[Cell, str]
+
+    @property
+    def bbox(self) -> Box:
+        xs, ys, zs = zip(*self.cells)
+        return min(xs), min(ys), min(zs), max(xs), max(ys), max(zs)
+
+    @property
+    def kinds(self) -> tuple[str, ...]:
+        return tuple(sorted(set(self.cells.values())))
+
+    @property
+    def columns(self) -> set[tuple[int, int]]:
+        return {(x, z) for x, _, z in self.cells}
+
+
+def drain_bodies(site: Site, recipe: dict, *, protect: np.ndarray | None = None) -> list[DrainBody]:
+    """Resolve recipe seeds against the original read; dry trunks bridge only at equal y."""
+    entries = recipe.get("drain", [])
+    if not isinstance(entries, list) or any(not isinstance(entry, dict) or entry.keys() != {"at"}
+                                            for entry in entries):
+        raise ValueError("drain must be a list of {at: [x, z]} entries")
+    if not entries:
+        return []
+    ox = integer_level(recipe["origin"][0], "origin x")
+    oz = integer_level(recipe["origin"][2], "origin z")
+    nx, nz = integer_level(recipe["nx"], "nx"), integer_level(recipe["nz"], "nz")
+    x1, _, z1, x2, _, z2 = site.box
+    if not (x1 <= ox <= ox + nx - 1 <= x2 and z1 <= oz <= oz + nz - 1 <= z2):
+        raise ValueError("drain grid outside the site read")
+    if protect is not None:
+        protect = np.asarray(protect)
+        if protect.dtype != np.bool_ or protect.shape != (nx, nz):
+            raise ValueError("protect must be a boolean mask matching the field")
+    _check_columns(site.columns, site.box)
+    if any(base_id(runs[-1][2]) not in _AIR for runs in site.columns.values()):
+        raise ValueError("read higher: the site must end in air")
+    ground = surfaces(site).ground
+
+    @cache
+    def spans(x, z):
+        # Classify only columns the search visits. Each retained span is above g.
+        g = ground[x - x1, z - z1]
+        lowest = site.box[1] if np.isnan(g) else int(g) + 1
+        runs = site.columns[x, z]
+        out = []
+        for (lo, hi, state), wet in zip(runs, water_run_flags(runs)):
+            if hi < lowest:
+                continue
+            if wet:
+                kind = "water"
+            elif _kind(state) == _LAVA_K:
+                kind = "lava"
+            elif _kind(state) == _TRUNK_K:
+                kind = "trunk"
+            else:
+                continue
+            out.append((max(lo, lowest), hi, kind))
+        return out
+
+    bodies = []
+    resolved = set()
+    for entry in entries:
+        at = entry["at"]
+        if not isinstance(at, (list, tuple)) or len(at) != 2:
+            raise ValueError("drain at must be [x, z]")
+        sx, sz = seed = (integer_level(at[0], "drain x"), integer_level(at[1], "drain z"))
+        if not (ox <= sx < ox + nx and oz <= sz < oz + nz):
+            raise ValueError(f"drain seed {seed} outside terrain grid")
+        start = next((((sx, lo, sz), k) for lo, _, k in spans(sx, sz) if k != "trunk"), None)
+        if start is None:
+            raise ValueError(f"drain seed {seed} has no retained liquid above ground")
+        if start[0] in resolved:
+            continue
+        cells: dict[Cell, str] = {}
+        seen = {start[0]}
+        stack = [start]
+        while stack:
+            cell, kind = stack.pop()
+            x, y, z = cell
+            if np.isnan(ground[x - x1, z - z1]):
+                raise ValueError(f"read lower: drain reaches a column with unknown ground at {cell}")
+            if x in (x1, x2) or z in (z1, z2):
+                raise ValueError(f"drain reaches the site read edge at {cell}")
+            if kind != "trunk":
+                if not (ox < x < ox + nx - 1 and oz < z < oz + nz - 1):
+                    raise ValueError(f"drain body reaches the terrain outer ring or leaves the box at {cell}")
+                if protect is not None and protect[x - ox, z - oz]:
+                    raise ValueError(f"drain body reaches protected column {(x, z)}")
+                cells[cell] = kind
+            for dx, dy, dz in _N6:
+                neighbour = (x + dx, y + dy, z + dz)
+                if neighbour in seen or (dy and kind == "trunk"):
+                    continue
+                other = next((k for lo, hi, k in spans(x + dx, z + dz) if lo <= y + dy <= hi), None)
+                if other is not None and not (dy and other == "trunk"):
+                    seen.add(neighbour)
+                    stack.append((neighbour, other))
+        records = "\n".join(f"{x},{y},{z},{k}" for (x, y, z), k in sorted(cells.items()))
+        body_id = hashlib.sha256(records.encode("utf-8")).hexdigest()[:12]
+        if any(body.id == body_id for body in bodies):
+            raise ValueError(f"distinct drain bodies have the same short id {body_id}")
+        bodies.append(DrainBody(body_id, seed, cells))
+        resolved.update(cells)
+    return bodies
+
+
 @dataclass
 class LiquidLevels:
     """Existing surface liquid per column of the site box, arrays ``(nx, nz)``.
@@ -656,11 +769,12 @@ def _ground_int(surf: Surfaces, xi: int, zi: int, y1: int) -> int:
 
 
 def liquid_levels(site: Site, removed: Iterable[Cell] = (),
-                  surf: Surfaces | None = None) -> LiquidLevels:
+                  surf: Surfaces | None = None, *, excluded: Iterable[Cell] = ()) -> LiquidLevels:
     """Retained liquid per column (above the ground only), with `removed` tree cells
     joined into still liquid: a removed cell above its column's ground that touches a
     still or joined cell horizontally at the same y, or lies directly below one (downward
-    only, never upward), counts as still with that liquid, repeated until stable. Linear in the cells of the site plus the removed cells."""
+    only, never upward), counts as still with that liquid, repeated until stable. Cells
+    in `excluded` neither retain liquid nor join or seed the removed-tree flood."""
     if surf is None:
         surf = surfaces(site)
     x1, y1, z1, x2, y2, z2 = site.box
@@ -668,6 +782,12 @@ def liquid_levels(site: Site, removed: Iterable[Cell] = (),
     level = np.full(shape, np.nan)
     kind = np.full(shape, None, dtype=object)
     top = np.full(shape, np.nan)
+    excluded = set(excluded)
+    excluded_y: dict[tuple[int, int], list[int]] = {}
+    for x, y, z in excluded:
+        excluded_y.setdefault((x, z), []).append(y)
+    for ys in excluded_y.values():
+        ys.sort()
     items: dict[tuple[int, int], list[tuple[int, int, str, bool]]] = {}
     for (x, z), runs in site.columns.items():
         xi, zi = x - x1, z - z1
@@ -678,7 +798,13 @@ def liquid_levels(site: Site, removed: Iterable[Cell] = (),
             k = "water" if is_water else ("lava" if _kind(state) == _LAVA_K else None)
             lo = max(ya, g + 1)
             if k is not None and lo <= yb:
-                col.append((lo, yb, k, is_still(state)))
+                ys = excluded_y.get((x, z), ())
+                for y in ys[bisect_left(ys, lo):bisect_right(ys, yb)]:
+                    if lo < y:
+                        col.append((lo, y - 1, k, is_still(state)))
+                    lo = y + 1
+                if lo <= yb:
+                    col.append((lo, yb, k, is_still(state)))
         if col:
             items[(x, z)] = col
             top[xi, zi] = max(c[1] for c in col)
@@ -691,7 +817,7 @@ def liquid_levels(site: Site, removed: Iterable[Cell] = (),
 
     pending = {(int(c[0]), int(c[1]), int(c[2])) for c in removed
                if x1 <= c[0] <= x2 and y1 <= c[1] <= y2 and z1 <= c[2] <= z2}
-    pending = {c for c in pending if c[1] > _ground_int(surf, c[0] - x1, c[2] - z1, y1)}
+    pending = {c for c in pending if c not in excluded and c[1] > _ground_int(surf, c[0] - x1, c[2] - z1, y1)}
     joined: dict[Cell, str] = {}
     queue: list[Cell] = []
     for x, y, z in pending:
@@ -739,7 +865,7 @@ def liquid_levels(site: Site, removed: Iterable[Cell] = (),
 
 
 def hold_shores(h: np.ndarray, site: Site, *, origin: tuple[int, int],
-                skip: np.ndarray | None = None) -> np.ndarray:
+                skip: np.ndarray | None = None, excluded: Iterable[Cell] = ()) -> np.ndarray:
     """A copy of grid heights `h` lifted so existing liquid keeps a bank. `origin` is the
     grid's world (x1, z1); `skip` a boolean mask of columns to leave alone (pad
     footprints). The outer ring is never changed. For each interior column (existing
@@ -747,7 +873,7 @@ def hold_shores(h: np.ndarray, site: Site, *, origin: tuple[int, int],
     liquid with no still level: raised to the ground; dry and 4-adjacent to liquid:
     raised to min(ground, highest neighbouring top), a neighbour's top being the higher of
     its retained ``top`` and any of its cells that would join still liquid if every tree
-    were removed."""
+    were removed. Cells in `excluded` belong to complete bodies selected for drainage."""
     out = np.array(h, dtype=float)
     nx, nz = out.shape
     sx1, _, sz1, sx2, _, sz2 = site.box
@@ -755,9 +881,10 @@ def hold_shores(h: np.ndarray, site: Site, *, origin: tuple[int, int],
     if ox < 0 or oz < 0 or int(origin[0]) + nx - 1 > sx2 or int(origin[1]) + nz - 1 > sz2:
         raise ValueError(f"grid at {tuple(origin)} size {nx}x{nz} is not inside the site read")
     surf = surfaces(site)
-    ll = liquid_levels(site, surf=surf)
+    excluded = set(excluded)
+    ll = liquid_levels(site, surf=surf, excluded=excluded)
     felled = liquid_levels(site, removed=[c for t in find_trees(site) for c in t.cells],
-                           surf=surf)
+                           surf=surf, excluded=excluded)
     jtop = np.full(ll.top.shape, np.nan)
     for (x, y, z) in felled.joined:
         jtop[x - sx1, z - sz1] = np.fmax(jtop[x - sx1, z - sz1], y)

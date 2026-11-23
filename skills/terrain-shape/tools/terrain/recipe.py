@@ -20,9 +20,15 @@ from pathlib import Path
 
 import numpy as np
 
-from .field import HeightField, Centerline
-from .site import auto_band, blend_to_existing, ground_for, hold_shores, integer_level
-
+from .field import Centerline, HeightField
+from .site import (
+    auto_band,
+    blend_to_existing,
+    drain_bodies,
+    ground_for,
+    hold_shores,
+    integer_level,
+)
 
 RECIPE_VERSION = 1
 
@@ -61,6 +67,8 @@ def build_field(recipe: dict, project_dir: Path | None = None,
     seed = int(recipe.get("seed", 0))
     belt = recipe.get("belt")
     site_cfg = recipe.get("site")
+    if "drain" in recipe and not site_cfg and recipe["drain"] != []:
+        raise ValueError("drain needs a recipe with a site read")
     pads = _parse_pads(recipe.get("pads") or [])
     if "hold_shores" in recipe:
         if not isinstance(recipe["hold_shores"], bool):
@@ -135,8 +143,10 @@ def build_field(recipe: dict, project_dir: Path | None = None,
     origin = recipe.get("origin") or [0, 0, 0]
     ox, oz = int(origin[0]), int(origin[2])
     ground_site = None
+    drains = []
     if site_cfg:
         ground_site, _surf, ground = ground_for(recipe, project_dir)
+        drains = drain_bodies(ground_site, recipe)
         band = site_cfg.get("band", "auto")
         band = auto_band(hf.h, ground) if band == "auto" else int(band)
         hf = blend_to_existing(hf, ground, band)
@@ -146,7 +156,8 @@ def build_field(recipe: dict, project_dir: Path | None = None,
     held = 0
     if recipe.get("hold_shores"):
         skip = np.any(footprints, axis=0) if footprints else None
-        held_h = hold_shores(hf.h, ground_site, origin=(ox, oz), skip=skip)
+        held_h = hold_shores(hf.h, ground_site, origin=(ox, oz), skip=skip,
+                             excluded=(cell for body in drains for cell in body.cells))
         held = int(np.count_nonzero(held_h != hf.h))
         hf.h = held_h
     if info is not None:

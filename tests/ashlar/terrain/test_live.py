@@ -1,5 +1,7 @@
 """Live materialisation (spec 7.5, rulings R15/R18/R22): exactly the cells to write, fills,
 tiles, liquid checks and the expected surface."""
+import hashlib
+
 import numpy as np
 import pytest
 from sitegen import AIR, LEAVES, LOG, STONE, WATER, make_site, tree
@@ -14,7 +16,14 @@ from terrain.live import (
     split_columns,
 )
 from terrain.materialize import MaterialSpec
-from terrain.site import find_trees, hold_shores
+from terrain.recipe import build_field
+from terrain.site import (
+    drain_bodies,
+    find_trees,
+    hold_shores,
+    liquid_levels,
+    water_levels,
+)
 
 BOX = (0, 40, 0, 7, 100, 7)
 LAVA = "minecraft:lava[level=0]"
@@ -890,3 +899,190 @@ def test_explicit_water_checks_submerged_lava_even_under_retained_water(tmp_path
     for x, z in POND:
         assert state_after(site, raised, (x, 61, z)) == "minecraft:grass_block"
         assert all(code_at(raised, (x, y, z)) == 0 for y in (62, 63))
+
+
+def test_drain_component_identity_and_horizontal_trunk_bridge(tmp_path):
+
+    cells = {(2, 65, 3): WATER, (2, 66, 3): "minecraft:ice", (3, 65, 3): LOG,
+             (3, 66, 3): LOG, (4, 65, 3): FLOW, (4, 65, 4): "minecraft:seagrass",
+             (4, 65, 5): LAVA, (3, 67, 3): WATER, (4, 67, 3): WATER,
+             (5, 66, 4): WATER}
+    site = make_site(tmp_path / "s", BOX, cells=cells)
+    recipe = rec(0, 0, 8, 8, drain=[{"at": [2, 3]}, {"at": [4, 5]}, {"at": [2, 3]}])
+    body, = drain_bodies(site, recipe)
+    expected = {(2, 65, 3): "water", (2, 66, 3): "water", (4, 65, 3): "water",
+                (4, 65, 4): "water", (4, 65, 5): "lava"}
+    lines = "\n".join(f"{x},{y},{z},{kind}" for (x, y, z), kind in sorted(expected.items()))
+    assert body.cells == expected and body.seed == (2, 3)
+    assert body.id == hashlib.sha256(lines.encode()).hexdigest()[:12]
+    assert body.bbox == (2, 65, 3, 4, 66, 5)
+    assert set(body.kinds) == {"water", "lava"}
+    assert set(body.columns) == {(2, 3), (4, 3), (4, 4), (4, 5)}
+    reverse, = drain_bodies(site, {**recipe, "drain": [{"at": [4, 5]}, {"at": [2, 3]}]})
+    assert reverse.id == body.id and reverse.seed == (4, 5)
+    site2 = make_site(tmp_path / "s2", BOX, cells={**cells, (4, 65, 5): WATER})
+    assert drain_bodies(site2, recipe)[0].id != body.id
+
+
+@pytest.mark.parametrize("entries", [
+    None, {}, [[3, 3]], [{"x": 3, "z": 3}], [{"at": []}], [{"at": [3, 3, 0]}],
+    [{"at": [True, 3]}], [{"at": [3, 3.5]}], [{"at": ["3", 3]}], [{"at": [8, 3]}],
+    [{"at": [6, 6]}], [{"at": [3, 3], "level": 4}],
+])
+def test_drain_rejects_malformed_or_dry_seed(tmp_path, entries):
+    site, _ = pond_world(tmp_path)
+    with pytest.raises(ValueError, match="drain"):
+        drain_bodies(site, rec(0, 0, 8, 8, drain=entries))
+
+
+@pytest.mark.parametrize("case", ["river", "cropped", "trunk_edge", "protected", "missing", "read_top", "read_floor"])
+def test_drain_refuses_unbounded_or_protected_body(tmp_path, case):
+    cells = {(3, 65, 3): WATER, (2, 65, 3): FLOW}
+    recipe = rec(0, 0, 8, 8, drain=[{"at": [3, 3]}])
+    mask = np.zeros((8, 8), bool)
+    if case == "river":
+        cells.update({(x, 65, 3): WATER for x in range(2)})
+    elif case == "cropped":
+        recipe.update(origin=[2, 0, 0], nx=5)
+        mask = np.zeros((5, 8), bool)
+    elif case == "trunk_edge":
+        cells.update({(x, 65, 3): LOG for x in range(2)})
+    elif case == "protected":
+        mask[2, 3] = True
+    elif case == "read_top":
+        cells.update({(3, y, 3): FLOW for y in range(66, 101)})
+    site = make_site(tmp_path / "s", BOX, cells=cells, water={(3, 3): 64} if case == "read_floor" else {})
+    if case == "missing":
+        del site.columns[1, 3]
+    with pytest.raises(ValueError, match="ring|edge|protected|read|missing"):
+        drain_bodies(site, recipe, protect=mask)
+
+
+@pytest.mark.parametrize("plan", ["dry", "lower_water", "raised_ground"])
+@pytest.mark.parametrize("liquid", [WATER, LAVA])
+def test_drain_material_and_preserved_second_pond(tmp_path, plan, liquid):
+    site, g = pond_world(tmp_path, kinds=[liquid] * 3, extra={(6, 65, 6): WATER})
+    recipe = rec(0, 0, 8, 8, drain=[{"at": [3, 3]}])
+    hf = field(to_array(BOX, g))
+    if plan == "lower_water":
+        recipe["water"] = [{"at": [3, 3], "level": 62}]
+    if plan == "raised_ground":
+        hf.h[3:5, 3:5] = 62
+    drains = drain_bodies(site, recipe)
+    ll = liquid_levels(site, excluded=drains[0].cells)
+    assert np.isnan(ll.level[3, 3]) and np.isnan(ll.top[3, 3]) and ll.level[6, 6] == 65
+    w = materialize_live(hf, spec(), site, recipe, water=water_levels(hf, recipe), drains=drains)
+    for x, z in POND:
+        assert state_after(site, w, (x, 63, z)) == AIR
+        for y in (61, 62):
+            state = state_after(site, w, (x, y, z))
+            assert state == {"dry": AIR, "lower_water": "minecraft:water",
+                             "raised_ground": "minecraft:dirt" if y == 61 else "minecraft:grass_block"}[plan]
+    assert code_at(w, (6, 65, 6)) == 0
+    assert w.liquid["kept"] == 1 and w.liquid["covered"] == 0
+    assert liquid_violations(w, site) == []
+
+
+def test_drain_kept_wet_tree_high_cells_and_felled_tree_flood(tmp_path):
+    root = "minecraft:mangrove_roots[waterlogged=true]"
+    cells = {(3, 65, 3): root, (3, 66, 3): root, (3, 67, 3): root,
+             (3, 68, 3): LEAF_WL, (4, 65, 3): LOG}
+    site = make_site(tmp_path / "s", BOX, cells=cells)
+    recipe = rec(0, 0, 8, 8, drain=[{"at": [3, 3]}])
+    drains = drain_bodies(site, recipe)
+    ll = liquid_levels(site, removed=find_trees(site)[0].cells, excluded=drains[0].cells)
+    assert not ll.joined and np.isnan(ll.level).all()
+    hf = field(np.full((8, 8), 64))
+    kept = materialize_live(hf, spec(), site, recipe, drains=drains)
+    for cell in drains[0].cells:
+        assert state_after(site, kept, cell) == cells[cell].replace("waterlogged=true", "waterlogged=false")
+    assert code_at(kept, (4, 65, 3)) == 0 and np.isnan(kept.liquid_top).all()
+    hf.h[3, 3] = 63
+    felled = materialize_live(hf, spec(), site, recipe, drains=drains)
+    assert all(state_after(site, felled, c) == AIR for c in cells)
+    assert felled.removed_trees == 1 and felled.liquid["added"] == 0
+
+
+def test_drain_hold_shores_and_keep_default(tmp_path):
+
+    site, _ = pond_world(tmp_path)
+    recipe = rec(0, 0, 8, 8, graph={"type": "Constant", "value": 54},
+                 site={"read": "s", "band": 1}, hold_shores=True)
+    keep = build_field(recipe, tmp_path)
+    assert drain_bodies(site, recipe) == []
+    none = build_field({**recipe, "drain": []}, tmp_path)
+    assert np.array_equal(keep.h, none.h) and keep.h[2, 3] == 63
+    drained = build_field({**recipe, "drain": [{"at": [3, 3]}]}, tmp_path)
+    assert drained.h[2, 3] == 54
+    with pytest.raises(ValueError, match="drain"):
+        build_field({**recipe, "site": None, "hold_shores": False, "drain": [{"at": [3, 3]}]}, tmp_path)
+
+
+def test_drain_seed_chooses_lowest_component_and_leaves_higher_run(tmp_path):
+    # Two disconnected retained runs share world coordinates (x,z).
+    box = (-15, 40, 92, -7, 100, 100)
+    site = make_site(tmp_path / "s", box, cells={(-11, 66, 95): FLOW, (-11, 69, 95): WATER})
+    recipe = rec(-14, 93, 7, 7, drain=[{"at": [-11, 95]}])
+    bodies = drain_bodies(site, recipe)
+    assert bodies[0].cells == {(-11, 66, 95): "water"}
+    ll = liquid_levels(site, excluded=bodies[0].cells)
+    assert ll.top[4, 3] == 69 and np.isnan(ll.level[4, 3])
+    result = materialize_live(field(np.full((7, 7), 62.0)), spec(), site, recipe, drains=bodies)
+    assert state_after(site, result, (-11, 66, 95)) == AIR
+    assert code_at(result, (-11, 69, 95)) == 0
+    assert result.liquid["kept"] == 1 and result.liquid_top[3, 2] == 69
+
+
+def test_drain_does_not_apply_partial_stale_or_protected_descriptor(tmp_path):
+    site, ground = pond_world(tmp_path)
+    recipe = rec(0, 0, 8, 8, drain=[{"at": [3, 3]}])
+    hf = field(to_array(BOX, ground))
+    bodies = drain_bodies(site, recipe)
+    mask = np.zeros((8, 8), bool)
+    mask[4, 4] = True
+    with pytest.raises(ValueError, match="protected"):
+        materialize_live(hf, spec(), site, recipe, protect=mask, drains=bodies)
+    changed, _ = pond_world(tmp_path / "changed", kinds=[WATER, LAVA, WATER])
+    with pytest.raises(ValueError, match="descriptors"):
+        materialize_live(hf, spec(), changed, recipe, drains=bodies)
+    bodies[0].cells.pop((3, 61, 3))
+    with pytest.raises(ValueError, match="descriptors"):
+        materialize_live(hf, spec(), site, recipe, drains=bodies)
+
+
+def test_drain_refill_blanket_yields_to_separate_lava_body(tmp_path):
+    # Both basins lie below sea level. The retained lava still outranks the blanket.
+    ground = ground_map(BOX, 65, {(3, 3): 60, (5, 5): 60})
+    cells = {(3, y, 3): WATER for y in range(61, 64)}
+    cells.update({(5, y, 5): LAVA for y in range(61, 64)})
+    site = make_site(tmp_path / "s", BOX, ground=ground, cells=cells)
+    recipe = rec(0, 0, 8, 8, sea_level=62, drain=[{"at": [3, 3]}])
+    hf = field(to_array(BOX, ground))
+    result = materialize_live(hf, spec(), site, recipe, water=water_levels(hf, recipe),
+                              drains=drain_bodies(site, recipe))
+    assert state_after(site, result, (3, 63, 3)) == AIR
+    assert state_after(site, result, (3, 62, 3)) == "minecraft:water"
+    assert all(code_at(result, (5, y, 5)) == 0 for y in range(61, 64))
+    assert not liquid_violations(result, site)
+
+
+def test_drain_descriptor_reseed_of_same_body(tmp_path):
+    site, ground = pond_world(tmp_path)
+    original = rec(0, 0, 8, 8, drain=[{"at": [3, 3]}])
+    alternate = {**original, "drain": [{"at": [4, 4]}]}
+    write = materialize_live(field(to_array(BOX, ground)), spec(), site, alternate,
+                             drains=drain_bodies(site, original))
+    assert state_after(site, write, (4, 63, 4)) == AIR
+
+
+@pytest.mark.parametrize("requested", [True, False])
+def test_drain_descriptor_set_must_match_recipe_even_when_empty(tmp_path, requested):
+    site, ground = pond_world(tmp_path)
+    keep = rec(0, 0, 8, 8)
+    drain = {**keep, "drain": [{"at": [3, 3]}]}
+    bodies = drain_bodies(site, drain)
+    if requested:
+        bodies.clear()
+    with pytest.raises(ValueError, match="descriptors"):
+        materialize_live(field(to_array(BOX, ground)), spec(), site, drain if requested else keep,
+                         drains=bodies)

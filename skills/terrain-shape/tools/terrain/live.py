@@ -15,8 +15,10 @@ from .site import (
     PLANTS,
     TRUNK,
     Cell,
+    DrainBody,
     Site,
     base_id,
+    drain_bodies,
     find_trees,
     integer_level,
     is_still,
@@ -115,13 +117,13 @@ def _top_without_kept(runs, x, z, kept):
     return runs[0][0] - 1
 
 
-def _check_planned_water_at_lava(site, write, x, z, col, water_code, ground):
+def _check_planned_water_at_lava(site, write, x, z, col, water_code, ground, excluded):
     """A planned source may not replace retained lava or introduce a vertical reaction."""
     bottom = write.origin[1]
     for yi in np.flatnonzero(col == water_code):
         y = bottom + int(yi)
         old = liquid_kind(site.block(x, y, z))
-        if y > ground and old == "lava":
+        if y > ground and old == "lava" and (x, y, z) not in excluded:
             raise ValueError(f"planned water would replace surface lava at {(x, y, z)}")
         for other in (y - 1, y + 1):
             if not site.box[1] <= other <= site.box[4]:
@@ -143,6 +145,7 @@ def materialize_live(
     water: np.ndarray | None = None,
     protect: np.ndarray | None = None,
     seal: int = 4,
+    drains: tuple[DrainBody, ...] | list[DrainBody] = (),
 ) -> LiveWrite:
     seal = integer_level(seal, "seal")
     depth = integer_level(spec.subsurface_depth, "subsurface_depth")
@@ -168,6 +171,12 @@ def materialize_live(
     protected = np.zeros(sy.shape, bool) if protect is None else np.asarray(protect)
     if protected.shape != sy.shape or protected.dtype != np.bool_:
         raise ValueError("protect must be a boolean mask matching the field")
+    # Verify saved descriptors by identity and content. Seeds only locate a body.
+    current = drain_bodies(site, recipe or {}, protect=protected)
+    supplied = {body.id: body.cells for body in drains}
+    if len(drains) != len(current) or any(supplied.get(body.id) != body.cells for body in current):
+        raise ValueError("drain descriptors do not match the complete bodies in the current site and recipe")
+    excluded = {cell for body in drains for cell in body.cells}
     if any(base_id(runs[-1][2]) not in _AIR for runs in site.columns.values()):
         raise ValueError("read higher: the site must end in air")
     surf = surfaces(site)
@@ -197,7 +206,7 @@ def materialize_live(
             kept.update(tree.cells)
             trunks.update(tree.trunk_columns)
 
-    levels = liquid_levels(site, removed=removed, surf=surf)
+    levels = liquid_levels(site, removed=removed, surf=surf, excluded=excluded)
     planned, explicit = _planned_levels(water, hf, recipe, levels, crop, (ox, oz), sy)
     # A surviving branch or cap affects the NO_LEAVES read just as a vertical trunk does.
     # Root columns alone still decide whether a tree is felled.
@@ -215,6 +224,9 @@ def materialize_live(
     active = ~protected
     lower = int(bottoms[active].min()) if active.any() else y1
     upper = int(np.fmax(np.maximum(sy, tops), planned)[active].max()) if active.any() else lower
+    if excluded:
+        # Kept waterlogged canopy cells may be higher than the top without the tree.
+        upper = max(upper, max(y for _, y, _ in excluded))
     min_x, min_z, max_x, max_z = ox, oz, ox + nx - 1, oz + nz - 1
     for x, y, z in removed:
         min_x, lower, min_z = min(min_x, x), min(lower, y), min(min_z, z)
@@ -260,7 +272,7 @@ def materialize_live(
     def still_at(x, y, z):
         if not (x1 <= x <= x2 and y1 <= y <= y2 and z1 <= z <= z2):
             return None
-        if y <= surf.ground[x - x1, z - z1]:
+        if (x, y, z) in excluded or y <= surf.ground[x - x1, z - z1]:
             return None
         runs = site.columns[x, z]
         for (lo, hi, state), watery in zip(runs, water_run_flags(runs)):
@@ -314,17 +326,26 @@ def materialize_live(
             # also occupy space promised to an explicit flood, even when left as skip.
             if lava and explicit[i, j]:
                 overlap_top = int(min(hi, w))
-                if max(lo, g + 1, s + 1) <= overlap_top:
-                    raise ValueError(f"water level {w:g} would replace surface lava at {(x, overlap_top, z)}")
+                conflict_y = next((y for y in range(overlap_top, int(max(lo, g + 1, s + 1)) - 1, -1)
+                                   if (x, y, z) not in excluded), None)
+                if conflict_y is not None:
+                    raise ValueError(f"water level {w:g} would replace surface lava at {(x, conflict_y, z)}")
             if active[i, j] and retained:
-                write.liquid["covered"] += max(0, int(min(hi, s) - max(lo, g + 1) + 1))
+                covered = range(int(max(lo, g + 1)), int(min(hi, s)) + 1)
+                write.liquid["covered"] += (sum((x, y, z) not in excluded for y in covered)
+                                            if excluded else len(covered))
             # Kept leaves may be retained above t. They count but do not raise NO_LEAVES.
             stop = hi if retained else min(hi, top)
             for y in range(max(lo, s + 1), stop + 1):
                 cell = (x, y, z)
-                existing = retained and y > g
+                existing = retained and y > g and cell not in excluded
                 replacement = None
-                if active[i, j] and cell not in kept:
+                if cell in excluded:
+                    if cell in kept:
+                        replacement = state.replace("waterlogged=true", "waterlogged=false")
+                    else:
+                        replacement = "minecraft:water" if y <= w else "minecraft:air"
+                elif active[i, j] and cell not in kept:
                     if cell in removed:
                         replacement = tree_replacement(cell, w, level, kind)
                     elif existing and (y <= level or np.isnan(w) or y > w):
@@ -346,7 +367,7 @@ def materialize_live(
                     write.liquid_top[i, j] = y
 
         if active[i, j] and np.isfinite(w) and "minecraft:water" in indices:
-            _check_planned_water_at_lava(site, write, x, z, col, indices["minecraft:water"], g)
+            _check_planned_water_at_lava(site, write, x, z, col, indices["minecraft:water"], g, excluded)
 
     for cell in sorted(removed):
         x, y, z = cell

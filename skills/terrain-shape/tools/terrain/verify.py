@@ -92,19 +92,22 @@ def verify(hf, spec=None, recipe=None, *,
 
     var = float(np.var(h))
     relief_ok = (var >= silhouette_var_min) if require_relief else True
-    checks.append(("relief", relief_ok,
-                   f"variance {var:.2f} (min {silhouette_var_min})"))
+    relief_detail = f"variance {var:.2f} (min {silhouette_var_min})"
+    if not require_relief:
+        relief_detail = f"variance {var:.2f} for local grading"
+    checks.append(("relief", relief_ok, relief_detail))
 
-    land = float(np.mean(h > hf.sea_level))
+    dry = h > hf.sea_level if water is None else ~np.isfinite(water)
+    land = float(np.mean(dry))
     land_ok = land >= min_land_fraction
-    checks.append(("land_present", land_ok, f"{land:.1%} above sea level"))
+    checks.append(("land_present", land_ok, f"{land:.1%} dry land"))
 
     zig = _ziggurat_score(h)
     no_zig = zig < 0.6
     checks.append(("no_ziggurat", no_zig,
                    f"terrace score {zig:.2f} (flag >=0.6)"))
 
-    run, edge_name = _edge_max_run(h, hf.sea_level)
+    run, edge_name = _edge_max_run(h, hf.sea_level, water=water)
     edge_ok = run <= max_collinear_run
     checks.append(("edge_irregularity", edge_ok,
                    f"{edge_name} longest collinear run {run} (max {max_collinear_run})"))
@@ -116,7 +119,7 @@ def verify(hf, spec=None, recipe=None, *,
                        f"{where} dominated by {block} at {frac:.0%} "
                        f"(max {palette_max_single:.0%})"))
 
-        face_ok, face_detail = _underwater_face(hf, spec)
+        face_ok, face_detail = _underwater_face(hf, spec, water=water)
         checks.append(("underwater_face", face_ok, face_detail))
 
     if recipe is not None and _recipe_is_blended(recipe):
@@ -244,7 +247,7 @@ def _ziggurat_score(h: np.ndarray) -> float:
     return float(np.clip(score, 0, 1))
 
 
-def _edge_max_run(h: np.ndarray, sea_level: float) -> tuple:
+def _edge_max_run(h: np.ndarray, sea_level: float, *, water=None) -> tuple:
     """Longest *collinear* run along a terrain edge (the 7-block rule).
 
     The edge is the land/water coastline: a straight edge produces a long run of
@@ -253,7 +256,7 @@ def _edge_max_run(h: np.ndarray, sea_level: float) -> tuple:
     has no such edge to check, so the rule passes vacuously (the silhouette and
     relief checks already cover an all-land field). Returns ``(max_run, name)``.
     """
-    land = h > sea_level
+    land = h > sea_level if water is None else ~np.isfinite(water)
     if land.any() and (~land).any():
         return _boundary_collinear_run(land), "coastline"
     return 0, "no-coastline"
@@ -362,7 +365,7 @@ def _palette_monoculture(hf, spec) -> tuple:
     return worst_block, worst_frac, worst_where
 
 
-def _underwater_face(hf, spec) -> tuple:
+def _underwater_face(hf, spec, *, water=None) -> tuple:
     """Underwater / foundation-face check: a steep submerged face must not be a
     single block (a sheer one-material wall under the waterline — the bathtub
     foundation antipattern). Returns ``(ok, detail)``.
@@ -375,8 +378,7 @@ def _underwater_face(hf, spec) -> tuple:
     from .materialize import resolve_surface
 
     h = hf.h
-    sea = hf.sea_level
-    submerged = h < sea
+    submerged = h < hf.sea_level if water is None else np.isfinite(water)
     if not submerged.any():
         return True, "no submerged columns"
 

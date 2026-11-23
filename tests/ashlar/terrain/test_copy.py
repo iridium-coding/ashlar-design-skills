@@ -14,6 +14,9 @@ def test_copy_has_no_chapman_placement_paths():
         if path == COPY / "forms.py":
             # Form authoring shares the design-monument grid and palette.
             source = source.replace("\nfrom voxel import Palette, VoxelModel\n", "\n", 1)
+        elif path == COPY / "trees.py":
+            # Tree previews share the palette, grid and offline PNG renderer.
+            source = source.replace("\nfrom voxel import Palette, VoxelModel, render_views\n", "\n", 1)
         hits.extend(f"{path.relative_to(REPO)}: {word}" for word in GONE if word in source)
     assert not hits, hits
 

@@ -10,6 +10,7 @@ from functools import cache
 from pathlib import Path
 
 import numpy as np
+from scipy.ndimage import binary_dilation
 
 from . import verify
 from .emit import VerifyError, _material_from_spec
@@ -20,7 +21,6 @@ from .forms import (
     Form,
     flow_build,
     form_write,
-    gravity_violations,
     load_form,
 )
 from .live import (
@@ -50,6 +50,7 @@ from .site import (
     is_still,
     liquid_kind,
     liquid_levels,
+    surface_y,
     surfaces,
     water_levels,
     water_run_flags,
@@ -314,7 +315,9 @@ def _project(write, site, before, after, ground, protected, approved_cells, touc
     projected = np.array([_flags(s) for s in write.palette], dtype=np.uint16)[codes]
     origin = _world_cell(start, site.box)
     y = np.arange(origin[1], origin[1] + codes.shape[1])[None, :, None]
-    retained = (original & (_FLUID | _ICE) != 0) & (y > ground[region[0], region[2]][:, None, :])
+    wet = original & (_FLUID | _ICE) != 0
+    above_ground = y > ground[region[0], region[2]][:, None, :]
+    retained = wet & above_ground
     permitted = approved_cells[region]
     loses_liquid = projected & (_FLUID | _COVER) == 0
     lowers_source = (original & _STILL != 0) & (projected & _FLUID != 0) & (projected & _STILL == 0)
@@ -364,6 +367,10 @@ def _project(write, site, before, after, ground, protected, approved_cells, touc
             raise VerifyError(
                 f"new liquid at {_world_cell(idx, origin)} has an unobserved flow face; read farther"
             )
+    buried = mask & wet & ~above_ground
+    if buried.any():
+        cell = _world_cell(_first(buried), origin)
+        raise VerifyError(f"write intersects buried liquid at {cell}; revise the grading or form to keep it")
     np.copyto(after[region], projected, where=mask)
     touched[region] |= mask
     return tuple(slice(max(0, a - 1), min(limit, b + 1)) for a, b, limit in zip(start, end, after.shape))
@@ -403,6 +410,32 @@ def _check_contacts(before, after, origin, *, check_open, touched=None):
                         f"{kind} at {cell} level {cell[1]} spills into an opening; raise the bank, "
                         "plan water at that level, or set hold_shores"
                     )
+
+
+def _check_updated_gravity(site, final, region, updates, phase):
+    """Check gravity cells written or face-adjacent to a phase update.
+
+    The region contains the full one-cell halo. Read each candidate's support
+    from the complete projection, including support just below the halo.
+    """
+    gravity = final[region] & _GRAVITY != 0
+    if not gravity.any():
+        return
+    candidates = gravity & binary_dilation(updates)  # self and the six face neighbours
+    xs, ys, zs = region
+    start_y = max(ys.start, 1)
+    if ys.start == 0 and candidates[:, 0, :].any():
+        i, k = _first(candidates[:, 0, :])
+        cell = _world_cell((xs.start + i, 0, zs.start + k), site.box)
+        if site.box[1] > -64:
+            raise VerifyError(f"read lower to check gravity at {cell} in {phase} phase")
+        raise VerifyError(f"unsupported gravity block at {cell} on the world floor in {phase} phase")
+    below = final[xs, start_y - 1 : ys.stop - 1, zs]
+    unsupported = candidates[:, start_y - ys.start :, :] & (below & _FALLS_THROUGH != 0)
+    if unsupported.any():
+        origin = _world_cell((xs.start, start_y, zs.start), site.box)
+        cell = _world_cell(_first(unsupported), origin)
+        raise VerifyError(f"unsupported gravity block at {cell} in {phase} phase")
 
 
 def _flow_reach(blocks, site, before, final, protected):
@@ -456,7 +489,7 @@ def _flow_reach(blocks, site, before, final, protected):
     return [_world_cell(p, origin) for p in reached]
 
 
-def _quality(box, surface_path, water, origin):
+def _quality(box, surface_path, water, origin, heights):
     x1, y, z1, x2, top, z2 = box
     region = {"region_a": (x1, y, z1), "region_b": (x2, top, z2)}
     corners = [(x1, y, z1), (x2, y, z1), (x2, y, z2), (x1, y, z2)]
@@ -469,11 +502,14 @@ def _quality(box, surface_path, water, origin):
         ],
     }
     if water is not None:
+        bed = surface_y(heights)
         for level in np.unique(water[np.isfinite(water)]):
-            i, j = np.nonzero(water == level)
+            basin = water == level
+            i, j = np.nonzero(basin)
+            below_bed = max(-64, int(bed[basin].min()) - 1)
             rows.setdefault("water_continuity", []).append(
                 {
-                    "region_a": (origin[0] + int(i.min()), y, origin[1] + int(j.min())),
+                    "region_a": (origin[0] + int(i.min()), below_bed, origin[1] + int(j.min())),
                     "region_b": (origin[0] + int(i.max()), int(level), origin[1] + int(j.max())),
                     "level": int(level),
                 }
@@ -481,7 +517,7 @@ def _quality(box, surface_path, water, origin):
     return rows
 
 
-def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns):
+def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns, *, require_relief=True):
     ox = integer_level(recipe["origin"][0], "origin x")
     oz = integer_level(recipe["origin"][2], "origin z")
     xi, zi = ox - site.box[0], oz - site.box[2]
@@ -498,6 +534,7 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns)
         ground=ground[crop],
         water=water,
         existing_water=liquid_levels(site, surf=surf, excluded=drained_cells).level[crop],
+        require_relief=require_relief,
     )
     if not report.ok:
         raise VerifyError(str(report))
@@ -522,7 +559,6 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns)
     touched = np.zeros(before.shape, bool)
     # A terrain plan can pause between any two files. Validate the intermediate
     # state of each static phase, including each tile of a large mass or form.
-    first_tile = True
     for mode, write in layers:
         for tile in split_columns(write, max_columns):
             halo = _project(
@@ -530,24 +566,7 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns)
             )
             origin = _world_cell([sl.start for sl in halo], site.box)
             _check_contacts(before[halo], after[halo], origin, touched=touched[halo], check_open=True)
-            # Check the entire first phase, then just the changed region plus
-            # its halo. Other cells passed at the previous phase boundary.
-            check = np.s_[:, :, :] if first_tile else halo
-            grid = after[check]
-            unsupported = (grid[:, 1:, :] & _GRAVITY != 0) & (grid[:, :-1, :] & _FALLS_THROUGH != 0)
-            if unsupported.any():
-                start = site.box[:3] if first_tile else origin
-                i, j, k = _first(unsupported)
-                raise VerifyError(
-                    f"unsupported gravity block at {_world_cell((i, j + 1, k), start)} in {mode} phase"
-                )
-            if (first_tile or halo[1].start == 0) and (grid[:, 0, :] & _GRAVITY != 0).any():
-                affected = grid[:, 0, :] & _GRAVITY != 0
-                if site.box[1] != -64:
-                    affected &= touched[check][:, 0, :]
-                if affected.any():
-                    raise VerifyError("read lower or support the gravity block at the bottom of the site")
-            first_tile = False
+            _check_updated_gravity(site, after, halo, touched[halo], mode)
     for write in writes[len(layers) :]:
         _project(write, site, before, after, ground, protected, approved_cells, touched)
     _check_contacts(before, after, site.box[:3], check_open=False)
@@ -565,15 +584,25 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns)
             f"{first['contact']} {first['neighbour']}; raise the bank, plan water at "
             "that level, or set hold_shores"
         )
-    unsupported = gravity_violations(writes, site)
-    if unsupported:
-        raise VerifyError(f"unsupported gravity block at {unsupported[0]}")
     reach = _flow_reach(flow["blocks"], site, before, after, protected)
+    if reach:
+        # Do not count potential downstream cells as direct writes. Their updates
+        # can still awaken an already unsupported gravity block on any face.
+        indices = np.asarray(reach, dtype=np.intp) - site.box[:3]
+        lo = np.maximum(0, indices.min(axis=0) - 1)
+        hi = np.minimum(after.shape, indices.max(axis=0) + 2)
+        region = tuple(slice(a, b) for a, b in zip(lo, hi))
+        updates = np.zeros(tuple(hi - lo), bool)
+        updates[tuple((indices - lo).T)] = True
+        _check_updated_gravity(site, after, region, updates, "flow")
     surface = expected_surface(hf, water, mass.kept_trunks, (ox, oz), retained=mass.liquid_top)
     # Forms can both remove and add the highest solid. Use the complete projected column.
-    solid = after[crop[0], :, crop[1]] & _SURFACE != 0
+    projected_field = after[crop[0], :, crop[1]]
+    solid = projected_field & _SURFACE != 0
     top = site.box[4] - np.argmax(solid[:, ::-1, :], axis=1)
     surface["top"] = np.where(solid.any(axis=1), top, None).ravel().tolist()
+    top_flags = np.take_along_axis(projected_field, (top - site.box[1])[:, None, :], axis=1)[:, 0, :]
+    visible_water = np.where(top_flags & (_SURFACE | _WATER) == (_SURFACE | _WATER), top, np.nan)
     skip = np.asarray(surface["skip"]).reshape(hf.h.shape)
     skip[protected[crop]] = 1
     # The server may count an unknown shape as a solid surface. Do not certify
@@ -600,7 +629,7 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns)
         "drained": int(np.count_nonzero(approved_cells & original & ~final & (after & _COVER == 0))),
         "added": int(np.count_nonzero(touched & final)),
     }
-    return report, layers, flow, reach, surface, stats
+    return report, layers, flow, reach, surface, stats, visible_water
 
 
 def _run(
@@ -620,6 +649,9 @@ def _run(
     held,
     preview,
     drain_approved,
+    seam_rows=None,
+    extra_notes=(),
+    require_relief=True,
 ):
     element = _label(element)
     first_phase = integer_level(first_phase, "first_phase")
@@ -633,8 +665,8 @@ def _run(
     bodies = drain_bodies(site, recipe, protect=protect)
     if not preview:
         _check_approvals(bodies, drain_approved)
-    report, layers, flow, reach, surface, stats = _prepare(
-        hf, spec, site, recipe, water, forms, protect, bodies, max_columns
+    report, layers, flow, reach, surface, stats, visible_water = _prepare(
+        hf, spec, site, recipe, water, forms, protect, bodies, max_columns, require_relief=require_relief
     )
     rows, payloads, boxes = [], [], []
 
@@ -693,14 +725,24 @@ def _run(
     folder = Path("terrain/previews" if preview else "terrain")
     prefix = project / folder / element
     surface_name = f"{folder}/{element}.surface.json"
-    quality = _quality(terrain_box, surface_name, water, (ox, oz))
+    quality = _quality(terrain_box, surface_name, water, (ox, oz), hf.h)
+    if seam_rows is not None:
+        quality["seam"] = seam_rows
+    if not require_relief:
+        # A gentle grading job still gets measured against its own silhouette.
+        silhouette = quality["silhouette"][0]
+        longer = hf.h[:, hf.nz // 2] if hf.nx >= hf.nz else hf.h[hf.nx // 2, :]
+        sample = surface_y(longer[np.linspace(0, longer.size - 1, silhouette["sample_count"]).astype(int)])
+        silhouette["min_y_variance"] = min(3.0, float(np.var(ys)), float(sample.var()))
     mass = layers[0][1]
     notes = [
         f"recipe {folder}/{element}.recipe.json",
         f"GATE A {verify.offline_token(report)}",
+        f"{sum(row['blocks'] for row in rows):,} direct cell writes across {len(rows)} phases",
         f"removed trees: {mass.removed_trees}, farthest write {reach_xz} blocks outside the box",
         f"liquid retained {stats['kept']}, covered {stats['covered']}, added {stats['added']}; held columns {held}",
     ]
+    notes.extend(extra_notes)
     notes.extend(_drain_notes(bodies))
     if bodies:
         notes.append(f"liquid cells drained {stats['drained']}")
@@ -711,7 +753,7 @@ def _run(
         )
     result = EmitResult(rows, quality, notes, bbox, project / surface_name, report)
     prefix.parent.mkdir(exist_ok=True, parents=True)
-    render_views(hf, str(prefix))
+    render_views(hf, str(prefix), water=visible_water)
     _write_json(prefix.with_suffix(".recipe.json"), recipe)
     prefix.with_suffix(".verify.txt").write_text(
         str(report) + "\n" + "\n".join(notes) + "\n", encoding="utf-8"
@@ -760,6 +802,11 @@ def emit_field(
     standalone: bool = False,
     max_columns: int = 128,
     drain_approved: tuple[str, ...] = (),
+    seam_rows: list[dict] | None = None,
+    extra_notes: tuple[str, ...] = (),
+    held_columns: int = 0,
+    preview: bool = False,
+    require_relief: bool = True,
 ) -> EmitResult:
     return _run(
         hf,
@@ -774,9 +821,12 @@ def emit_field(
         protect=protect,
         standalone=standalone,
         max_columns=max_columns,
-        held=0,
-        preview=False,
+        held=held_columns,
+        preview=preview,
+        seam_rows=seam_rows,
+        extra_notes=extra_notes,
         drain_approved=drain_approved,
+        require_relief=require_relief,
     )
 
 
@@ -789,8 +839,9 @@ def _from_recipe(recipe, project_dir, first_phase, standalone, preview, drain_ap
     site, _, _ = ground_for(recipe, project)
     info = {}
     hf = build_field(recipe, project, info)
+    water = water_levels(hf, recipe)
     if recipe.get("material"):
-        spec = _material_from_spec(recipe["material"], hf, recipe)
+        spec = _material_from_spec(recipe["material"], hf, recipe, water=water)
     else:
         spec = MaterialSpec.natural(hf, snow_y=recipe.get("snow_y"))
         if recipe.get("strata"):
@@ -804,7 +855,7 @@ def _from_recipe(recipe, project_dir, first_phase, standalone, preview, drain_ap
         element=recipe["element"],
         first_phase=first_phase,
         recipe=recipe,
-        water=water_levels(hf, recipe),
+        water=water,
         forms=forms,
         protect=None,
         standalone=standalone,

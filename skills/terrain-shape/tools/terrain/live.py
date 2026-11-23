@@ -322,6 +322,13 @@ def materialize_live(
         for (lo, hi, state), watery in zip(runs, water_run_flags(runs)):
             lava = liquid_kind(state) == "lava"
             retained = watery or lava
+            if active[i, j] and retained:
+                # Leave buried liquid in place inside the seal. If it occupies
+                # the proposed bed itself, the emitter must reject that grade.
+                first = max(lo, b)
+                last = min(hi, int(g), s - 1)
+                if first <= last:
+                    col[first - lower : last - lower + 1] = 0
             # L describes only the uppermost still kind. A lower original run can
             # also occupy space promised to an explicit flood, even when left as skip.
             if lava and explicit[i, j]:
@@ -338,6 +345,12 @@ def materialize_live(
             stop = hi if retained else min(hi, top)
             for y in range(max(lo, s + 1), stop + 1):
                 cell = (x, y, z)
+                if retained and y <= g:
+                    # Lowering a bed may expose a buried source. Keep its
+                    # original state and let the contact checks assess the cut.
+                    if base_id(state) not in LEAVES:
+                        write.liquid_top[i, j] = y
+                    continue
                 existing = retained and y > g and cell not in excluded
                 replacement = None
                 if cell in excluded:

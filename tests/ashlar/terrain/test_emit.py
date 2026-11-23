@@ -248,8 +248,50 @@ def test_continuity_only_for_planned_water(tmp_path):
     result = emit_ashlar(recipe, tmp_path, first_phase=3)
     rows = result.quality["water_continuity"]
     assert [r["level"] for r in rows] == [74]
+    assert rows[0]["region_a"][1] == 72
     assert rows[0]["region_a"][0] <= 7 <= rows[0]["region_b"][0]
     assert rows[0]["region_a"][2] <= 21 <= rows[0]["region_b"][2]
+
+
+@pytest.mark.parametrize("state", [WATER, "minecraft:lava[level=0]"])
+def test_seal_does_not_overwrite_buried_liquid(tmp_path, state):
+    recipe = hill(tmp_path, cells={(6, 62, 20): state})
+    result = emit_ashlar(recipe, tmp_path, first_phase=1)
+    fills = json.loads((tmp_path / result.phases[0]["file"]).read_text())["fills"]
+    assert not any(all(lo <= y <= hi for lo, y, hi in zip(f["from"], (6, 62, 20), f["to"])) for f in fills)
+
+
+def test_form_cannot_erase_buried_liquid(tmp_path):
+    recipe = hill(tmp_path, cells={(6, 62, 20): WATER})
+    recipe["forms"] = [form(tmp_path, "drain", (6, 62, 20), mode="carve")]
+    with pytest.raises(VerifyError, match=r"buried liquid at \(6, 62, 20\)"):
+        emit_ashlar(recipe, tmp_path, first_phase=1)
+    assert not (tmp_path / "phases").exists()
+
+
+def test_seeded_pond_in_gate_render_and_material_plan(tmp_path):
+    recipe = hill(tmp_path)
+    recipe["pads"] = [{"center": [7, 21], "half": [1, 1], "level": 73, "shoulder": 3}]
+    recipe["water"] = [{"at": [7, 21], "level": 74}]
+    recipe["material"] = {
+        "surface": {"minecraft:grass_block": 1, "minecraft:moss_block": 1},
+        "lake_floor": {"minecraft:clay": 1, "minecraft:dirt": 1},
+    }
+    result = emit_ashlar(recipe, tmp_path, first_phase=1)
+    checks = {name: detail for name, _, detail in result.report.checks}
+    assert checks["edge_irregularity"].startswith("coastline longest collinear run")
+    assert checks["underwater_face"].startswith("submerged face")
+    assert any("direct cell writes" in note for note in result.notes)
+    for suffix in ("hillshade", "relief", "slope"):
+        with Image.open(tmp_path / f"terrain/hill_{suffix}.png") as image:
+            r, g, b = image.getpixel((11 * 3, 11 * 3))
+            assert b > g > r
+    for suffix, blue in (("profile", (40, 90, 150)), ("eye", (60, 110, 170))):
+        with Image.open(tmp_path / f"terrain/hill_{suffix}.png") as image:
+            assert blue in image.get_flattened_data()
+    fills = json.loads((tmp_path / result.phases[0]["file"]).read_text())["fills"]
+    bed = next(f for f in fills if all(lo <= y <= hi for lo, y, hi in zip(f["from"], (7, 73, 21), f["to"])))
+    assert bed["block"] in {"minecraft:clay", "minecraft:dirt"}
 
 
 def test_unknown_receipt_with_no_requested_drain_writes_nothing(tmp_path):
@@ -572,3 +614,53 @@ def test_changed_source_at_read_ceiling_needs_its_upper_neighbour(tmp_path, site
         assert not (tmp_path / "terrain").exists()
     else:
         assert emit_ashlar(recipe, tmp_path, first_phase=1).report.ok
+
+
+def test_undisturbed_floating_sand_in_site_margin_does_not_block_emission(tmp_path):
+    recipe = hill(tmp_path, cells={(-6, 91, 35): "minecraft:sand"})
+    result = emit_ashlar(recipe, tmp_path, first_phase=1)
+    assert result.report.ok
+    assert result.bbox[0] > -6 and result.bbox[5] < 35
+
+
+@pytest.mark.parametrize("offset", [(0, 0, 0), (0, -1, 0), (0, 1, 0), (1, 0, 0), (0, 0, 1)])
+def test_neighbour_update_at_floating_sand_is_rejected_in_form_phase(tmp_path, offset):
+    # An unrelated mass phase can pass. A later form next to floating sand
+    # updates that cell even when it does not remove the block below it.
+    x, y, z = -5, 90, 34
+    recipe = hill(tmp_path, cells={(x, y, z): "minecraft:sand"})
+    dx, dy, dz = offset
+    state = "minecraft:sand" if offset == (0, 0, 0) else "minecraft:fire"
+    recipe["forms"] = [form(tmp_path, "update", (x + dx, y + dy, z + dz), state)]
+    with pytest.raises(VerifyError, match=r"gravity.*\(-5, 90, 34\).*build"):
+        emit_ashlar(recipe, tmp_path, first_phase=1)
+    assert not (tmp_path / "phases").exists()
+
+
+def test_possible_flow_adjacent_to_preexisting_floating_sand_is_rejected(tmp_path):
+    # Its support is an original air pocket. Passing water beside the sand
+    # can wake it even though the support itself is off the flow route.
+    recipe = hill(
+        tmp_path,
+        cells={(4, 52, 17): "minecraft:air", (5, 52, 17): "minecraft:sand", (5, 51, 17): "minecraft:air"},
+    )
+    recipe["falls"] = [{"at": [4, 52, 16]}]
+    with pytest.raises(VerifyError, match=r"gravity.*\(5, 52, 17\).*flow"):
+        emit_ashlar(recipe, tmp_path, first_phase=1)
+    assert not (tmp_path / "phases").exists()
+
+
+@pytest.mark.parametrize(("floor", "diagnostic"), [(42, "read lower"), (-64, "world floor")])
+def test_gravity_at_read_bottom_is_scoped_to_updates(tmp_path, floor, diagnostic):
+    recipe = hill(tmp_path)
+    # The exact same bottom-of-read gravel stays irrelevant until the write above it.
+    x, z = -6, 34
+    make_site(
+        tmp_path / "site",
+        (BOX[0], floor, BOX[2], BOX[3], BOX[4], BOX[5]),
+        cells={(x, floor, z): "minecraft:gravel"},
+    )
+    assert emit_ashlar(recipe, tmp_path, first_phase=1).report.ok
+    recipe["forms"] = [form(tmp_path, "adjacent", (x, floor + 1, z), "minecraft:andesite")]
+    with pytest.raises(VerifyError, match=diagnostic):
+        emit_ashlar(recipe, tmp_path, first_phase=1)

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
+
 from .recipe import build_field
 from .materialize import MaterialSpec, to_columns_plan
 from .climate import BiomeField
@@ -68,7 +70,7 @@ def emit_world(recipe: dict, *, allow_unverified: bool = False) -> dict:
             "biomes": biomes, "scatter": scatter}
 
 
-def _material_from_spec(mat: dict, hf, recipe: dict | None = None) -> MaterialSpec:
+def _material_from_spec(mat: dict, hf, recipe: dict | None = None, *, water=None) -> MaterialSpec:
     """Build a MaterialSpec from a recipe's ``material`` block.
 
     Three forms are supported. A ``belt_regions`` list selects the per-arc form
@@ -92,7 +94,7 @@ def _material_from_spec(mat: dict, hf, recipe: dict | None = None) -> MaterialSp
     from . import masks as M
 
     if "belt_regions" in mat:
-        return _belt_region_spec(mat, hf, recipe)
+        return _belt_region_spec(mat, hf, recipe, water=water)
 
     layered = any(k in mat for k in ("snow_palette", "cliff_palette", "lake_floor"))
 
@@ -108,11 +110,10 @@ def _material_from_spec(mat: dict, hf, recipe: dict | None = None) -> MaterialSp
             spec.strata = [(s["block"], int(s["thickness"])) for s in mat["strata"]]
         return spec
 
-    sea = hf.sea_level
     snow_y = mat.get("snow_y")
     cliff_slope = float(mat.get("cliff_slope", 50.0))
     steep = M.mask_slope(hf.h, lo=cliff_slope)
-    submerged = M.mask_y(hf.h, "<", sea)
+    submerged = hf.h < hf.sea_level if water is None else np.isfinite(water)
 
     layers = []
     # 1) turquoise / custom lake floor — every submerged column.
@@ -144,7 +145,7 @@ def _material_from_spec(mat: dict, hf, recipe: dict | None = None) -> MaterialSp
     return spec
 
 
-def _belt_region_spec(mat: dict, hf, recipe: dict | None) -> MaterialSpec:
+def _belt_region_spec(mat: dict, hf, recipe: dict | None, *, water=None) -> MaterialSpec:
     """Per-arc material for a blended belt loop: each region's palette is keyed
     to a position ``s`` along the belt centerline.
 
@@ -157,7 +158,6 @@ def _belt_region_spec(mat: dict, hf, recipe: dict | None) -> MaterialSpec:
     snow cap. The region masks partition the grid, so the global ``slant`` is
     dropped (the per-region cliff layers do its job) — the same reasoning as the
     layered glacial form. The centerline is rebuilt from ``recipe["belt"]``."""
-    import numpy as np
     from .materialize import Layer
     from . import masks as M
     from .field import Centerline
@@ -180,7 +180,7 @@ def _belt_region_spec(mat: dict, hf, recipe: dict | None) -> MaterialSpec:
 
     cliff_slope = float(mat.get("cliff_slope", 50.0))
     steep = M.mask_slope(hf.h, lo=cliff_slope)
-    above_water = ~M.mask_y(hf.h, "<", hf.sea_level)
+    above_water = hf.h >= hf.sea_level if water is None else ~np.isfinite(water)
 
     layers: list = []
     for ri, r in enumerate(regions):

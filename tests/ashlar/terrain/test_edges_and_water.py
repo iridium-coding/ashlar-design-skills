@@ -538,5 +538,3 @@ def test_hold_shores_holds_a_bank_beside_a_leaf_at_the_surface_y():
     out = hold_shores(h, site, origin=(0, 0))
     assert out[5, 4] == 64.0                                 # bank beside the leaf column
     assert out[2, 2] == 50.0
-
-

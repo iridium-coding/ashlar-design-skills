@@ -103,12 +103,13 @@ count the report does not show. Spot-check a few positions with `mc_inspect`.
 
 ## Redstone
 
-Before the build, confirm that the recorded `redstone_rest.py check` is clean
-for the as-built state, that unmodelled parts were checked by hand, and that
+Before a machine build, confirm that the recorded `redstone_rest.py check`
+is clean for the as-built state, that unmodelled parts were checked by hand, and that
 the loaded state settles. Even exit 0 or 3 can accompany a `loaded … cannot
 settle` result. Record the pre-build site read path in the plan notes when the
 machine depends on existing blocks or conditional fills. See the
-[checker guide](../../system-redstone/reference/checker.md).
+[checker guide](../../system-redstone/reference/checker.md). For the deliberate
+Rung 0 torch, use the [check 5 gate](#rung-0-calibration-check-5).
 
 For `built`, run the usual acceptance and `quality_contract` checks. Read the
 full machine box with `ashlar_place.py read`, using the plan's world, and
@@ -149,9 +150,10 @@ evidence. Keep console reads within loaded chunks and preserve the approved
 force-load scope.
 
 Each `rest` row diffs a test's own baseline read against the after read over
-the same full region to check power properties at modelled positions. A pass
-for `at_rest` requires the pre-build check, a matching loaded baseline with
-verified internal inventories and every applicable `rest` row to pass.
+the same full region to detect replaced components and changes to modelled
+power properties. A pass for `at_rest` requires the pre-build check, a
+matching loaded baseline with verified internal inventories and every
+applicable `rest` row to pass.
 
 - **Power properties** are `power`, `powered`, `lit`, `extended`, `enabled`,
   `triggered`, `locked`, and `open` on machine-driven doors, trapdoors and
@@ -160,6 +162,31 @@ verified internal inventories and every applicable `rest` row to pass.
   fences, walls and bars, stair `shape`, and chest `type`.
 
 Record all four [verdicts](registry.md#verdicts) with their evidence.
+
+### Rung 0 calibration check 5
+
+Only the throwaway `rs-calibration` plan may place check 5's isolated standing
+torch on an unpowered support. Run the ordinary pre-build checks. Require
+exactly one as-built mismatch. At the fixture's planned world coordinate,
+the diagnostic must show
+`written minecraft:redstone_torch[lit=false]  expected minecraft:redstone_torch[lit=true]`.
+Require zero structural errors, no unsettled positions in the as-built,
+loaded or probed circuit, and the usual hand checks for unmodelled parts.
+Keep the full diagnostic and exit 1 in the build log. At the ordinary
+approval gate show the actual X Y Z, both literal states and why the
+mismatch is intentional.
+Wait for explicit approval of that preview before placement.
+
+Run the ordinary geometry, inventory and loaded-baseline checks. If the
+torch stays unlit, the sole expected `diff --loaded` line at the approved
+X Y Z is `minecraft:redstone_torch[lit=true] -> minecraft:redstone_torch[lit=false]`.
+Record the coordinates, output and exit code. Only this exact difference
+may carry into the baselines for the other calibration tests. They still
+require their own full baseline and all ordinary row checks. If the torch
+lights, record the observed state and the differing check 5 result. Handle
+any other baseline mismatch normally. Record the calibration build's
+`at_rest` as `fail` because the as-built check failed, even if the torch
+later lights. Record the seven observations before the approved rollback.
 
 ## Report
 

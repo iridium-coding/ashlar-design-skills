@@ -201,7 +201,7 @@ closed. The first pass and nine repeats give ten cycles.)
 | `await` | a container or cell | `container` or `block` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail | agent |
 | `expect` | a container, a cell or a region | `container` or `block` | `container`: either `gained` and the items the container gained since this test's baseline, or `holds` and its exact contents, each as `id=count` joined by `\|` (nothing else may have been gained, or be held); `block`: a block state that every cell must match (unspecified properties are wildcards) | agent |
 | `conserve` | a region | `containers` | `-`: for every item, the total across the region's containers equals this test's baseline total plus this test's loads, and no container outside this test's `gained` rows gained anything | agent |
-| `rest` | a region | `blocks` | `baseline`: the power properties of the redstone components match this test's baseline | agent |
+| `rest` | a region | `blocks` | `baseline`: components with modelled power properties have the same block IDs and power states as in this test's baseline | agent |
 | `manual` | where the user acts | the exact instruction, quoted | `-`; the next steps read what happened | user |
 | `repeat` | `-` | `steps <a>-<b>` | how many additional times to run those earlier steps | — |
 
@@ -223,6 +223,8 @@ this test's `load` targets and `gained` containers) hold what the loaded rest
 state says. If not, for example because an earlier failed run left items in a
 hopper line, the test stops and tells the user, who clears them in game or
 rolls back. The plan never clears containers through the console.
+The sole calibration baseline exception is the approved [Rung 0 check 5
+torch](verification.md#rung-0-calibration-check-5).
 
 ## Terrain files
 

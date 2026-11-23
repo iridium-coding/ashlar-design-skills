@@ -44,9 +44,11 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
   properties against the loaded model. If setup cannot settle, the baseline
   is undefined and this command exits 2. Read inventories separately with
   `data get block`.
-- **Return to rest.** Diff two JSON reads spanning the same full box to compare
-  power properties at common modelled positions. Neither plan-only option
-  applies to this form. Keep the geometry check alongside it.
+- **Return to rest.** Use two full reads of the same box. At each cell observed
+  in both reads, the diff reports a block ID change if either block has
+  modelled power properties. For an unchanged ID it compares only those
+  properties. A cell omitted from a partial read is unobserved; a cell read
+  as air is an observation. Keep the geometry check alongside it.
 - **Inventories.** `containers` prints one `X Y Z minecraft:block_id` line for
   each supported container written by the plan, to identify baseline, settle
   and conservation reads.
@@ -102,7 +104,12 @@ detectors, target blocks and lecterns. Any of these next to the modelled circuit
 is listed as "check by hand", never guessed.
 
 Record timing and other design assumptions even when the checker cannot
-detect them from block IDs. Rung 0 is the live calibration that decides what
-Ashlar's connection pass does to lone dust. The offline model's treatment of
-a wire written without sides is provisional. Give the dust a real connection
-where lateral power matters.
+detect them from block IDs. Live Rung 0 on Ashlar 0.4.9 and Paper 26.3 build
+257 confirmed the checker's two isolated-wire cases. The wire with omitted
+sides became a dot, and the explicit four-sided wire kept its cross. Give
+the dust a real connection where lateral power matters.
+
+The loaded simulation assumes an inventory change reaches the comparator.
+In that run, loading 23 items into the locked hopper succeeded, and its
+comparator stayed at 0. Use the actual inventory and output readback as
+evidence. The offline prediction for a settled circuit is still 2.

@@ -53,6 +53,8 @@ Before the first write, show the user:
   cleanup. Show the combined budget when tests share a force-load, with
   enough time reserved to remove and verify the run's additions;
 - any test input or fixture, and where it is;
+- for Rung 0 calibration check 5 only, the exact torch coordinate, written
+  state and checker expectation per [verification.md](verification.md#rung-0-calibration-check-5);
 - the manual steps the user will be asked to do;
 - what will remain unverified;
 - for a plan outside the server's main world: that its console steps need
@@ -137,16 +139,16 @@ complete only when its `manifest.json` says so.
      in the area, or the player list could not be read. Exit 2: the phase file
      is invalid. Exit 3: the file needs more snapshots than allowed, or a
      shell fill (`outline`, `hollow`, `walls`) is too large to split; split it
-     into smaller phase files or fills. Exit 5: the server failed part way; the
-     report lists the pages already written and the snapshot ids.
+     into smaller phase files or fills. Exit 5 can occur before or during
+     placement. Read the error, confirmed page count and available snapshot
+     ids or backup manifest, then follow the recovery procedure below.
    - `commands` with a commands file: run
      `python3 <skill>/scripts/ashlar_place.py commands <file> --progress .minecraft-builder/<project>/phases/<file>.progress --log .minecraft-builder/<project>/placer.log`,
      adding `--world <name>`, and `--dimension <dim>` only when the user agreed
      at the gate. The runner applies the prefix, force-load and player rules
-     itself ([commands.md](commands.md#the-runner)). Exit 6: the run finished
-     but some commands failed; the report lists them. Exit 5 also covers a
-     force-load it could not remove: release those chunks first. Exit 4: a
-     player is in a tile.
+     itself ([commands.md](commands.md#the-runner)). Exit 6 means some commands
+     failed and the report lists them. Exit 5 includes force-loads the runner
+     could not remove. Release those first. Exit 4 means a player is in a tile.
    - `commands` with `file` set to `-`: run ordinary rows in order, one exact approved
      `mc_command` per row, with the `minecraft:` prefix and any approved
      dimension wrapper. Use `forceload query` before adding chunks. Use the
@@ -181,7 +183,7 @@ complete only when its `manifest.json` says so.
   blocks (a fountain head, a waterfall source): at most 2,000 flowing blocks per
   call. The placer enforces the cap: it pages so no page holds more than 2,000
   water or lava cells (`--max-flowing`), and `plan` reports `liquid_cells`.
-- Ashlar places redstone without physics. Write each component in its resting
+- Ashlar places redstone without physics. Write each machine component in its resting
   state with inputs as built (normally off) and containers empty. Load setup
   containers in a `commands` phase and verify the inventory and actual
   comparator response. The connection pass sets shape properties.
@@ -195,22 +197,34 @@ complete only when its `manifest.json` says so.
 
 ## Resuming and fixing
 
-- **A project found `building`** (a phase stopped part way): show which phases
-  are recorded as placed, ask the user whether to resume or roll back, and on
-  a resume continue from the first phase not recorded as placed. This section
-  is the one resume rule; the bullets below apply it per phase kind.
-- **An interrupted block placement** (placer exit 5, an MCP error, the user
-  stops it): reconcile the log, live reads and snapshot list or backup
-  manifest. A failed placement call can leave uncertain writes even when no
-  successful page was recorded. If no write was sent, preserve any original
-  recovery data and obtain missing coverage at a fresh gate before placement.
-  For an idempotent replay, verify complete retained coverage from before
-  the first write. Reuse it from the start with `--no-snapshot` for the
-  placer or omit `snapshot` for `mc_build`. For confirmed or possible writes
-  with missing coverage, stop at the recovery gate and name the unrecoverable
-  bounds. When replay could change the result, as with overlapping
-  conditional fills or new flow outside the previous bounds, reconcile
-  the exact remaining writes, restore or correction at a fresh gate.
+- **A project found `building`:** show the phases recorded as placed. Use
+  the recovery procedure for the first phase whose placement is unconfirmed.
+  Present the resume or rollback choices and wait for approval.
+- **An interrupted block placement** (placer exit 5, an MCP error or a user
+  stop) goes to the recovery gate before any resume or restore. Reconcile the
+  phase and placer logs with the live block read and the snapshot list
+  (`mc_snapshot` with `action: "list"`) or the backup manifest. Match the
+  retained original recovery points, world and bounds to the approved phase.
+  Record confirmed writes and calls with an uncertain outcome. The placer
+  takes all rollback reads before its first build call. Zero confirmed pages
+  can still include a build call that may have written blocks.
+  - If retained pre-write snapshots or backups cover the entire phase and
+    replay produces the same final cells, show the coverage and offer resume
+    or rollback. After approval, recheck players. For resume, reuse the original
+    coverage from the start (`--no-snapshot` for the placer, omit `snapshot`
+    for `mc_build`).
+  - If the phase definitely sent no writes and original coverage is
+    incomplete, keep the original recovery points and show the missing bounds
+    and any snapshot slot or eviction cost. Stop if a new snapshot would evict
+    a required original. With approval and a fresh player check, capture only
+    the missing bounds and verify the complete coverage before replay.
+  - If a write occurred or might have occurred and original coverage is
+    missing or uncertain, stop. Report the affected bounds and which original
+    states remain recoverable. Present any partial restore or correction for
+    separate approval.
+  - If replay could change the result, for example with overlapping conditional
+    fills or water that could flow beyond the previous bounds, reconcile the
+    writes and preview the exact remaining writes or restore at a fresh gate.
 - **An interrupted `commands` phase:** release this phase's confirmed
   force-load additions. Reconcile each confirmed or uncertain operation
   against the console log and observed state. Use the available block,

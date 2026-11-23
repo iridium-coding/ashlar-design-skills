@@ -308,11 +308,10 @@ checked by hand.
 
 **Containers and setup.** Containers are loaded after their blocks exist, with
 `item replace block` (one slot per command) or `data merge block` (`Items`), in
-a `commands` phase inside a paired force-load. These are the machine's first
-real updates: comparators reading those containers re-read, so loading a
-sorter's filters settles its own comparators. Write the circuit as it rests
-with empty containers and let the setup move it. The checker computes both
-states (§8.2).
+a `commands` phase inside a paired force-load. Write the circuit as it rests
+with empty containers. The checker computes the expected states (§8.2).
+Verify the inventory and actual comparator output after loading. The Rung 0
+observation in §7 requires this readback before relying on the output.
 
 **Starting.** A machine driven by game events (items arriving, crops growing,
 mobs) starts itself once it is placed at rest and its chunks tick. A machine
@@ -335,10 +334,11 @@ separate outputs apart with a one-block gap, different facings, or barrels. A
 comparator reads a whole double chest. A chest with a conductive block above it
 cannot open and reads 0.
 
-**Dust shape.** Ashlar's connection pass decides wire shapes. A lone dust may
-come out as a dot, which powers only the block below, where a hand-placed one
-would be a cross. Until rung 0 shows what Ashlar does, design so no wire depends
-on being a cross with no connections. Rung 0 settles this rule.
+**Dust shape.** Live Rung 0 on Ashlar 0.4.9 and Paper 26.3 build 257 confirmed
+that an isolated wire written with omitted sides becomes a dot and one
+written with four sides keeps its cross. The connected wires formed lines
+and powered the receiving lamp. Give dust a real connection where lateral
+power matters.
 
 **Liquids and plants.** Water next to cane, or water that only has to sit
 still, is placed still. A stream that must carry items needs flowing sources
@@ -411,7 +411,8 @@ so a later reader knows what they are.
   pulses. No 0-tick tricks, duping or headless pistons.
 - Every redstone component is written at rest. Hand off to `exec-ashlar build`
   only after `redstone_rest.py check` is clean, with every unmodelled part
-  checked by hand and noted.
+  checked by hand and noted. The only exception to a clean as-built check is
+  the deliberate, approved check 5 torch in Rung 0 (§9.3).
 - Never call a machine working without a passed functional test. When Ashlar
   cannot drive a machine, say "needs your test" and give the exact steps.
 - All world changes go through `exec-ashlar`. Console commands only as
@@ -501,7 +502,7 @@ closed. The first pass and nine repeats give ten cycles.)
 | `await` | a container or cell | `container` or `block` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail | agent |
 | `expect` | a container, a cell or a region | `container` or `block` | `container`: either `gained` and the items the container gained since this test's baseline, or `holds` and its exact contents, each as `id=count` joined by `\|` (nothing else may have been gained, or be held); `block`: a block state that every cell must match (unspecified properties are wildcards) | agent |
 | `conserve` | a region | `containers` | `-`: for every item, the total across the region's containers equals this test's baseline total plus this test's loads, and no container outside this test's `gained` rows gained anything | agent |
-| `rest` | a region | `blocks` | `baseline`: the power properties of the redstone components match this test's baseline | agent |
+| `rest` | a region | `blocks` | `baseline`: components with modelled power properties have the same block IDs and power states as in this test's baseline | agent |
 | `manual` | where the user acts | the exact instruction, quoted | `-`; the next steps read what happened | user |
 | `repeat` | `-` | `steps <a>-<b>` | how many additional times to run those earlier steps | — |
 
@@ -523,6 +524,7 @@ this test's `load` targets and `gained` containers) hold what the loaded rest
 state says. If not, for example because an earlier failed run left items in a
 hopper line, the test stops and tells the user, who clears them in game or
 rolls back. The plan never clears containers through the console.
+For Rung 0 only, §9.3 defines the one permitted fixture difference.
 
 ### 6.2 Validation additions (`plan-format.md`)
 
@@ -647,18 +649,31 @@ approval date and record the approved test scope. Keep the registry status
 
 ### 6.6 Recovery and corrections (`execution.md`)
 
-- **An interrupted block placement** (placer exit 5, an MCP error, the user
-  stops it): record the known writes and snapshot ids. Confirm that replaying
-  the fills and blocks would produce the same final cells. When it would,
-  offer to resume from the start or roll back and ask before either. Resume
-  using the original snapshots without taking new ones (`--no-snapshot` for
-  the placer, omit `snapshot` for `mc_build`). That keeps the original
-  rollback point and avoids spending slots on the half-written state. If any
-  original snapshot has been evicted, tell the user at the gate which part
-  can no longer be rolled back. If replay could produce a different result,
-  for instance with overlapping conditional fills, reconcile the partial
-  writes first and show the exact remaining writes, restore or correction at
-  a fresh gate.
+- **An interrupted block placement** (placer exit 5, an MCP error or a user
+  stop) goes to a recovery gate before any resume or restore. Reconcile the
+  phase and placer logs with `mc_snapshot` (`action: "list"`). Match retained
+  pre-write ids, world and tile bounds to the approved phase. Record confirmed
+  writes and any build call with an unknown outcome. The placer takes all
+  snapshots before its first build call. A player-check or snapshot failure
+  can leave zero or partial coverage. Zero confirmed pages alone does not
+  establish that no write occurred.
+  - If pre-write snapshots cover the entire phase and replay produces the
+    same final cells, show the coverage and offer resume or rollback. Wait for
+    explicit approval and recheck players. For resume, reuse the verified
+    snapshots (`--no-snapshot` for the placer, omit `snapshot` for `mc_build`).
+  - If coverage is incomplete and the phase definitely sent no writes, show
+    the missing tile bounds, retained ids and slot/eviction impact. Stop if a
+    new snapshot would evict a required original. Obtain explicit approval,
+    check players, then snapshot only the missing bounds. Log the new ids and
+    recheck the entire retained coverage before an approved resume.
+  - If a write occurred or might have occurred and original coverage is
+    missing or uncertain, stop. Report the affected bounds and what can
+    actually be restored. A new snapshot of a possibly changed cell cannot
+    recover its pre-write state. Present any proposed partial restore or
+    correction for separate approval.
+  - If replay could change the result (for example, overlapping conditional
+    fills), reconcile the writes and preview the exact remaining writes or
+    restore at a fresh gate.
 - **An interrupted `commands` phase:** release the phase's force-loads and
   reconcile each confirmed or uncertain operation against the console log and
   observed state. Use available block, inventory and tagged-entity reads.
@@ -716,6 +731,14 @@ example, commands do not update comparators, or hoppers stay idle in
 force-loaded chunks with nobody near), stop and bring it to the user before
 going on.
 
+On 2026-11-22, with Ashlar 0.4.9 and Paper 26.3 build 257, the locked hopper
+retained the 23 items written with `item replace block`. With a confirmed
+force-load, the comparator and first dust both read 0 through the final read.
+The cause is undetermined. Checks 3 and 7 were deferred, the approved snapshot
+restored the full site, and rungs 1 and 2 remain pending. The run also confirmed
+the dot, cross and connected-wire states, unchanged written power states,
+the deliberately unlit torch and chest pairing.
+
 ## 8. The resting-state checker (`redstone_rest.py`)
 
 ### 8.1 Commands
@@ -743,8 +766,10 @@ python3 <skill>/scripts/redstone_rest.py containers <plan.toon>
   non-power properties, ignoring connection-pass properties (§6.4); this is the
   `built` check. With `--loaded` it instead compares the power properties of
   every modelled component with the loaded rest state; this is the `at_rest`
-  check. `diff` of two reads compares the power properties of the modelled
-  components in both reads (the `rest` rows).
+  check. At positions observed in both reads, `diff` reports a changed ID if
+  either block has modelled power properties. An unchanged ID is compared
+  only on its modelled power properties. The `rest` rows require two full
+  reads of the same region.
 - `containers` lists the supported containers written by the plan. Use the
   full read to find existing containers for `settle`, `conserve` and the
   baseline.
@@ -794,11 +819,10 @@ than the head in front of an extended piston, and an observer written powered.
   glass, slabs or other non-conductive blocks takes power from lower dust but
   passes none down (Java). One connection makes a line pointing both ways; two
   or more make the matching corner or junction. A lone dust is a cross in
-  vanilla and a dot only if toggled. Until rung 0 says otherwise, the checker
-  assumes Ashlar's connection pass behaves like vanilla's shape update: a lone
-  wire written with no sides (as every stamped module wire is, because
-  `stamp.py` drops them) stays a dot, and one written with all four sides stays
-  a cross. A dot powers only the block below. Power drops by 1 per dust. Dust
+  vanilla and a dot only if toggled. The checker uses the two cases confirmed
+  by Rung 0. A lone wire with no sides (as stamped modules write it) becomes
+  a dot, and one written with all four sides stays a cross. A dot powers only
+  the block below. Power drops by 1 per dust. Dust
   weakly powers the block it sits on and the blocks it points into.
 - **Comparators:** compare and subtract modes; the rear input from a signal, a
   container's fullness (finding 5), or a container behind one conductive block,
@@ -917,8 +941,18 @@ It checks:
 | 6 | Two same-facing chests side by side; two barrels side by side | The chests pair, the barrels stay separate | Update the chest rule |
 | 7 | A hopper written `enabled=false` under a lit torch, with items above it | It moves nothing | Record it |
 
-Rung 0 writes to the world, so it goes through the gate like any build, and it
-is rolled back afterwards.
+Check 5 alone allows one as-built mismatch in the throwaway `rs-calibration`
+plan. Run the normal checks, retain the diagnostic and exit 1, and require
+zero structural errors, no unsettled positions and the usual unmodelled hand
+checks. At the build gate show the exact world coordinate, written
+`minecraft:redstone_torch[lit=false]` and expected
+`minecraft:redstone_torch[lit=true]` on the unpowered support. Require
+explicit approval for that preview. Run the ordinary full reads, geometry,
+inventory and loaded checks. The only permitted loaded-baseline difference
+for calibration testing is the same coordinate with predicted `lit=true`
+and observed `lit=false`. Record the actual diff and exit code, including a
+clean diff if the torch lights. The failed pre-build check makes `at_rest`
+`fail` for the fixture. Record each check and roll back with approval.
 
 ### 9.4 Rung 1: two-item sorter with overflow
 

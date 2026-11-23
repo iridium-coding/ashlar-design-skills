@@ -198,6 +198,27 @@ def test_cli_diff_reads_reports_power_changes(tmp_path, capsys):
     assert main(['diff', str(a), str(a)]) == 0
 
 
+@pytest.mark.parametrize(('before', 'after'), [
+    ('redstone_lamp[lit=true]', 'air'),
+    ('redstone_lamp[lit=true]', 'crafter'),
+    ('piston', 'sticky_piston[extended=false]'),
+    ('air', 'redstone_lamp[lit=false]'),
+])
+def test_cli_diff_reads_reports_component_replacement(tmp_path, capsys, before, after):
+    pos = (0, 64, 0)
+    a = read_file(tmp_path / 'a.json', {pos: parse_state(before)})
+    b = read_file(tmp_path / 'b.json', {pos: parse_state(after)})
+    assert main(['diff', str(a), str(b)]) == 1
+    assert capsys.readouterr().out.strip() == f'0 64 0  minecraft:{before} -> minecraft:{after}'
+
+
+def test_diff_reads_ignores_geometry_and_unobserved_cells(tmp_path):
+    first = {(0, 64, 0): parse_state('repeater[delay=2]'), (1, 64, 0): parse_state('stone'),
+             (2, 64, 0): parse_state('redstone_lamp[lit=true]')}
+    second = {(0, 64, 0): parse_state('repeater[delay=3,powered=false]'), (1, 64, 0): parse_state('dirt')}
+    assert run_diff_reads(read_file(tmp_path / 'a.json', first), read_file(tmp_path / 'b.json', second)) == []
+
+
 def test_independent_inputs_start_from_loaded_world(tmp_path):
     # Each test hopper reaches 23 if empty space accepts a single item. Fill
     # slots 0..3, proving the probe adds in slot 4 and preserves the setup.

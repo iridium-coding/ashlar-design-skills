@@ -26,9 +26,9 @@ Before the first write, show the user:
   approval. Explain that rollback restores blocks and cannot restore any
   creatures lost in the drain;
 - per commands file: its path (so the user can open it), the count per form and
-  per feature id, the force-load tiles with their chunk counts, and what
-  happens when a tree fails to grow (the runner continues and lists it; exit
-  6). Not every line;
+  per feature id, the exact chunk rectangles and count from `commands --check`,
+  and what happens when a tree fails to grow. The runner continues, lists
+  failed commands, and exits 6;
 - a biome change: the exact biome ID named in the user's recorded approval,
   the chunk-aligned box, and its approximate
   rollback. The probe records one biome per chunk, so the reset is at chunk
@@ -109,7 +109,8 @@ complete only when its `manifest.json` says so.
    - `biome` phases: run `biome-probe` over the phase's chunk-aligned box
      immediately before the phase and record the probe file. Stop for the user
      if any chunk is `unknown`:
-     `python3 <skill>/scripts/ashlar_place.py biome-probe --box <x1 y1 z1 x2 y2 z2> --heights .minecraft-builder/<project>/heights.json --biomes ../terrain-shape/tools/terrain/data/<version>/biomes.json --candidates <biomes the survey noted> --out .minecraft-builder/<project>/phases/<NN>-<element>-biome.probe.json`.
+     `python3 <skill>/scripts/ashlar_place.py biome-probe --box <x1 y1 z1 x2 y2 z2> --heights .minecraft-builder/<project>/heights.json --biomes <terrain-shape>/tools/terrain/data/<version>/biomes.json --candidates <biomes the survey noted> --out .minecraft-builder/<project>/phases/<NN>-<element>-biome.probe.json`.
+     Resolve `<terrain-shape>` to the sibling terrain-shape skill directory.
      `--heights` is the survey's heights file (it must cover the box).
      `--biomes` is the biome list for the server's Minecraft version (from
      `mc_status`; if no folder matches, use the nearest older one and say so at

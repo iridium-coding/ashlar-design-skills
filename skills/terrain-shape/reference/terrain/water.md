@@ -15,6 +15,8 @@ apply — irregular outlines, the 7-block rule on every bank and shore.
 
 Design around the existing body first. Keep surface liquid, including water plants, waterlogged roots and ice on water. Normal solid ground on a changed slope may cover liquid. Never bury a body to avoid a drain decision. Where a bed is lowered, refill only to the top of the unbroken still liquid resting on that bed. An isolated retained water cell, including a suspended source, stays at its measured height unless covered by the planned solid. It does not fill the air gap below it. A separate, disconnected pond stays untouched when another body is drained.
 
+The grading seal skips liquid below the old bed. If regrading exposes it, the same spill checks apply. Move a grade or a voxel form that would overwrite buried liquid.
+
 Trees rooted on changing ground are removed whole, including connected leaves, vines and attachments that overhang the project edge. Trees rooted on unchanged ground stay whole, except where raised terrain covers a cell. When removing a submerged trunk, leave its liquid in the cells joined to still water at the same height or directly beneath it. Do not fill upward through branches to an isolated source. On a wooded bank, set `hold_shores: true` to retain the bank beside the water that will occupy cleared tree cells. Confirm the read includes air above the entire canopy, and include the farthest removed tree cell in bounds and backups. If spill checks fail, raise the local bank, plan connected water at the measured level or hold shores, then preview again.
 
 ## A drain requires a separate answer for each body

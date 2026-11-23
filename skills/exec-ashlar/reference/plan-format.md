@@ -132,7 +132,7 @@ fails the build.
 | `connectivity` | `site_a,site_b,via` | the named route between the two sites is walkable end to end |
 | `edge_irregularity` | `edge_name,from,to,max_collinear_run` | no run of identical x or z along the edge is longer than `max_collinear_run` (terrain) |
 | `surface_match` | `region_a,region_b,file,tolerance,min_ratio` | at least `min_ratio` of the region's columns (outside the file's skip mask) have a built top within `tolerance` of the expected top in `file` |
-| `seam` | `from,to,max_step` | along the edge from `from` to `to`, the height step between the outermost changed column and the first unchanged column outside is at most `max_step` |
+| `seam` | `from,to,max_step[,outward]` | along the edge from `from` to `to`, adjacent ground differs by at most `max_step`. For apron rows `outward` names the adjacent direction as `x`, `-x`, `z` or `-z`. At a protected edge it points toward the host. At an outer edge it points outside the terrain box. |
 | `water_continuity` | `region_a,region_b,level` | every sampled column whose bed is below `level` holds water from the bed up to `level`, with no air gap, and no water cell borders air at the region's edge |
 
 Coordinates in rows are `x y z` triples; regions are two corners. If you cannot

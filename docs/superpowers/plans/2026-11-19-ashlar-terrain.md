@@ -1339,14 +1339,14 @@ git commit -m "docs(design-*): offer terrain-integrate for site prep; point plan
 
 ## Task 22: Fork notes and the full offline check
 
-**Goal:** `README.md`, `CLAUDE.md` and `skills/TAXONOMY.md` describe the twelve adapted skills, and every offline check passes.
+**Goal:** `README.md`, `CLAUDE.md` and `skills/TAXONOMY.md` describe all thirteen adapted skills after Redstone, and every offline check passes.
 
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`, `skills/TAXONOMY.md`
 
 **Acceptance Criteria:**
 - [ ] `README.md`'s fork note names the four terrain skills, adds them to the link loop, and mentions the toolkit's `uv` command.
-- [ ] `CLAUDE.md`'s fork note lists twelve skills, the toolkit location, and the full test command with scipy and opensimplex.
+- [ ] `CLAUDE.md`'s fork note lists thirteen skills, the toolkit location, and the full test command with scipy and opensimplex.
 - [ ] `TAXONOMY.md` gets one line saying the four terrain skills are Ashlar-adapted in this fork and `terrain-cave` is not.
 - [ ] The full suite and the validator pass.
 
@@ -1364,7 +1364,7 @@ git commit -m "docs: fork notes for the Ashlar terrain skills"
 ```
 
 ```json:metadata
-{"files": ["README.md", "CLAUDE.md", "skills/TAXONOMY.md"], "verifyCommand": "uv run --no-project --with pytest --with pyyaml --with numpy --with scipy --with pillow --with opensimplex pytest tests/ashlar -q && node scripts/validate-plugin.mjs", "acceptanceCriteria": ["README note and link loop list twelve skills", "CLAUDE.md note and test command", "TAXONOMY line", "full suite and validator pass"], "modelTier": "mechanical"}
+{"files": ["README.md", "CLAUDE.md", "skills/TAXONOMY.md"], "verifyCommand": "uv run --no-project --with pytest --with pyyaml --with numpy --with scipy --with pillow --with opensimplex pytest tests/ashlar -q && node scripts/validate-plugin.mjs", "acceptanceCriteria": ["README note and link loop list thirteen skills", "CLAUDE.md note and test command", "TAXONOMY line", "full suite and validator pass"], "modelTier": "mechanical"}
 ```
 
 ---
@@ -1509,7 +1509,7 @@ git commit -m "feat(terrain): feature and biome ids for Minecraft <version>"
 **Acceptance Criteria:**
 - [ ] If `origin/main` moved (for example sub-project 3 merged), the user agreed to merge it into `terrain`; conflicts are resolved with one shared column reader, one resume rule and the combined skill count; all offline checks pass afterwards.
 - [ ] With the user's yes, `terrain` is pushed to `origin` and a PR into `main` exists (never to upstream).
-- [ ] After the user merges and says so: each link is `../../ashlar-design-skills/skills/<name>` and resolves; the clone has `main` checked out only if the user agreed; the user confirms both clients list the twelve skills.
+- [ ] After the user merges and says so: each link is `../../ashlar-design-skills/skills/<name>` and resolves. The clone has `main` checked out only if the user agreed. The user confirms both clients list all thirteen Ashlar skills, including Redstone.
 
 **Verify:** `gh pr list --repo iridium-coding/ashlar-design-skills --head terrain --json url,baseRefName --jq '.[] | .baseRefName + " " + .url'` → `main https://github.com/iridium-coding/ashlar-design-skills/pull/<n>`
 

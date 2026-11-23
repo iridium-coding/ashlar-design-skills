@@ -62,9 +62,9 @@ so there is one history.
   `biome_probe` (the probe file, relative to the project folder). A phase that
   has a `backup` or `biome_probe` carries no snapshot ids. Example:
   `{"id": 2, "name": "terrain", "rollback": "backup", "backup": "backups/02-terrain", "cells": 900000, "placed_at": "…"}`.
-- A project may carry `grounds` (the names of `<host>-ground` projects added to
-  it after the fact) and `terrain` (the recipe path, expected-surface file and
-  placements file). Unknown keys are kept, as above.
+- An after-the-fact `<host>-ground` project records `grounds: "<host>"` in its
+  own entry. A project can also record `terrain` with its recipe path,
+  expected-surface file and placements file. Preserve unknown keys.
 - `citations` holds the sources for replicas, so the build can be checked
   against them.
 - A project may carry extra keys the design skill needs (for example `rooms`,

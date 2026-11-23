@@ -4,6 +4,10 @@ Data, not code — each entry is signatures + minimum recognition footprint +
 palette + primitive composition. Adding a wonder means adding a row here, not
 writing new logic. Real-world dimensions vary by source; treat them as ±10%.
 
+Use these compositions to propose the signature features and scale. For a
+named wonder, check the proportions and materials with `survey-research` and
+use the cited measurements to set the offline signature targets.
+
 ## Minimum recognition footprints
 
 A wonder requested below its floor must be scaled up to the floor (or the user

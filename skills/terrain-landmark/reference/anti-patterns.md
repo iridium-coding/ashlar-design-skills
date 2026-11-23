@@ -1,8 +1,8 @@
 # Anti-patterns — the signature checklist
 
-A landmark fails when a signature feature is missing or a proportion is wrong —
-not when it is "not pretty enough". This is the checklist the `exec-reflect`
-reviews a finished landmark against. Each item is a yes/no gate.
+Use this checklist to check a finished landmark for missing signature features
+and wrong proportions. Each applicable item is a yes/no check in
+[`exec-ashlar` verification](../../exec-ashlar/reference/verification.md).
 
 ## Strata and colour
 
@@ -49,7 +49,8 @@ reviews a finished landmark against. Each item is a yes/no gate.
 ## Surface and material
 
 - **Uniform block faces.** A flat 30-block cliff with no Y-variation reads as a
-  wall. → Apply at least a light surface-chipping integrity pass (≥95).
+  wall. → Apply a light seeded surface-chipping variant, retaining at least
+  95% of the face. See [weathering](sequencing.md#weathering-passes).
 - **Wrong water colour.** Crater Lake is deep blue, Ijen turquoise, Havasu
   blue-green — the colour is the block *under* the water, never the water
   itself. → Set the floor block, not the water.
@@ -57,14 +58,15 @@ reviews a finished landmark against. Each item is a yes/no gate.
   (gravity); Salar de Uyuni needs solid concrete. Mixing them collapses the
   build on chunk reload.
 - **Vegetation grown over bare rock.** Grass creeping over a rock landmark
-  breaks it. → `coarse_dirt` / `rooted_dirt` substrate near rock; suppress
-  spread during construction.
+  breaks it. → Use `coarse_dirt` / `rooted_dirt` substrate near rock.
 - **Wrong vegetation context.** Match plants to the real biome — cactus only in
   desert, spruce for alpine/pine, jungle growth on karst tops.
 
-## How the exec-reflect uses this
+## Evidence after the build
 
-For any landmark build, walk this list against the finished result and the 2–4
-signature features the composer recorded. Report each as pass/fail with
-coordinates. A failed signature gate sends the build back to `terrain-landmark`
-for a corrective primitive — it is not a cosmetic note.
+Compare the built landmark with the approved signatures and this checklist.
+Check `acceptance` cells and the `silhouette` and `block_mix_ratios` rows. Use
+profiles and eye-level views for signatures approved as checked by eye. Report
+each signature as pass or fail with coordinates and the observation or render.
+For a failed signature, revise the saved recipe in `terrain-landmark` and
+re-emit through the approval flow.

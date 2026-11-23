@@ -3,17 +3,22 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 > **Fork note (ashlar-design-skills):** the six `design-*` skills,
-> `survey-research`, the new `exec-ashlar` skill and the ported `system-redstone`
-> skill target the **Ashlar** MCP server (`mc_status`, `mc_players`, `mc_survey`,
+> `survey-research`, `exec-ashlar`, `system-redstone`, `terrain-shape`,
+> `terrain-landmark`, `terrain-ecology` and `terrain-integrate`
+> target the **Ashlar** MCP server (`mc_status`, `mc_players`, `mc_survey`,
 > `mc_render`, `mc_inspect`, `mc_snapshot`, `mc_restore`, `mc_build`,
-> `mc_command`), not the `minecraft-java` surface described below, so Ashlar's
-> `mc_*` names are intended in those nine skills. The rest of this file
-> describes Chapman's original skills. Check the nine with
-> `uv run --no-project --with pytest --with pyyaml --with numpy --with pillow pytest tests/ashlar -q`;
-> their text rules are in §7.5 of
+> `mc_command`). Use its `mc_*` names for these thirteen skills. The rest
+> of this file describes Chapman's original skills.
+> The fork's terrain toolkit lives in `skills/terrain-shape/tools/terrain/`
+> and runs through `skills/terrain-shape/scripts/terrain.py`.
+> Verify the Ashlar skills with
+> `uv run --no-project --with pytest --with pyyaml --with numpy --with scipy --with pillow --with opensimplex pytest tests/ashlar -q`.
+> Their text rules are in §7.5 of
 > `docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md`.
 > `system-redstone`'s checker and test protocol are in
 > `docs/superpowers/specs/2026-11-19-ashlar-redstone-design.md`.
+> The terrain toolkit and approval rules are in
+> `docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md`.
 
 ## Commands
 

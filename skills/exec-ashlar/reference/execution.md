@@ -113,8 +113,8 @@ tests.
   call.
 - Ashlar places redstone without physics. Write each machine component in its resting
   state with inputs as built (normally off) and containers empty. Load setup
-  containers in a `commands` phase so their comparators receive real updates.
-  The connection pass sets shape properties.
+  containers in a `commands` phase and verify the inventory and actual
+  comparator response. The connection pass sets shape properties.
 - A machine driven by game events starts once its chunks tick. A machine
   driven by a player input or its own clock needs the user. Build clocks with
   an off switch set to off. Show any approved test input at the gate and tell

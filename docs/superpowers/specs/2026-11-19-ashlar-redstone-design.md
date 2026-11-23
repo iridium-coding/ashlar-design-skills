@@ -308,11 +308,10 @@ checked by hand.
 
 **Containers and setup.** Containers are loaded after their blocks exist, with
 `item replace block` (one slot per command) or `data merge block` (`Items`), in
-a `commands` phase inside a paired force-load. These are the machine's first
-real updates: comparators reading those containers re-read, so loading a
-sorter's filters settles its own comparators. Write the circuit as it rests
-with empty containers and let the setup move it. The checker computes both
-states (§8.2).
+a `commands` phase inside a paired force-load. Write the circuit as it rests
+with empty containers. The checker computes the expected states (§8.2).
+Verify the inventory and actual comparator output after loading. The Rung 0
+observation in §7 requires this readback before relying on the output.
 
 **Starting.** A machine driven by game events (items arriving, crops growing,
 mobs) starts itself once it is placed at rest and its chunks tick. A machine
@@ -335,10 +334,11 @@ separate outputs apart with a one-block gap, different facings, or barrels. A
 comparator reads a whole double chest. A chest with a conductive block above it
 cannot open and reads 0.
 
-**Dust shape.** Ashlar's connection pass decides wire shapes. A lone dust may
-come out as a dot, which powers only the block below, where a hand-placed one
-would be a cross. Until rung 0 shows what Ashlar does, design so no wire depends
-on being a cross with no connections. Rung 0 settles this rule.
+**Dust shape.** Live Rung 0 on Ashlar 0.4.9 and Paper 26.3 build 257 confirmed
+that an isolated wire written with omitted sides becomes a dot and one
+written with four sides keeps its cross. The connected wires formed lines
+and powered the receiving lamp. Give dust a real connection where lateral
+power matters.
 
 **Liquids and plants.** Water next to cane, or water that only has to sit
 still, is placed still. A stream that must carry items needs flowing sources
@@ -731,6 +731,14 @@ example, commands do not update comparators, or hoppers stay idle in
 force-loaded chunks with nobody near), stop and bring it to the user before
 going on.
 
+On 2026-11-22, with Ashlar 0.4.9 and Paper 26.3 build 257, the locked hopper
+retained the 23 items written with `item replace block`. With a confirmed
+force-load, the comparator and first dust both read 0 through the final read.
+The cause is undetermined. Checks 3 and 7 were deferred, the approved snapshot
+restored the full site, and rungs 1 and 2 remain pending. The run also confirmed
+the dot, cross and connected-wire states, unchanged written power states,
+the deliberately unlit torch and chest pairing.
+
 ## 8. The resting-state checker (`redstone_rest.py`)
 
 ### 8.1 Commands
@@ -811,11 +819,10 @@ than the head in front of an extended piston, and an observer written powered.
   glass, slabs or other non-conductive blocks takes power from lower dust but
   passes none down (Java). One connection makes a line pointing both ways; two
   or more make the matching corner or junction. A lone dust is a cross in
-  vanilla and a dot only if toggled. Until rung 0 says otherwise, the checker
-  assumes Ashlar's connection pass behaves like vanilla's shape update: a lone
-  wire written with no sides (as every stamped module wire is, because
-  `stamp.py` drops them) stays a dot, and one written with all four sides stays
-  a cross. A dot powers only the block below. Power drops by 1 per dust. Dust
+  vanilla and a dot only if toggled. The checker uses the two cases confirmed
+  by Rung 0. A lone wire with no sides (as stamped modules write it) becomes
+  a dot, and one written with all four sides stays a cross. A dot powers only
+  the block below. Power drops by 1 per dust. Dust
   weakly powers the block it sits on and the blocks it points into.
 - **Comparators:** compare and subtract modes; the rear input from a signal, a
   container's fullness (finding 5), or a container behind one conductive block,

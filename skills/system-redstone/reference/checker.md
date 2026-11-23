@@ -104,7 +104,12 @@ detectors, target blocks and lecterns. Any of these next to the modelled circuit
 is listed as "check by hand", never guessed.
 
 Record timing and other design assumptions even when the checker cannot
-detect them from block IDs. Rung 0 is the live calibration that decides what
-Ashlar's connection pass does to lone dust. The offline model's treatment of
-a wire written without sides is provisional. Give the dust a real connection
-where lateral power matters.
+detect them from block IDs. Live Rung 0 on Ashlar 0.4.9 and Paper 26.3 build
+257 confirmed the checker's two isolated-wire cases. The wire with omitted
+sides became a dot, and the explicit four-sided wire kept its cross. Give
+the dust a real connection where lateral power matters.
+
+The loaded simulation assumes an inventory change reaches the comparator.
+In that run, loading 23 items into the locked hopper succeeded, and its
+comparator stayed at 0. Use the actual inventory and output readback as
+evidence. The offline prediction for a settled circuit is still 2.

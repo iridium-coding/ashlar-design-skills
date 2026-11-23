@@ -31,11 +31,13 @@ checked by hand.
 
 **Containers and setup.** Containers are loaded after their blocks exist, with
 `item replace block` (one slot per command) or `data merge block` (`Items`), in
-a `commands` phase inside a paired force-load. These are the machine's first
-real updates: comparators reading those containers re-read, so loading a
-sorter's filters settles its own comparators. Write the circuit as it rests
-with empty containers and let the setup move it. The checker computes both
-states (see [checker.md](checker.md)).
+a `commands` phase inside a paired force-load. Write the circuit as it rests
+with empty containers. Verify the actual inventory and comparator output
+after loading. The checker computes the expected states
+(see [checker.md](checker.md)). In the live Rung 0 run on Ashlar 0.4.9 and
+Paper 26.3 build 257, the locked hopper held all 23 items but the comparator
+and first dust stayed at signal 0. Stop on an unexplained output difference
+before relying on the load to drive another test or calling the machine at rest.
 
 **Starting.** A machine driven by game events (items arriving, crops growing,
 mobs) starts itself once it is placed at rest and its chunks tick. A machine
@@ -58,10 +60,11 @@ separate outputs apart with a one-block gap, different facings, or barrels. A
 comparator reads a whole double chest. A chest with a conductive block above it
 cannot open and reads 0.
 
-**Dust shape.** Ashlar's connection pass decides wire shapes. A lone dust may
-come out as a dot, which powers only the block below, where a hand-placed one
-would be a cross. Until rung 0 shows what Ashlar does, design so no wire depends
-on being a cross with no connections. Rung 0 settles this rule.
+**Dust shape.** In Rung 0 on Ashlar 0.4.9 and Paper 26.3 build 257, an
+isolated wire with sides omitted read back as a dot, and one written with all
+four sides kept its cross. The connected wires formed lines and powered the
+receiving lamp. Since the stamper omits wire sides, give dust a real
+connection where lateral power matters.
 
 **Liquids and plants.** Water next to cane, or water that only has to sit
 still, is placed still. A stream that must carry items needs flowing sources

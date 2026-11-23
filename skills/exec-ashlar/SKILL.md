@@ -97,6 +97,10 @@ overwrites the old entry and shares its entity tag.
    [resume procedure](reference/execution.md#resuming-and-fixing).
 5. **Verify** (`reference/verification.md`). Fix failures and verify again.
    Never report a build done while a check fails.
+   In an approved [Rung 0 calibration](reference/verification.md#rung-0-calibration-check-5),
+   fix any other build failures. Once acceptance, quality and the full geometry
+   diff pass, set the registry status to `built`, record `at_rest: fail` for
+   the deliberate check 5 diagnostic, and run the approved calibration tests.
 6. **Report** the bounding box, materials, snapshot ids, and anything the user
    must do in game (for example, flip a redstone start lever). For a redstone
    build, report all four verdicts (`built`, `at_rest`, `agent_tested`,
@@ -163,6 +167,8 @@ With both, run only the named manual tests.
    unchanged, still-applicable tests. Revised tests and tests affected by a
    fix stay `pending` until rerun. Follow the
    [fix procedure](reference/execution.md#resuming-and-fixing) for failures.
+   For Rung 0 check 5, record the approved torch observation and keep
+   `at_rest: fail`.
 
 Between reads, wait with whatever the client allows (for example a shell
 `sleep`), or simply read again. Send reads in batches of at most 12 (Ashlar

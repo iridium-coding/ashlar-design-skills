@@ -65,6 +65,9 @@ quality_contract:
   `biome` (a `fillbiome` phase, rolled back from its probe). A plan without the
   column behaves as it always did: every phase is `snapshot`. Terrain phases
   use `backup`.
+  A terrain flow phase lists its source count under `blocks`. Its
+  `from`/`to` and the plan's `bbox` must also cover the possible water reach,
+  which is included in its separate pre-write backup.
 
   For a module-based phase that has not been stamped yet, write the intended
   `file` path and a hand estimate in `blocks`; `build` step 1 stamps it and step
@@ -305,7 +308,14 @@ Stop and report if any of these fails:
     a note saying why the input cannot be tested.
 13. Every commands file passes `ashlar_place.py commands <file> --check` (forms,
     integer coordinates, positions inside the file's box, a `fillbiome` volume
-    within the block limit); a file with `fillbiome` needs the user's recorded
-    yes in `requirements.md`.
+    within the block limit). For a biome-painting phase, every command targets
+    the exact biome ID and stays inside the chunk-aligned box named in the
+    dedicated approval in `requirements.md`. Biome restore uses the IDs
+    recorded by the probe.
 14. Every `surface_match` file exists, and every `backup` phase's box is known.
+    Validate the full rollback box for flow phases before placement.
 15. A fill's `filter`, where present, is a `minecraft:` block state string.
+16. Each `drain` note carries the body ID emitted for this site. Verify that
+    `requirements.md` records a separate user approval for that ID in this
+    build. Stop if the body, its observed cells or its retained rollback
+    coverage changes before the write.

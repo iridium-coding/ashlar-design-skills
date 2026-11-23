@@ -19,11 +19,18 @@ Before the first write, show the user:
   offer to switch it to a column backup;
 - per `backup` phase: its box, the number of column reads and the estimated
   disk size, instead of snapshot slots;
+- for a terrain flow phase, the source count and the full possible flow
+  area included in its backup and player checks;
+- for terrain liquids, the planned counts kept, covered and added. List
+  each drain by its body ID, liquid, location, volume and exact recorded
+  approval. Explain that rollback restores blocks and cannot restore any
+  creatures lost in the drain;
 - per commands file: its path (so the user can open it), the count per form and
   per feature id, the force-load tiles with their chunk counts, and what
   happens when a tree fails to grow (the runner continues and lists it; exit
   6). Not every line;
-- a biome change: the user's recorded yes, the box, and its approximate
+- a biome change: the exact biome ID named in the user's recorded approval,
+  the chunk-aligned box, and its approximate
   rollback. The probe records one biome per chunk, so the reset is at chunk
   resolution, and chunks the probe cannot identify keep the new biome; if any
   chunk is `unknown` at build time the biome phase stops for the user;
@@ -83,10 +90,12 @@ complete only when its `manifest.json` says so.
    2 blocks, stop and tell the user. Do not build around them.
 2. **Rollback point**, by the phase's `rollback` column (absent: `snapshot`):
    - `backup` phases: `place --backup <folder>` takes the backup after its
-     player check and before writing. An `mcp` phase takes it first with
-     `python3 <skill>/scripts/ashlar_place.py backup --box <from x y z> <to x y z> --out <folder>`,
-     where the box is the phase's `from`/`to` and `<folder>` is the same one
-     rollback will restore. The folder is
+     player check and before writing. For `mcp` or a phase whose rollback
+     box extends beyond the direct writes, first take a separate backup:
+     `python3 <skill>/scripts/ashlar_place.py backup --box <from x y z> <to x y z> --out <folder>`.
+     Use the plan's full phase box and pass `--world <name>` when named.
+     Confirm the complete manifest covers that box in that world before
+     sending any placement. The folder is
      `.minecraft-builder/<project>/backups/<NN>-<phase-name>/`. The placer
      refuses (exit 3) if the folder already holds a complete backup, or if the
      backup cannot be completed; nothing is written then. Record the folder.
@@ -112,7 +121,10 @@ complete only when its `manifest.json` says so.
 3. **Place**:
    - `mcp`: one `mc_build` call with the phase file's contents.
    - `placer`:
-     `python3 <skill>/scripts/ashlar_place.py place <file> --snapshot --label "<project> phase <n>" --log .minecraft-builder/<project>/placer.log`,
+     `python3 <skill>/scripts/ashlar_place.py place <file> <rollback option> --log .minecraft-builder/<project>/placer.log`.
+     Use `--snapshot --label "<project> phase <n>"` for snapshots or
+     `--backup <folder>` for an inline backup. If a separate complete backup
+     already covers the full phase, use `--no-snapshot`.
      adding `--world <name>` when the plan names a world. Exit 4: a player is
      in the area, or the player list could not be read. Exit 2: the phase file
      is invalid. Exit 3: the file needs more snapshots than allowed, or a
@@ -163,8 +175,8 @@ complete only when its `manifest.json` says so.
   water or lava cells (`--max-flowing`), and `plan` reports `liquid_cells`.
 - Ashlar places redstone without physics. Write each component in its resting
   state with inputs as built (normally off) and containers empty. Load setup
-  containers in a `commands` phase so their comparators receive real updates.
-  The connection pass sets shape properties.
+  containers in a `commands` phase and verify the inventory and actual
+  comparator response. The connection pass sets shape properties.
 - A machine driven by game events starts once its chunks tick. A machine
   driven by a player input or its own clock needs the user. Build clocks with
   an off switch set to off. Show any approved test input at the gate and tell
@@ -180,25 +192,17 @@ complete only when its `manifest.json` says so.
   a resume continue from the first phase not recorded as placed. This section
   is the one resume rule; the bullets below apply it per phase kind.
 - **An interrupted block placement** (placer exit 5, an MCP error, the user
-  stops it): record the known writes and snapshot ids. Confirm that replaying
-  the fills and blocks would produce the same final cells. When it would,
-  offer to resume from the start or roll back and ask before either. Resume
-  using the original rollback point without taking a new one (`--no-snapshot`
-  for the placer, omit `snapshot` for `mc_build`). A point taken after a
-  partial write records the partial state, so the interrupted phase keeps the
-  one taken before its first write (its backup, snapshots or biome probe) and
-  is placed again from the start. `place --backup` refuses to overwrite a
-  complete backup, so never rerun it with `--backup` on the same folder. A
-  backup the interruption cut short is a folder with no `manifest.json` (or no
-  folder), and the backup always finishes before the phase's first write: if
-  the phase has no recorded or observed write, take the backup again and place;
-  if it did write and has no complete backup, take none, stop, and tell the
-  user this part has no rollback point. The
-  resume gate says if any of the phase's original snapshots has been evicted
-  since, and which part can no longer be rolled back. If replay could produce a different result,
-  for instance with overlapping conditional fills, reconcile the partial
-  writes first and show the exact remaining writes, restore or correction at
-  a fresh gate.
+  stops it): reconcile the log, live reads and snapshot list or backup
+  manifest. A failed placement call can leave uncertain writes even when no
+  successful page was recorded. If no write was sent, preserve any original
+  recovery data and obtain missing coverage at a fresh gate before placement.
+  For an idempotent replay, verify complete retained coverage from before
+  the first write. Reuse it from the start with `--no-snapshot` for the
+  placer or omit `snapshot` for `mc_build`. For confirmed or possible writes
+  with missing coverage, stop at the recovery gate and name the unrecoverable
+  bounds. When replay could change the result, as with overlapping
+  conditional fills or new flow outside the previous bounds, reconcile
+  the exact remaining writes, restore or correction at a fresh gate.
 - **An interrupted `commands` phase:** release this phase's confirmed
   force-load additions. Reconcile each confirmed or uncertain operation
   against the console log and observed state. Use the available block,

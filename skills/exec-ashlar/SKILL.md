@@ -103,9 +103,9 @@ overwrites the old entry and shares its entity tag.
    [verification.md](reference/verification.md#redstone).
    For a terrain plan, also run the checks in
    [plan-format.md](reference/plan-format.md#validation-start-of-build): every
-   commands file passes `commands --check`, a `fillbiome` file has the user's
-   recorded yes, every `surface_match` file exists, every `backup` phase's box
-   is known.
+   commands file passes `commands --check`, biome painting and each exact
+   drain body have their separate recorded approvals, every
+   `surface_match` file exists, and every `backup` phase's full box is known.
    Report problems and stop; fix nothing silently.
 2. **Size the run.** For each phase file, run
    `python3 <skill>/scripts/ashlar_place.py plan <phase file>` and note its

@@ -1,1 +1,1 @@
-Moved to the shared core: `${CLAUDE_PLUGIN_ROOT}/reference/terrain/non-negotiables.md`. See there.
+See `reference/terrain/non-negotiables.md` in the terrain-shape skill.

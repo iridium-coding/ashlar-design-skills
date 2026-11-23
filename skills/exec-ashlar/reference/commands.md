@@ -144,9 +144,12 @@ rules itself; do not wrap them by hand. It:
    result in the progress file, and exits 6 listing the failures.
 
 `--dimension DIM` wraps every command it sends in `execute in DIM run …`; use
-it only when the user agreed at the gate (see the rule above). `--check`
-validates offline and never contacts the server. `biome-probe` force-loads like
-the runner and checks players too.
+it only when the user agreed at the gate (see the rule above). `--check` runs
+offline and prints `eligible_forceloads` as inclusive chunk rectangles
+`[x1, z1, x2, z2]` in execution order. `eligible_chunks` counts the unique
+chunks in those rectangles, including the feature margin. Use these values
+for the approval preview. `biome-probe` force-loads like the runner and checks
+players too.
 
 ## Examples
 

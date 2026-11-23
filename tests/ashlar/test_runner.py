@@ -116,6 +116,22 @@ def test_command_chunks_and_forceload_tiles_across_zero():
         >= {(cx, cz) for cx in range(-20, 20) for cz in range(-3, 3)}
 
 
+def test_commands_check_previews_feature_force_load_margin(tmp_path):
+    commands = [
+        "place feature minecraft:oak -970 66 429",
+        "place feature minecraft:oak -969 66 412",
+        "place feature minecraft:oak -963 66 420",
+        "place feature minecraft:oak -961 65 427",
+    ]
+    path = commands_file(tmp_path, commands, box=[-978, 63, 404, -953, 98, 437])
+    proc = run("commands", str(path), "--check", "--config", str(config(tmp_path)))
+    assert proc.returncode == 0, proc.stderr
+    report = json.loads(proc.stdout)
+    assert report["eligible_forceloads"] == [[-62, 24, -60, 27]]
+    assert report["eligible_chunks"] == 12
+    assert calls(tmp_path) == []
+
+
 def test_parse_forceload_query_real_replies():
     dim = "minecraft:overworld"
     assert ap.parse_forceload_query(f"No force loaded chunks were found in {dim}") == set()

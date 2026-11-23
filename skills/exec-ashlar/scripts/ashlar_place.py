@@ -1492,9 +1492,19 @@ def cmd_commands(ns: argparse.Namespace) -> int:
     if ns.check:
         needed = [command_chunks(c) for c in commands["commands"]]
         forms = [parse_command(c)[0] for c in commands["commands"]]  # type: ignore[index]
+        tiles = _plan_tiles(needed)
+        rects = [rect for tile in tiles for rect in tile.rects]
+        chunks = {
+            (cx, cz)
+            for x1, z1, x2, z2 in rects
+            for cx in range(x1, x2 + 1)
+            for cz in range(z1, z2 + 1)
+        }
         print(json.dumps({"commands": len(forms),
                           "forms": {f: forms.count(f) for f in sorted(set(forms))},
-                          "tiles": len(_plan_tiles(needed)),
+                          "tiles": len(tiles),
+                          "eligible_forceloads": rects,
+                          "eligible_chunks": len(chunks),
                           "dimension": dimension}, indent=2))
         return EXIT_OK
     world = ns.world or commands["world"]

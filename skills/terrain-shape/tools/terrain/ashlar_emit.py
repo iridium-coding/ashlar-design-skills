@@ -517,6 +517,44 @@ def _quality(box, surface_path, water, origin, heights):
     return rows
 
 
+def check_form_layers(site: Site, layers: list[tuple[str, LiveWrite]], *, max_columns: int = 128) -> list[tuple[str, LiveWrite]]:
+    """Check forms-only layers against a site read, tile by tile, in order.
+
+    For work that leaves the ground surface alone, such as designed caves.
+    Each tile is projected onto the state left by the tiles before it and
+    gets the same checks as the terrain emitter: no drained, overwritten or
+    buried liquid, no new opening a liquid could spill into, no new
+    water/lava contact and no gravity block left over a fall-through cell.
+
+    Args:
+        site: The exact site read the layers were designed against.
+        layers: ``(mode, write)`` pairs in build order, e.g. ``carve`` then ``dress``.
+        max_columns: Columns per tile (and so per phase file).
+
+    Returns:
+        The ``(mode, tile)`` pairs to emit, one phase each, in order.
+
+    Raises:
+        VerifyError: When a tile would break one of the checks.
+    """
+    ground = surfaces(site).ground
+    before = _site_grid(site)
+    after = before.copy()
+    protected = np.zeros(ground.shape, bool)
+    approved = np.zeros(before.shape, bool)
+    touched = np.zeros(before.shape, bool)
+    tiles = []
+    for mode, write in layers:
+        for tile in split_columns(write, max_columns):
+            halo = _project(tile, site, before, after, ground, protected, approved, touched)
+            origin = _world_cell([sl.start for sl in halo], site.box)
+            _check_contacts(before[halo], after[halo], origin, touched=touched[halo], check_open=True)
+            _check_updated_gravity(site, after, halo, touched[halo], mode)
+            tiles.append((mode, tile))
+    _check_contacts(before, after, site.box[:3], check_open=False)
+    return tiles
+
+
 def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns, *, require_relief=True):
     ox = integer_level(recipe["origin"][0], "origin x")
     oz = integer_level(recipe["origin"][2], "origin z")

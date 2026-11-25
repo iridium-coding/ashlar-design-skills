@@ -339,6 +339,7 @@ def main(argv=None):
     biomes.add_argument("--biome-change", metavar="ID", help="generate only the separately approved biome")
     add_tree_parsers(commands)
     add_apron_parser(commands)
+    add_cave_parsers(commands)
     compare = commands.add_parser("compare")
     compare.add_argument("expected", type=Path)
     compare.add_argument("heights", type=Path)
@@ -367,6 +368,8 @@ def main(argv=None):
             return run_tree(args)
         if args.command == "apron":
             return run_apron(args)
+        if args.command in {"cave", "cave-check"}:
+            return run_cave(args)
         if args.command == "survey":
             return _survey(args)
         if args.command == "compare":
@@ -402,6 +405,7 @@ if any(find_spec(package) is None for package in DEPENDENCIES):
 
 import numpy as np
 from terrain.apron import add_apron_parser, run_apron
+from terrain.caves import add_cave_parsers, run_cave
 from terrain.ashlar_emit import (
     _bounds,
     _label,

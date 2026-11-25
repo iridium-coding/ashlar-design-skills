@@ -59,7 +59,8 @@ The site survey and `environments.md` constrain the topology:
 
 - **Flat plains** — any topology; two-story or compound are easy wins.
 - **Mountainside** — terraced compound or tower; carve back into the slope.
-- **Underground / cave** — linear or radial chambers off a central hub.
+- **Underground / cave** — linear or radial chambers off a central hub; carve
+  new chambers with `terrain-cave`.
 - **Underwater** — compact, sealed; domes and tubes, not sprawl.
 - **Sky** — compact tower or platform cluster with a fall-protected rim.
 - **Small lot / server claim** — tower upward rather than out.

@@ -30,7 +30,9 @@ built there.
 ## Cave conversion
 
 - Work *with* the existing cave shape — irregular chambers, dripstone, natural
-  stone — rather than boxing it out.
+  stone — rather than boxing it out. To enlarge it or carve a new hall, use
+  the `terrain-cave` skill if it is installed: it carves around existing water,
+  keeps the surface roof and lights the floor.
 - **Avoid the deep dark.** Do not build a base inside a deep-dark biome
   without a plan to manage sculk sensors and shriekers — warn the user about
   the Warden.

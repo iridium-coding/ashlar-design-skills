@@ -157,9 +157,10 @@ slots), follow the `exec-ashlar` skill's limits reference
 
 - **Place no blocks while designing.** After the user approves the plan, the
   `exec-ashlar` skill builds it.
-- **Prepare the site first.** If the site must be levelled, a mountainside
-  terraced, or a cave hollowed, note a `site-prep` phase in
-  `requirements.md`; Hand-off says who does it.
+- **Prepare the site first.** If the site must be levelled or a mountainside
+  terraced, note a `site-prep` phase in `requirements.md`; Hand-off says who
+  does it. A cave to hollow out or enlarge is a `terrain-cave` design, built
+  before the house.
 - **Keep rooms modular.** Keep useful room volume at or under ~60×60×60 and
   split larger rooms along a wall, so each room stays one module.
 - **Resolve everything to absolute coordinates** in the phase files, within

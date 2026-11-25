@@ -16,7 +16,7 @@ Run `mc_status`. If Ashlar is unreachable, stop and tell the user. For a standal
 
 Run `exec-ashlar survey <project>` using `../exec-ashlar/reference/survey.md`. Capture heights over the terrain box plus at least 16 blocks and an exact site read with an eight-block horizontal margin, from the lowest seal through air above the tallest canopy. Check the top of the exact columns; extend a read that clips foliage. Run `terrain.py survey --site DIR --box X1 Y1 Z1 X2 Y2 Z2` on the actual terrain box. Record surface materials, liquid levels, trees, block entities and non-natural blocks. If the box contains a village or player structure, stop for the user's decision. Inspect ambiguous blocks and the approaches players use.
 
-For standalone work, ask which landform, extent, character and viewing position the user wants. For a recognisable named wonder, hand the composition of its signature forms to `terrain-landmark`. For a joint build, resolve any missing dimensions against its footprint.
+For standalone work, ask which landform, extent, character and viewing position the user wants. For a recognisable named wonder, hand the composition of its signature forms to `terrain-landmark`. For designed space underground (a cavern hall, a grotto, a passage or ravine below the surface), use `terrain-cave`. For a joint build, resolve any missing dimensions against its footprint.
 
 - Claude Code: use `AskUserQuestion` for choices.
 - Codex: use `request_user_input` when available.

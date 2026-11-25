@@ -134,6 +134,7 @@ fails the build.
 | `surface_match` | `region_a,region_b,file,tolerance,min_ratio` | at least `min_ratio` of the region's columns (outside the file's skip mask) have a built top within `tolerance` of the expected top in `file` |
 | `seam` | `from,to,max_step[,outward]` | along the edge from `from` to `to`, adjacent ground differs by at most `max_step`. For apron rows `outward` names the adjacent direction as `x`, `-x`, `z` or `-z`. At a protected edge it points toward the host. At an outer edge it points outside the terrain box. |
 | `water_continuity` | `region_a,region_b,level` | every sampled column whose bed is below `level` holds water from the bed up to `level`, with no air gap, and no water cell borders air at the region's edge |
+| `cave` | `file` | `terrain.py cave-check` on a fresh exact read of the cave passes for the design in `file`: varied ceilings, no span wider than its limit, every floor cell lit (lit caves) and the roof kept outside shafts |
 
 Coordinates in rows are `x y z` triples; regions are two corners. If you cannot
 write a row because you do not know the answer (is this door reachable?), the

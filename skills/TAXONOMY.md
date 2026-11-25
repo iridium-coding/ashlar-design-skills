@@ -51,9 +51,9 @@ orchestration model and the no-trivial routing rule are in
 
 The ashlar-design-skills fork adds `exec-ashlar`, ports `system-redstone`, and
 adapts the six `design-*` skills and `survey-research` to build through Ashlar.
-Its four inline terrain skills are `terrain-shape`, `terrain-landmark`,
-`terrain-ecology` and `terrain-integrate`. `terrain-cave` retains Chapman's
-original workflow. See the fork's README for installation.
+Its five inline terrain skills are `terrain-shape`, `terrain-landmark`,
+`terrain-ecology`, `terrain-integrate` and `terrain-cave`. See the fork's
+README for installation.
 
 ## Routing table (primary intent → Tier-2 orchestrator)
 

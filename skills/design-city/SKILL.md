@@ -35,8 +35,8 @@ Use for a **city or city district** (≈16+ buildings). Do not use for:
 - A settlement under ~16 buildings → `design-village`.
 - A player's own base → `design-house`.
 - Terrain or a natural wonder → `terrain-shape` / `terrain-landmark`. Those
-  skills may not be installed; if not, say so and offer `site-prep` phases for
-  light grading only.
+  skills may not be installed; if not, say so and plan the grading as
+  `site-prep` phases.
 
 ## Connection
 
@@ -145,7 +145,8 @@ slots), follow the `exec-ashlar` skill's limits reference
 8. **Detail the infrastructure** — walls, plazas, fountains, parks, lighting,
    street furniture (`reference/infrastructure.md`).
 9. **Render district layouts** — produce blueprints (`reference/blueprints.md`),
-   show the user, iterate, and **loop until they approve**.
+   show the user with the integration renders from "Ground the build"
+   below, iterate, and **loop until they approve**.
 10. **Write the plan and hand off** — write `requirements.md`, `plan.toon`, its
     phase files and module files per the `exec-ashlar` skill's
     plan format (`../exec-ashlar/reference/plan-format.md`), and
@@ -172,6 +173,19 @@ slots), follow the `exec-ashlar` skill's limits reference
       façade reads as paint, every time.
     - **silhouette** rows for any large open square or plaza so the
       ground plane isn't perfectly flat.
+
+## Ground the build
+
+Seating the build in the land is part of the design, not an extra. Read the
+surveyed ground along every footprint and paved edge. Unless the ground there
+is flat and undisturbed (within about 1 block of the planned level, with no
+cut face, fill or cleared edge left by the build), include the
+`terrain-integrate` skill in this design (planned mode): it grades the pads and
+an apron around them as the first phases of this plan and renders the ground
+before and after. Show those renders with the blueprints. The user may decline
+the integration at approval; then plan a plain `site-prep` phase. Either way,
+follow the seating rules in `../terrain-integrate/reference/integration.md`
+(foundations, cut faces, doors, paths and ground texture).
 
 ## Reference library
 
@@ -236,10 +250,8 @@ next steps yourself, in this order, district by district:
    soft-edged terraces) and tell the user what is beyond them (more than light
    levelling, a pad and a few
    terraces).
-   If a pad would sit more than about 1–2 blocks above or below the surveyed
-   ground at any edge, offer the `terrain-integrate` skill for the site
-   preparation instead: it designs the pad and a natural apron around it as the
-   first phases of this plan.
+   The integration phases from "Ground the build" go first when the user kept
+   them; they replace the plain `site-prep` phase for the ground they cover.
 2. **Landmarks**: run the `design-building` skill for each landmark record.
 3. **Functional quarters**: run the `design-village` skill for each one.
 4. **Parks and plazas**: run the `design-grounds` skill for each green-space

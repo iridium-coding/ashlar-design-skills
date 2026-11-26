@@ -2,6 +2,18 @@
 
 A vertical lip, trench or abrupt change in materials can make a build look dropped onto the land. An apron grades that edge into the surrounding ground and uses the surveyed surface palette. Use the [terrain method](../../terrain-shape/reference/terrain/method.md) for survey, materialisation and verification.
 
+## Seating a build
+
+These rules hold for every design skill's footprint, whether or not an apron is graded.
+
+- **Choose how the build meets the slope.** Cut it in (the back into the slope, the front open), build it up on a visible plinth or terrace, or step it down the slope in sections. Prefer a natural shelf, and do not flatten a plot wider than the build needs.
+- **Keep foundations flush.** Carry the foundation down to the measured ground under every edge column, as a plinth course of the site's stone, so no wall or floor overhangs air and no dirt shows beneath the build.
+- **Explain every level change.** Give each cut face a retaining wall of mixed stone (cobblestone, stone bricks, andesite and mossy patches, or deepslate for a heavier look), carried into the ground and softened with slabs at the top, or grade it into a slope. Never leave a bare vertical dirt face or a lip of grass over a cut.
+- **Let doors meet the ground.** Every outside door has a sill on walkable ground, or steps that reach it.
+- **Connect the build.** Run a path from the main door that follows the contour out to an existing path or the edge of the worked ground, with an irregular width and frayed edges (gravel, coarse dirt and dirt path, with the odd stone).
+- **Texture the ground.** Use one dominant surface block and two or three supporting ones (coarse dirt, podzol, rooted dirt, moss, gravel, the local stone) in irregular patches, with a wider transition on steeper slopes. Keep organic edges to straight runs of at most 7 blocks, and give each terrace level its own curve.
+- **Reach far enough.** Let the worked ground thin out over roughly 30 blocks around a house, and more around a large build, so it meets the untouched land without a visible line. Grading stays inside the apron; ground texture, paths and planting (`terrain-ecology`) carry it further.
+
 ## Survey and plan
 
 - Capture fresh heights and the exact site read per the [Ashlar survey](../../exec-ashlar/reference/survey.md). Include enough room inside the grading box for the taper and enough margin outside it to sample both sides of each outer edge. Read through the deepest seal and above foliage. Resolve existing structures and other non-natural blocks before grading.

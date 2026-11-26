@@ -38,8 +38,8 @@ allée, knot garden, zen garden, or any **designed outdoor space**. Do not use
 for:
 
 - Naturalistic, wild terrain with no design intent → `terrain-shape` (it may
-  not be installed; if not, say so and offer a `site-prep` phase for light
-  grading only).
+  not be installed; if not, say so and plan the grading as a `site-prep`
+  phase).
 - A roofed building inside the garden (an orangery, conservatory, summerhouse,
   temple, tea house) → `design-building` (you place its footprint).
 - Figurative statuary (an Apollo, an equestrian statue, a fountain figure) →
@@ -93,8 +93,8 @@ skill.
    record in `requirements.md`.
 2. **Research** — invoke `survey-research` for a named garden or unfamiliar
    tradition; pull the tradition's rules from `reference/styles.md`.
-3. **Prepare the site** — if it needs grading or leveling, plan a `site-prep`
-   phase; a formal garden wants a flat, true datum.
+3. **Prepare the site** — a formal garden wants a flat, true datum; plan it
+   and the ground around the garden's edges as "Ground the build" below says.
 4. **Compose** — lay the axes and zones (`reference/composition.md`).
 5. **Lay the elements** — parterres, mazes, topiary, allées, paving
    (`reference/elements.md`); water features (`reference/water.md`).
@@ -102,7 +102,8 @@ skill.
    statuary, animated water, and site grading, so each owning skill runs in
    the right order (see Hand-off).
 7. **Render and iterate** — produce blueprints (`reference/blueprints.md`),
-   show the user, revise, **loop until they approve**.
+   show the user with the integration renders from "Ground the build"
+   below, revise, **loop until they approve**.
 8. **Write the plan and hand off** — `requirements.md`, `plan.toon` with its
    phase and module files per the `exec-ashlar` skill's
    plan format (`../exec-ashlar/reference/plan-format.md`), and
@@ -124,6 +125,19 @@ skill.
    - **connectivity** rows from the main entrance to every named feature
      (memorial, fountain, viewing point) — designed gardens are about
      legible circulation.
+
+## Ground the build
+
+Seating the build in the land is part of the design, not an extra. Read the
+surveyed ground along every footprint and paved edge. Unless the ground there
+is flat and undisturbed (within about 1 block of the planned level, with no
+cut face, fill or cleared edge left by the build), include the
+`terrain-integrate` skill in this design (planned mode): it grades the pads and
+an apron around them as the first phases of this plan and renders the ground
+before and after. Show those renders with the blueprints. The user may decline
+the integration at approval; then plan a plain `site-prep` phase. Either way,
+follow the seating rules in `../terrain-integrate/reference/integration.md`
+(foundations, cut faces, doors, paths and ground texture).
 
 ## Reference library
 
@@ -194,10 +208,8 @@ this order, handling the dependency seams:
    a `site-prep` phase that gives a flat, true datum (clearing, levelling,
    filling holes, soft-edged terraces) and tell the user if the site needs more
    than that (more than light levelling, a pad and a few terraces).
-   If a pad would sit more than about 1–2 blocks above or below the surveyed
-   ground at any edge, offer the `terrain-integrate` skill for the site
-   preparation instead: it designs the pad and a natural apron around it as the
-   first phases of this plan.
+   The integration phases from "Ground the build" go first when the user kept
+   them; they replace the plain `site-prep` phase for the ground they cover.
 2. **Roofed structures and statuary**: run the `design-building` and
    `design-monument` skills for them.
 3. **Build the garden**: use the `exec-ashlar` skill (`build <project>`), with

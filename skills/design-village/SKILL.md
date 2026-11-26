@@ -42,8 +42,8 @@ is really one of the following, say so and use the right skill instead:
 - A single player base of operations belongs to `design-house`.
 - A single standalone building belongs to `design-building`.
 - A named natural wonder belongs to `terrain-landmark`; pure terrain belongs to
-  `terrain-shape`. Those skills may not be installed; if not, say so and offer a
-  `site-prep` phase for light grading only.
+  `terrain-shape`. Those skills may not be installed; if not, say so and plan
+  the grading as a `site-prep` phase.
 
 ## Connection
 
@@ -92,7 +92,8 @@ skill.
 7. **Functional validation.** Check the plan against every hard rule below and
    `reference/mechanics.md`. Fix violations before showing the user.
 8. **Render layout options.** Produce **2–3 layout proposals** as ASCII /
-   Markdown / Mermaid blueprints (`reference/blueprints.md`). Show them, take
+   Markdown / Mermaid blueprints (`reference/blueprints.md`). Show them
+   with the integration renders from "Ground the build" below, take
    feedback, revise, and **loop until the user approves** — never plan from an
    unapproved layout.
 9. **Write the plan and hand off.** Write `requirements.md`, `plan.toon`, its
@@ -119,6 +120,19 @@ skill.
    - **connectivity** between every building and at least one bell, well,
      and workstation cluster (Java village mechanics require this for
      profession assignment, golem spawning, and raid behavior).
+
+## Ground the build
+
+Seating the build in the land is part of the design, not an extra. Read the
+surveyed ground along every footprint and paved edge. Unless the ground there
+is flat and undisturbed (within about 1 block of the planned level, with no
+cut face, fill or cleared edge left by the build), include the
+`terrain-integrate` skill in this design (planned mode): it grades the pads and
+an apron around them as the first phases of this plan and renders the ground
+before and after. Show those renders with the blueprints. The user may decline
+the integration at approval; then plan a plain `site-prep` phase. Either way,
+follow the seating rules in `../terrain-integrate/reference/integration.md`
+(foundations, cut faces, doors, paths and ground texture).
 
 ## Reference library
 
@@ -197,10 +211,8 @@ the next steps yourself, in this order:
    installed; otherwise add a `site-prep` phase (clearing, levelling, pads,
    filling holes, soft-edged terraces) and tell the user if the site needs
    more than that (more than light levelling, a pad and a few terraces).
-   If a pad would sit more than about 1–2 blocks above or below the surveyed
-   ground at any edge, offer the `terrain-integrate` skill for the site
-   preparation instead: it designs the pad and a natural apron around it as the
-   first phases of this plan.
+   The integration phases from "Ground the build" go first when the user kept
+   them; they replace the plain `site-prep` phase for the ground they cover.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). The buildings are
    stamped from the templates first; the population phase (villagers, then
    animals, then any iron golem — see `reference/population.md`) runs last as

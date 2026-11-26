@@ -11,9 +11,10 @@ REPO = Path(__file__).resolve().parents[2]
 SKILLS = ["design-building", "design-city", "design-grounds", "design-house",
           "design-monument", "design-village", "exec-ashlar", "survey-research",
           "system-redstone", "terrain-shape", "terrain-landmark", "terrain-ecology",
-          "terrain-integrate"]
+          "terrain-integrate", "terrain-cave"]
 IDS = [skill.replace("-", "_") for skill in SKILLS]
-TERRAIN_SKILLS = {"terrain-shape", "terrain-landmark", "terrain-ecology", "terrain-integrate"}
+TERRAIN_SKILLS = {"terrain-shape", "terrain-landmark", "terrain-ecology", "terrain-integrate",
+                  "terrain-cave"}
 CLIENTS_FILE = "skills/exec-ashlar/reference/clients.md"
 VOXEL_TOOLKIT = "skills/design-monument/tools/voxel/"
 TERRAIN_TOOLKIT = "skills/terrain-shape/tools/terrain/"
@@ -142,8 +143,7 @@ def test_no_chapman_leftovers(skill: str) -> None:
         rel = path.relative_to(REPO).as_posix()
         for number, hit in leftovers(
                 path.read_text(encoding="utf-8"),
-                allow_fabric=VOXEL_TOOLKIT in rel or TERRAIN_TOOLKIT in rel,
-                cave_forbidden=skill in TERRAIN_SKILLS):
+                allow_fabric=VOXEL_TOOLKIT in rel or TERRAIN_TOOLKIT in rel):
             problems.append(f"{rel}:{number}: {hit!r}")
     assert not problems, "Chapman pipeline references left:\n" + "\n".join(problems)
 

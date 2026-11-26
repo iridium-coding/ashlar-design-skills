@@ -32,6 +32,8 @@ The planting and grading skills use these additional command interfaces. Check t
 | `tree --preset P [--set key=value …] --name N --out DIR` | Generate a vegetation module and preview images. |
 | `tree-place --module FILE --points FILE (--surface FILE or --site DIR) --phase N --project DIR` | Use one source of heights to anchor rotated trees. Generate placements and stamp the tree phase. |
 | `apron --site DIR --box X1 Z1 X2 Z2 [--protect X1 Z1 X2 Z2 [--pad Y]]… --project DIR --element E --first-phase N [--palette STATS.txt] [--standalone]` | Preview and prepare grading from measured ground, protect footprints, hold shores, report cut/fill and seam profiles. |
+| `cave DESIGN --project DIR --first-phase N [--preview] [--standalone]` | Check a cave design (`terrain-cave`) against its site read and write carve, dress, pool and light phases, a features commands file, plan rows, a report and previews; `--preview` writes only the report and previews. |
+| `cave-check DESIGN --site POST_BUILD_F1 [--project DIR]` | Check a fresh read of a built cave: ceilings, spans, light and roof. Prints JSON; exits 1 when a check fails. |
 
 ## Site recipe
 
@@ -95,6 +97,7 @@ Use `BiomeField(hf, seed=, latitude=)`, `.climate()`, `.assign(boundary_jitter=)
 
 - `terrain.site` loads the exact column read with `load_site` and the three height grids with `load_heights`. `surfaces`, `find_trees` and `unnatural_blocks` describe measured ground, trees and potential structures. `ground_for` and `blend_to_existing` join the field to the site. `water_levels` plans floods. `liquid_levels` finds retained liquid resting on the bed. `drain_bodies` resolves complete seeded bodies.
 - `terrain.recipe.build_field(recipe, project_dir)` applies graph/belt, erosion, blend, pads and optional shore hold. `terrain.live.materialize_live` resolves changes to solid, liquid and trees. `split_columns` tiles the changes and `greedy_fills` merges identical states. `liquid_violations` checks newly exposed liquid and `expected_surface` accounts for retained liquid as well as ground.
+- `terrain.caves` turns a cave design into layers: `parse_design`/`load_design`, `void_mask`, `dress_write`, `pool_mask`, `light_cells`, `feature_plan`, `emit_cave` and `check_cave`. `terrain.ashlar_emit.check_form_layers` runs any forms-only layers through the terrain checks without repainting the surface.
 - `terrain.forms.load_form` reads voxel arrays and palettes. `form_write` emits carved air or built solid cells. `flow_build` collects flowing sources, and `gravity_violations` checks unsupported material after the planned edits.
 - `terrain.verify.verify` returns a Report. GATE A checks shape and materials, the site boundary and planned water. `terrain.render.render_views` writes hillshade, relief, profile, slope and eye-level PNGs. Judge the last two from the intended approach.
 - `terrain.ashlar_emit.preview_field(recipe, project_dir)` runs the design checks. `emit_ashlar(recipe, project_dir, first_phase=…, standalone=…, drain_approved=…)` writes checked files. `emit_field` accepts an already designed field, and `plan_rows_toon` formats the result. The emit checks include gravity and new spill contacts after the planned phases.

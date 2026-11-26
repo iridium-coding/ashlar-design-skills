@@ -4,9 +4,10 @@
 
 > **This fork** ([iridium-coding/ashlar-design-skills](https://github.com/iridium-coding/ashlar-design-skills))
 > uses the [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on Paper.
-> Its thirteen Ashlar skills include the six `design-*` skills,
+> Its fourteen Ashlar skills include the six `design-*` skills,
 > `survey-research`, `exec-ashlar`, `system-redstone`, `terrain-shape`,
-> `terrain-landmark`, `terrain-ecology`, and `terrain-integrate`.
+> `terrain-landmark`, `terrain-ecology`, `terrain-integrate`, and
+> `terrain-cave`.
 > To use them with Claude Code and Codex, clone this repo into the workspace as
 > `ashlar-design-skills/`, then from the workspace root:
 >
@@ -14,7 +15,7 @@
 > mkdir -p .claude/skills .agents/skills
 > for s in design-building design-city design-grounds design-house design-monument design-village \
 >          exec-ashlar survey-research system-redstone \
->          terrain-shape terrain-landmark terrain-ecology terrain-integrate; do
+>          terrain-shape terrain-landmark terrain-ecology terrain-integrate terrain-cave; do
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".claude/skills/$s"
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".agents/skills/$s"
 > done
@@ -32,7 +33,8 @@
 >
 > The design and rules are in the [foundation spec](docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md),
 > [terrain spec](docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md),
-> and [redstone spec](docs/superpowers/specs/2026-11-19-ashlar-redstone-design.md).
+> [redstone spec](docs/superpowers/specs/2026-11-19-ashlar-redstone-design.md),
+> and [cave spec](docs/superpowers/specs/2026-11-25-ashlar-terrain-cave-design.md).
 
 # Minecraft Java — Claude Plugin
 

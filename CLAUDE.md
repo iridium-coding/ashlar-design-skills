@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **Fork note (ashlar-design-skills):** the six `design-*` skills,
 > `survey-research`, `exec-ashlar`, `system-redstone`, `terrain-shape`,
-> `terrain-landmark`, `terrain-ecology` and `terrain-integrate`
+> `terrain-landmark`, `terrain-ecology`, `terrain-integrate` and `terrain-cave`
 > target the **Ashlar** MCP server (`mc_status`, `mc_players`, `mc_survey`,
 > `mc_render`, `mc_inspect`, `mc_snapshot`, `mc_restore`, `mc_build`,
-> `mc_command`). Use its `mc_*` names for these thirteen skills. The rest
+> `mc_command`). Use its `mc_*` names for these fourteen skills. The rest
 > of this file describes Chapman's original skills.
 > The fork's terrain toolkit lives in `skills/terrain-shape/tools/terrain/`
 > and runs through `skills/terrain-shape/scripts/terrain.py`.

@@ -98,3 +98,32 @@ def make_site(path: str | Path, box: Box, *, ground: int | dict[tuple[int, int],
     site = Site(box=box, world=world, columns=columns)
     write_site(path, site)
     return site
+
+
+def make_heights(path: str | Path | None, origin: tuple[int, int], ground, *,
+                 surface=None, top=None) -> dict:
+    """An F2 heights dict for tests, written to `path` as JSON when `path` is given.
+
+    `ground`, `surface` and `top` are arrays shaped ``(nx, nz)`` of top-block y (NaN
+    for null); `surface` and `top` default to `ground`. The result is
+    ``{"origin": [x1, z1], "size": [nx, nz], "ground": [...], "surface": [...],
+    "top": [...]}`` flattened as ``F2[xi * nz + zi] -> arr[xi, zi]`` with None for NaN,
+    the layout `terrain.site.load_heights` reads."""
+    import json
+
+    import numpy as np
+
+    ground_arr = np.asarray(ground, dtype=float)
+    nx, nz = ground_arr.shape
+
+    def flat(arr) -> list[float | None]:
+        a = ground_arr if arr is None else np.asarray(arr, dtype=float)
+        if a.shape != (nx, nz):
+            raise ValueError(f"heights array shaped {a.shape}, expected {(nx, nz)}")
+        return [None if np.isnan(v) else float(v) for v in a.reshape(-1)]
+
+    out = {"origin": [int(origin[0]), int(origin[1])], "size": [nx, nz],
+           "ground": flat(ground_arr), "surface": flat(surface), "top": flat(top)}
+    if path is not None:
+        Path(path).write_text(json.dumps(out), encoding="utf-8")
+    return out

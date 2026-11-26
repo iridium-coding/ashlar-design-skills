@@ -1484,7 +1484,9 @@ def _previews(design: CaveDesign, site: Site, void, layers, folder: Path) -> lis
         sec[d] = _COLOURS["dress"]
         sec[w] = _COLOURS["water"]
         sec[li] = _COLOURS["light"]
-        sec = sec.transpose(1, 0, 2)[::-1]  # rows = y, top first
+        if axis == 2:  # an (x, y) cut; an x cut is already (y, z)
+            sec = sec.transpose(1, 0, 2)
+        sec = sec[::-1]  # rows = y, top first
         path = folder / f"{design.element}-section-{name}.png"
         Image.fromarray(np.ascontiguousarray(sec)).resize(
             (sec.shape[1] * scale, sec.shape[0] * scale), Image.NEAREST).save(path)

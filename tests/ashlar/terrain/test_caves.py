@@ -193,6 +193,20 @@ def test_emit_writes_backed_up_phases_features_and_rows(tmp_path):
     assert (project / "terrain" / "previews" / "hall-plan.png").exists()
 
 
+@pytest.mark.parametrize("name", ["x", "z"])
+def test_section_previews_are_upright(tmp_path, name):
+    from PIL import Image
+
+    project, site, design = _setup(tmp_path)
+    caves.emit_cave(design, project, first_phase=1, preview=True)
+
+    img = Image.open(project / "terrain" / "previews" / f"hall-section-{name}.png").convert("RGB")
+    ny = BOX[4] - BOX[1] + 1
+    assert img.height == ny * 6  # rows run along y
+    assert img.getpixel((0, 0)) == caves._COLOURS["air"]  # sky on top
+    assert img.getpixel((0, img.height - 1)) == caves._COLOURS["rock"]  # rock at the bottom
+
+
 def test_emit_refuses_to_breach_buried_water(tmp_path):
     water = {(29, y, z): "minecraft:water[level=0]" for y in range(40, 50) for z in range(15, 26)}
     project, site, design = _setup(tmp_path, cells=water, lights=False,

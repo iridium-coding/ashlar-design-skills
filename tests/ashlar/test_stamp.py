@@ -104,6 +104,39 @@ def test_placements_from_plan_toon(tmp_path):
         st.stamp_all(st.read_placements(plan, None), tmp_path / "modules")
 
 
+
+def test_placements_accept_toon_quoted_cells(tmp_path):
+    # TOON quotes a cell that starts with "-" (a negative coordinate); the
+    # reader must take quoted and unquoted cells alike.
+    (tmp_path / "modules").mkdir()
+    (tmp_path / "modules" / "hut.json").write_text(json.dumps(
+        {"size": [3, 2, 2], "fills": [{"from": [0, 0, 0], "to": [2, 1, 1],
+                                       "block": "minecraft:stone"}]}), encoding="utf-8")
+    plan = tmp_path / "plan.toon"
+    plan.write_text(
+        "placements[2]{module,origin,rotation,mirror,phase}:\n"
+        '  "hut","-890 64 -153",0,none,2\n'
+        '  hut,"-880 64 -153",90,"x",2\n', encoding="utf-8")
+    rows = st.read_placements(plan, None)
+    assert [r["module"] for r in rows] == ["hut", "hut"]
+    assert [r["origin"] for r in rows] == [[-890, 64, -153], [-880, 64, -153]]
+    assert rows[1]["mirror"] == "x"
+    assert len(st.stamp_all(rows, tmp_path / "modules")["fills"]) == 2
+
+
+@pytest.mark.parametrize("row", [
+    '  hut,"-890 64 -153,0,none,2',   # unterminated quote
+    "  hut,1 two 3,0,none,2",          # not a coordinate
+    "  hut,1 2,0,none,2",              # two numbers, not three
+    "  hut,1 2 3,ninety,none,2",       # rotation is not a number
+])
+def test_placements_bad_row_is_a_stamp_error(tmp_path, row):
+    plan = tmp_path / "plan.toon"
+    plan.write_text("placements[1]{module,origin,rotation,mirror,phase}:\n"
+                    + row + "\n", encoding="utf-8")
+    with pytest.raises(st.StampError):
+        st.read_placements(plan, None)
+
 def test_cli_negative_origin(tmp_path):
     module = tmp_path / "m.json"
     module.write_text(json.dumps({"size": [1, 1, 1], "blocks": [

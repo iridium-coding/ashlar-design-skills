@@ -149,7 +149,10 @@ full boxes.
 
 In a TOON row, write a list inside one cell with `|` (for example palette
 `minecraft:oak_planks|minecraft:spruce_planks|minecraft:stone_bricks`); never a
-comma. Write a `via` route as waypoints joined by ` > ` (for example
+comma. A cell or value that starts with `-` (a negative coordinate such as
+`-890 65 153`), or holds a comma or a colon, may be written in double quotes as
+TOON prescribes; the scripts read quoted and unquoted cells alike. Quote a
+`summary` or note that contains a comma. Write a `via` route as waypoints joined by ` > ` (for example
 `121 65 -340 > 118 65 -348 > 107 65 -356`); the check follows it as a polyline.
 Write a `silhouette`'s `sample_count` evenly spaced columns along the region's
 longer horizontal side, and use the population variance of the top y.

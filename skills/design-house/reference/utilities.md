@@ -37,15 +37,17 @@ game update.
 
 ## Power & food farms
 
-- **Iron farm** — Java golem spawning requires a valid village: **≥3 villagers
-  with beds and workstations, all having slept and worked.** The standard
-  Java design uses 3–10 villagers in a detection cell; golems spawn within
-  ~8 blocks of the village centre. The Java threshold is lower than in other
-  editions — 3 villagers with beds and workstations is enough to start.
-- **Mob farm** — hostile mobs spawn in a spherical shell ~24–128 blocks from
-  the player (simulation distance 10 default). A dark spawning chamber with
-  water-funnel collection works well. Use `/gamerule` to tune `mobSpawning`
-  if needed.
+- **Iron farm** — in Java, villagers summon golems. Each one must have slept
+  in the last 20 minutes and not seen a golem in the last 30 seconds, and it
+  needs 3 such villagers within 10 blocks while panicking (the standard farm
+  keeps a zombie in view) or 5 while gossiping. Workstations are not part of
+  the check. The golem appears within 8 blocks horizontally and 6 vertically
+  of the summoning villager, so put the spawn floor around the villager cell.
+- **Mob farm** — hostile mobs spawn at least 24 blocks from a player and
+  despawn beyond 128, only in chunks within the simulation distance. A dark
+  spawning chamber with water-funnel collection works well. The mob-spawning
+  game rules (`spawn_monsters`, `spawn_mobs`) are server settings outside the
+  console allowlist: tell the user rather than change them.
 - **Crop farms** — kelp, bamboo, sugarcane, cactus, and tree farms all work;
   observer- or piston-based harvest is standard. On Java, QC-based designs
   are also valid.

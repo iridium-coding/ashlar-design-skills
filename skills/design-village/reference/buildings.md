@@ -47,8 +47,8 @@ A villager with no workstation stays unemployed (use spares for breeding).
   Hay-bale benches, open and lit.
 - **Well** — the classic village centerpiece; decorative, 5×5 with a cobble
   curb.
-- **Bell** — on a fence post or in the meeting hall, within 48 blocks of every
-  bed pillow.
+- **Bell** — on a fence post or in the meeting hall, within 32 blocks of every
+  bed, so it is claimed and one ring reaches every villager.
 - **Watchtower** — 10–15 blocks tall with a lookout top; doubles as raid
   defense.
 
@@ -76,8 +76,8 @@ A villager with no workstation stays unemployed (use spares for breeding).
   (see `mechanics.md`).
 - **Gates** — a wooden double-door by default; an open arch reads fine too.
 - **Watchtowers and lookout posts** — at corners and the gate.
-- **Iron-golem pad** — keep the 17×13×17 volume around the bell open with a
-  solid spawn surface.
+- **Iron-golem pad** — keep the ground within about 8 blocks of the bell
+  open, solid and walkable, where gathered villagers summon golems.
 - **Lighting** — light the whole village interior and perimeter so hostile
   mobs cannot spawn among the buildings.
 

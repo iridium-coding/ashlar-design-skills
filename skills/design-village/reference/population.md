@@ -36,18 +36,19 @@ Leave spare unclaimed villagers (and beds) if the user wants breeding.
 
 ## Iron golems
 
-A golem spawns naturally only when the full set of conditions in
-`mechanics.md` is met (≥10 villagers, ≥20 beds, …). That takes in-game time.
+A golem spawns naturally only when the conditions in `mechanics.md` hold
+(sleeping villagers gossiping at the bell in groups of 5; this skill plans
+≥10 villagers and ≥20 beds). That takes in-game time.
 For **day-one defense**, spawn one golem directly: an allowlisted `summon` command
-for `minecraft:iron_golem` near the bell (with `Tags:["ashlar","ashlar.<project>"]`), on a clear surface
-inside the 16×13×16 spawn volume centred on the village's average bed position.
+for `minecraft:iron_golem` near the bell (with `Tags:["ashlar","ashlar.<project>"]`), on a clear,
+solid surface within 8 blocks of the bell.
 Tell the user a *naturally respawning* golem still needs the full Java
 conditions (see `mechanics.md`).
 
 ## Cats and animals
 
-- **Cats** arrive on their own once the village has claimed beds (1 per dawn
-  check while bed count exceeds cat count, cap 5 within 48 blocks). To seed
+- **Cats** arrive on their own once at least 4 beds are claimed (up to 5 cats
+  around a player in the village). To seed
   them immediately, summon `minecraft:cat` near the meeting area with
   the allowlisted `summon` (tagged `Tags:["ashlar","ashlar.<project>"]`).
 - **Farm animals** — summon cows, pigs, sheep, and chickens inside their

@@ -167,17 +167,17 @@ For naturalistic planting, or for trees vanilla does not grow, use the
 
 - **Place no blocks and spawn nothing while designing** — after the user
   approves the plan, the `exec-ashlar` skill builds it.
-- **Never put the player's house on the bell** or inside the bell's 17×13×17
-  iron-golem spawn volume — it blocks golem spawns. Keep ≥16 blocks clear.
+- **Never put the player's house on the bell** or its gathering area —
+  summoned golems need open, solid ground within 8 blocks of the villagers
+  gathered there.
 - **Every villager building** (only buildings a villager lives in; unoccupied
   houses keep their bed and no workstation) gets exactly **one bed** (pillow
   accessible,
   2 air blocks above it) and **one workstation**, within 16 blocks horizontal
   and 4 vertical of where the villager lives.
-- **Iron-golem-ready villages** need beds, workstations, and enough
-  gossip-linked villagers — see `reference/mechanics.md` for the full Java
-  conditions. Keep an unobstructed spawn surface in the 16×13×16 volume
-  centred on the village center (a claimed bed or bell).
+- **Iron-golem-ready villages** need enough villagers that sleep and gather
+  at the bell to gossip in groups of 5 — see `reference/mechanics.md` for the
+  full Java conditions. Keep open, solid ground around the bell.
 - **Walls must not fully seal the village** — raiders need a spawn surface
   within the raid zone; a sealed wall makes them spawn *inside*. Leave gaps.
 - **The bell must be claimable** — within 48 blocks of a claimed-bed pillow

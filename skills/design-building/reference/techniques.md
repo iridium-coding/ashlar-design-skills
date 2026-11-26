@@ -68,9 +68,10 @@ per N of height).
 ## Copper as art direction
 
 Copper oxidizes through four stages (normal → exposed → weathered →
-oxidized); **waxing locks a stage**. Decide the look deliberately: wax on
-placement for a fixed appearance, or place unwaxed batches aged to different
-stages for an intentional gradient (a green-streaked roof, an aged dome).
+oxidized); **waxing locks a stage**. Decide the look deliberately: place each
+stage's waxed block (`waxed_exposed_copper`, `waxed_weathered_copper`, …) for
+a fixed look or a fixed gradient (a green-streaked roof, an aged dome).
+Unwaxed copper keeps aging toward oxidized.
 
 ## Weathering for mood
 

@@ -111,7 +111,7 @@ Map the biome id to appropriate plant species and path/wall materials:
   mixed wildflower beds, `grass_block` lawns, gravel paths.
 - `minecraft:desert` → `sandstone` / `cut_sandstone` paths, `dead_bush`
   accents, `cactus` (sparse), palm-silhouette `jungle_log` columns.
-- `temperature < 0.15` → use `snow_block` / `snow_layer` ground cover on
+- `temperature < 0.15` → use `snow_block` / `snow` (layers) ground cover on
   terraces; avoid moisture-dependent plants.
 - High `downfall` (≥ 0.8) → favour moss, `mud` edging, water channels, and
   lush vegetation; low downfall (≤ 0.2) → favour gravel, sand, dry stone.

@@ -35,10 +35,10 @@ Do **not** use it for the following — say so, and use the right skill instead:
 - Pure terrain or scenery — belongs to `terrain-shape`.
 - A named natural wonder — belongs to `terrain-landmark`.
 
-`terrain-shape`, `terrain-landmark` and `system-redstone` may not be installed.
-If one is not, say so. In place of the terrain skills, offer a `site-prep` phase
-for light grading only; say that a complex redstone build is out of reach
-without `system-redstone`.
+`terrain-shape`, `terrain-landmark`, `terrain-integrate` and `system-redstone`
+may not be installed. If one is not, say so. Without the terrain skills, plan
+the grading as a `site-prep` phase (pads, cuts, fills and soft-edged terraces);
+say that a complex redstone build is out of reach without `system-redstone`.
 
 ## Connection
 
@@ -96,7 +96,8 @@ skill.
    - `adjacency.mmd` — Mermaid `graph TD` of room-to-room flow (optional when
      there is one room).
 
-5. **Iterate with the user.** Show the renderings. Take feedback. Revise and
+5. **Iterate with the user.** Show the renderings, with the integration renders from "Ground the build"
+   below. Take feedback. Revise and
    re-render. **Loop until the user explicitly approves.** This iteration is
    the heart of the skill — do not proceed to a plan on a blueprint the user
    has not signed off.
@@ -128,6 +129,19 @@ skill.
    doors facing cliffs, sunken entries, stairs without headroom, single-
    colour walls. The `exec-ashlar` skill's verification checks every row after
    the build.
+
+## Ground the build
+
+Seating the build in the land is part of the design, not an extra. Read the
+surveyed ground along every footprint and paved edge. Unless the ground there
+is flat and undisturbed (within about 1 block of the planned level, with no
+cut face, fill or cleared edge left by the build), include the
+`terrain-integrate` skill in this design (planned mode): it grades the pads and
+an apron around them as the first phases of this plan and renders the ground
+before and after. Show those renders with the blueprints. The user may decline
+the integration at approval; then plan a plain `site-prep` phase. Either way,
+follow the seating rules in `../terrain-integrate/reference/integration.md`
+(foundations, cut faces, doors, paths and ground texture).
 
 ## Reference library
 
@@ -189,10 +203,8 @@ sequence the next steps yourself, in this order:
    installed; otherwise add a `site-prep` phase (clearing, levelling, pads,
    filling holes, soft-edged terraces) and tell the user if the site needs
    more than that (more than light levelling, a pad and a few terraces).
-   If a pad would sit more than about 1–2 blocks above or below the surveyed
-   ground at any edge, offer the `terrain-integrate` skill for the site
-   preparation instead: it designs the pad and a natural apron around it as the
-   first phases of this plan.
+   The integration phases from "Ground the build" go first when the user kept
+   them; they replace the plain `site-prep` phase for the ground they cover.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`).
 
 The blueprints and the registry entry stay for later iteration.

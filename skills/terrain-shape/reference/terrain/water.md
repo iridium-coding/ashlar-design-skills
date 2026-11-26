@@ -8,7 +8,7 @@ apply — irregular outlines, the 7-block rule on every bank and shore.
 - Fill closed basins to a level surface with still sources in the mass phase. At a box edge, meet existing water at the same level. For a descending river, connect level reaches with a step. Fill a waterfall's plunge pool before its lip sources flow. A few blocks of pool depth usually work, up to about twelve for a large fall. Flowing lips have a separate phase and a backup covering the full possible flow area.
 - The infinite-source rule works: a `+` of two adjacent source blocks in a
   flat plane regenerates a source in the adjacent position.
-- Preserve the exact waterlogged state when keeping a block (for example `minecraft:stone_bricks[waterlogged=true]`).
+- Preserve the exact waterlogged state when keeping a block (for example `minecraft:stone_brick_slab[type=bottom,waterlogged=true]`).
 - Water cannot exist in the Nether dimension — it evaporates instantly.
 
 ## Existing water, lava and wooded shores

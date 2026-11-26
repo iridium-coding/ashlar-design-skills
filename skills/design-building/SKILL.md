@@ -34,8 +34,8 @@ Use for a **specific building or building complex**. Do not use for:
 - A village or settlement: `design-village`.
 - A player's own base of operations: `design-house`.
 - Terrain or a natural wonder: `terrain-shape` / `terrain-landmark`. Those
-  skills may not be installed; if not, say so and offer a `site-prep` phase for
-  light grading only.
+  skills may not be installed; if not, say so and plan the grading as a
+  `site-prep` phase.
 - A statue, sculpture, or other figurative art: `design-monument`.
 
 ## Connection
@@ -122,11 +122,25 @@ which to follow, and cite it. See `reference/fictional.md`.
      vertical relief (recessed window reveals, projecting trim, pitched
      roofs) — flat untextured surfaces are the user's repeated complaint.
 7. **Render and iterate** — produce blueprints per `reference/blueprints.md`,
-   show the user, revise, and **loop until they approve**.
+   show the user with the integration renders from "Ground the build"
+   below, revise, and **loop until they approve**.
 8. **Hand off** — write the plan, register the building in
    `.minecraft-builder/registry.json` (add or update only this project's entry;
    see `../exec-ashlar/reference/registry.md`), and follow the Hand-off section
    below.
+
+## Ground the build
+
+Seating the build in the land is part of the design, not an extra. Read the
+surveyed ground along every footprint and paved edge. Unless the ground there
+is flat and undisturbed (within about 1 block of the planned level, with no
+cut face, fill or cleared edge left by the build), include the
+`terrain-integrate` skill in this design (planned mode): it grades the pads and
+an apron around them as the first phases of this plan and renders the ground
+before and after. Show those renders with the blueprints. The user may decline
+the integration at approval; then plan a plain `site-prep` phase. Either way,
+follow the seating rules in `../terrain-integrate/reference/integration.md`
+(foundations, cut faces, doors, paths and ground texture).
 
 ## Reference library
 
@@ -185,10 +199,8 @@ this order:
    it is installed; otherwise add a `site-prep` phase (clearing, levelling,
    pads, filling holes, soft-edged terraces) and tell the user if the site
    needs more than that (more than light levelling, a pad and a few terraces).
-   If a pad would sit more than about 1–2 blocks above or below the surveyed
-   ground at any edge, offer the `terrain-integrate` skill for the site
-   preparation instead: it designs the pad and a natural apron around it as the
-   first phases of this plan.
+   The integration phases from "Ground the build" go first when the user kept
+   them; they replace the plain `site-prep` phase for the ground they cover.
 2. **Build**: use the `exec-ashlar` skill (`build <project>`). It runs the
    approval gate, the phased build and the verification, including the
    recorded signatures and citations.

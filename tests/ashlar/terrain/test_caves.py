@@ -193,6 +193,68 @@ def test_emit_writes_backed_up_phases_features_and_rows(tmp_path):
     assert (project / "terrain" / "previews" / "hall-plan.png").exists()
 
 
+@pytest.mark.parametrize("name", ["x", "z"])
+def test_section_previews_are_upright(tmp_path, name):
+    from PIL import Image
+
+    project, _, design = _setup(tmp_path)
+    caves.emit_cave(design, project, first_phase=1, preview=True)
+
+    img = Image.open(project / "terrain" / "previews" / f"hall-section-{name}.png").convert("RGB")
+    ny = BOX[4] - BOX[1] + 1
+    assert img.height == ny * 6  # rows run along y
+    assert img.getpixel((0, 0)) == caves._COLOURS["air"]  # sky on top
+    assert img.getpixel((0, img.height - 1)) == caves._COLOURS["rock"]  # rock at the bottom
+
+
+# Blocks glow lichen grows on: `can_be_placed_on` in the 26.3 worldgen data
+# (data/minecraft/worldgen/feature/glow_lichen.json).
+LICHEN_HOSTS = frozenset(f"minecraft:{n}" for n in (
+    "stone", "andesite", "diorite", "granite", "dripstone_block", "calcite", "tuff",
+    "deepslate", "sulfur", "cinnabar"))
+
+
+def _block(site: Site, x: int, y: int, z: int) -> str:
+    for lo, hi, state in site.columns[(x, z)]:
+        if lo <= y <= hi:
+            return state.split("[")[0]
+    raise KeyError((x, y, z))
+
+
+def _features(project: Path, element: str = "hall") -> list[tuple[str, int, int, int]]:
+    spec = json.loads((project / "terrain" / f"{element}.features.json").read_text())
+    rows = [command.split() for command in spec["commands"]]  # place feature <id> x y z
+    return [(fid, int(x), int(y), int(z)) for _, _, fid, x, y, z in rows]
+
+
+def test_glow_lichen_spots_touch_rock_it_grows_on(tmp_path):
+    project, site, design = _setup(
+        tmp_path, style="lush",
+        palette={"wall": {"moss_block": 3, "stone": 1}, "ceiling": {"moss_block": 1}},
+        features=[{"id": "glow_lichen", "on": "wall", "per_100": 5}])
+    caves.emit_cave(design, project, first_phase=1)
+    final = caves.final_states(design, site)
+
+    lichen = [(x, y, z) for fid, x, y, z in _features(project) if fid == "minecraft:glow_lichen"]
+    bare = [(x, y, z) for x, y, z in lichen  # lichen grows on walls and ceilings, never floors
+            if not any(_block(final, *face) in LICHEN_HOSTS for face in
+                       ((x + 1, y, z), (x - 1, y, z), (x, y, z + 1), (x, y, z - 1), (x, y + 1, z)))]
+
+    assert lichen
+    assert bare == []
+
+
+def test_glow_lichen_runs_before_features_that_cover_rock(tmp_path):
+    project, _, design = _setup(tmp_path, style="lush")
+    caves.emit_cave(design, project, first_phase=1)
+
+    order =[fid for fid, *_ in _features(project)]
+    others = [i for i, fid in enumerate(order) if fid != "minecraft:glow_lichen"]
+
+    assert "minecraft:glow_lichen" in order and others
+    assert "minecraft:glow_lichen" not in order[others[0]:]
+
+
 def test_emit_refuses_to_breach_buried_water(tmp_path):
     water = {(29, y, z): "minecraft:water[level=0]" for y in range(40, 50) for z in range(15, 26)}
     project, site, design = _setup(tmp_path, cells=water, lights=False,

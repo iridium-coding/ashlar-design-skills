@@ -56,7 +56,9 @@ renders):
 - `mc_render` `top` over the bounding box, for layout and footprint;
 - facades `north`, `south`, `east`, `west`, with y limited to the structure
   (side views are volume-priced);
-- `slice` with `axis: "y"` at each floor level, for floor plans.
+- `slice` with `axis: "y"` at each floor level, for floor plans;
+- on a site with any relief, each facade's base: no air under a foundation, no
+  bare cut face, and no buried wall or door.
 
 Map colours are approximate and different blocks can share one; check exact
 blocks with `mc_inspect` where it matters. `mc_render` does not show entities.

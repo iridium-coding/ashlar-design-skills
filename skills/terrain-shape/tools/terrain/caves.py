@@ -98,6 +98,14 @@ _BANNED_FEATURES = {
     "minecraft:sculk_vein": "sculk spreads toward a warden-summoning shrieker",
     "minecraft:rooted_azalea_tree": "it grows an azalea tree on the surface above the cave",
 }
+# Features that grow only on some blocks (`can_be_placed_on` in the 26.3 worldgen
+# data), on a wall or ceiling face, never a floor. Their spots must touch one after
+# dressing, and they run before moss patches and vines can cover that rock.
+_GROWS_ON = {
+    "minecraft:glow_lichen": frozenset(f"minecraft:{n}" for n in (
+        "stone", "andesite", "diorite", "granite", "dripstone_block", "calcite", "tuff",
+        "deepslate", "sulfur", "cinnabar")),
+}
 # Natural rock and soil the dress pass may repaint. Ores, amethyst, obsidian,
 # bedrock, sand and anything a player built stay as they are.
 DRESSABLE = frozenset(
@@ -736,6 +744,16 @@ def _above(mask: np.ndarray) -> np.ndarray:
     return out
 
 
+def _beside(mask: np.ndarray) -> np.ndarray:
+    """True where a horizontal neighbour is True."""
+    out = np.zeros_like(mask)
+    out[1:] |= mask[:-1]
+    out[:-1] |= mask[1:]
+    out[:, :, 1:] |= mask[:, :, :-1]
+    out[:, :, :-1] |= mask[:, :, 1:]
+    return out
+
+
 def standable(open_cells: np.ndarray, solid: np.ndarray | None = None) -> np.ndarray:
     """Open cells with open headroom above and a solid block below."""
     solid = ~open_cells if solid is None else solid
@@ -1134,8 +1152,10 @@ def feature_plan(design: CaveDesign, site: Site, void: np.ndarray, water: np.nda
                  clearance: int = 3) -> list[Feature]:
     """Spaced feature spots per role: air cells of the cave beside its surface.
 
+    ``site`` is the cave after its layers, so a spot sees the dressed rock.
     Spots within ``clearance`` blocks of a player block are left out, so
-    features do not grow over builds.
+    features do not grow over builds. A feature in ``_GROWS_ON`` only gets
+    spots with a wall or ceiling face it grows on, and is planned first.
     """
     carved = cave_space(design, site).carved if carved is None else carved
     full, _ = _classes(site)
@@ -1155,20 +1175,19 @@ def feature_plan(design: CaveDesign, site: Site, void: np.ndarray, water: np.nda
     for _ in range(clearance):
         near = _face_dilate(near)
     dry = void & ~water & air & ~near
-    side = np.zeros_like(solid)
-    side[1:] |= solid[:-1]
-    side[:-1] |= solid[1:]
-    side[:, :, 1:] |= solid[:, :, :-1]
-    side[:, :, :-1] |= solid[:, :, 1:]
     spots = {
         "ceiling": dry & _above(solid),
         "floor": dry & _below(solid) & _above(dry),
     }
-    spots["wall"] = dry & side & ~spots["ceiling"] & ~spots["floor"]
+    spots["wall"] = dry & _beside(solid) & ~spots["ceiling"] & ~spots["floor"]
     rng = np.random.default_rng(design.seed)
     out: list[Feature] = []
     for spec in design.features:
-        cells = np.argwhere(spots[spec.on])
+        mask = spots[spec.on]
+        if spec.id in _GROWS_ON:
+            hosts = np.array([n in _GROWS_ON[spec.id] for n in names])[ids] & solid
+            mask = mask & (_beside(hosts) | _above(hosts))
+        cells = np.argwhere(mask)
         if not len(cells) or spec.per_100 <= 0:
             continue
         want = max(1, int(round(spec.per_100 * len(cells) / 100)))
@@ -1180,6 +1199,7 @@ def feature_plan(design: CaveDesign, site: Site, void: np.ndarray, water: np.nda
                 if len(chosen) == want:
                     break
         out.extend(Feature(spec.id, int(c[0]) + x1, int(c[1]) + y1, int(c[2]) + z1, spec.on) for c in chosen)
+    out.sort(key=lambda f: f.id not in _GROWS_ON)  # stable: the rest keep their order
     return out
 
 
@@ -1484,7 +1504,9 @@ def _previews(design: CaveDesign, site: Site, void, layers, folder: Path) -> lis
         sec[d] = _COLOURS["dress"]
         sec[w] = _COLOURS["water"]
         sec[li] = _COLOURS["light"]
-        sec = sec.transpose(1, 0, 2)[::-1]  # rows = y, top first
+        if axis == 2:  # an (x, y) cut; an x cut is already (y, z)
+            sec = sec.transpose(1, 0, 2)
+        sec = sec[::-1]  # rows = y, top first
         path = folder / f"{design.element}-section-{name}.png"
         Image.fromarray(np.ascontiguousarray(sec)).resize(
             (sec.shape[1] * scale, sec.shape[0] * scale), Image.NEAREST).save(path)

@@ -1,8 +1,10 @@
 ---
 name: terrain-integrate
 description: >-
-  Use when a planned Minecraft Java pad sits above or below nearby ground,
-  an existing build meets the land at a hard edge, or existing terrain looks artificially graded.
+  Use with any Minecraft Java design whose footprint meets uneven or disturbed
+  ground (included by default; the user may decline), when an existing build
+  meets the land at a hard edge, or when existing terrain looks artificially
+  graded.
   Builds through Ashlar with the exec-ashlar skill.
 model: sonnet
 effort: medium
@@ -12,7 +14,7 @@ metadata:
 
 # Ground builds into the surrounding terrain
 
-Offer integration when a planned pad sits more than about 1–2 blocks above or below the surveyed ground at an edge, or when an existing build needs an apron. Include it when the user accepts. Read the [terrain method](../terrain-shape/reference/terrain/method.md) and the [apron reference](reference/integration.md).
+Integration is on by default. A design skill includes it whenever the ground along a footprint or paved edge is not flat and undisturbed (more than about 1 block from the planned level, or a cut face, fill or cleared edge), and the user may decline it at the design approval. Use it after the fact when an existing build needs an apron. Read the [terrain method](../terrain-shape/reference/terrain/method.md) and the [apron reference](reference/integration.md), including its [seating rules](reference/integration.md#seating-a-build).
 
 ## Choose the project
 

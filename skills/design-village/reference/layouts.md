@@ -43,7 +43,8 @@ Pick one that fits the site, the scale, and the style:
 - Leave **3–8 blocks** between buildings — enough to walk and light between
   them, not so much the village feels sparse.
 - Doors face the path; give each building a 1-block stoop.
-- Keep the bell central, with every bed pillow within 48 blocks of it.
+- Keep the bell central: within 48 blocks of a claimed bed so it is claimed,
+  and within 32 blocks of every bed so one ring sends everyone home.
 - Cluster related buildings — the farm by the farmer's cottage, the pens by
   the shepherd and butcher, the forges together.
 

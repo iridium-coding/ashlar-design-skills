@@ -116,7 +116,7 @@ choice made while writing this spec, open to correction.
 | Rollback for terrain | Local column backups taken by the placer; other phases keep snapshots | user |
 | Trees | Vanilla trees through `place feature`, run in bulk by the placer; plus custom trees the agent designs, stamped as modules | user |
 | Biomes | `fillbiome` joins the allowlist as a last resort; the agent asks a separate question every time a biome must change; rollback is approximate | user |
-| `terrain-integrate` | Offered, not mandatory: with a design skill's site prep when a pad sits more than about 1–2 blocks off the surrounding ground, or after the fact as its own small project | user |
+| `terrain-integrate` | Included by default (amended 2026-11-25; was "offered, not mandatory"): every design whose footprint meets uneven or disturbed ground carries it, and the user may decline it at the design approval; also after the fact as its own small project | user |
 | Commands at the gate | A commands file is summarised by count per feature, not printed line by line | user |
 | Trees crossing the box edge | Judged by where the trunk stands: a tree rooted on ground that changes is removed whole, even the part outside the box; a tree rooted on unchanged ground stays whole (§7.5) | user |
 | Existing water and lava | Kept by default; drained only with the user's separate yes, asked every time for each body (§7.7) | user |
@@ -873,7 +873,15 @@ it; `mc_survey`'s matrix as the source of the heights file.
 - **Site preparation.** Where a design skill plans site prep, it adds: if a pad
   would sit more than about 1–2 blocks above or below the surveyed ground at any
   edge, offer the `terrain-integrate` skill for the site prep (planned mode);
-  otherwise plan the simple `site-prep` phase as today. New landforms stay with
+  otherwise plan the simple `site-prep` phase as today.
+  *Amended 2026-11-25 (user decision):* integration is included by default.
+  Each design skill has a "Ground the build" section: unless the ground along a
+  footprint or paved edge is flat and undisturbed (within about 1 block of the
+  planned level, with no cut face, fill or cleared edge), the design includes
+  `terrain-integrate` (planned mode) and shows its renders with the blueprints;
+  the user may decline it at approval. The seating rules (flush foundations,
+  retaining walls, door sills, contour paths, ground texture) live in
+  `terrain-integrate/reference/integration.md`. New landforms stay with
   `terrain-shape` and `terrain-landmark`.
 - **Planting.** Where a design skill plants naturalistic vegetation (for example
   design-village's paragraph on growing trees), point to `terrain-ecology`.

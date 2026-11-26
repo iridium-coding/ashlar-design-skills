@@ -278,6 +278,43 @@ def _overlaps(a: Box, b: Box) -> bool:
     return all(a[i] <= b[i + 3] and b[i] <= a[i + 3] for i in range(3))
 
 
+def _split_cells(line: str) -> list[str]:
+    """Split one TOON table row on commas.
+
+    A cell may be double-quoted (TOON quotes a cell that starts with "-", such
+    as a negative coordinate, or that holds a comma); inside quotes, \\" is a
+    literal quote. Unquoted cells are trimmed.
+    """
+    cells: list[str] = []
+    cur: list[str] = []
+    in_quote = quoted = False
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if in_quote:
+            if ch == "\\" and line[i + 1:i + 2] == '"':
+                cur.append('"')
+                i += 2
+                continue
+            if ch == '"':
+                in_quote = False
+            else:
+                cur.append(ch)
+        elif ch == '"' and not "".join(cur).strip():
+            in_quote = quoted = True
+            cur = []
+        elif ch == ",":
+            cells.append("".join(cur) if quoted else "".join(cur).strip())
+            cur, quoted = [], False
+        else:
+            cur.append(ch)
+        i += 1
+    if in_quote:
+        raise ValueError("unterminated quote")
+    cells.append("".join(cur) if quoted else "".join(cur).strip())
+    return cells
+
+
 def read_placements(path: Path, phase: int | None) -> list[dict[str, Any]]:
     """Read placements from a JSON list or from a plan.toon placements table."""
     text = path.read_text(encoding="utf-8")
@@ -293,13 +330,19 @@ def read_placements(path: Path, phase: int | None) -> list[dict[str, Any]]:
         for line in lines[start + 1:]:
             if not line.strip() or not line[0].isspace():
                 break
-            cells = [cell.strip() for cell in line.strip().split(",")]
-            if len(cells) != 5:
-                raise StampError(f"{path}: bad placements row {line.strip()!r}")
-            module, origin, rotation, mirror, row_phase = cells
-            rows.append({"module": module, "origin": [int(v) for v in origin.split()],
-                         "rotation": int(rotation), "mirror": mirror,
-                         "phase": int(row_phase)})
+            try:
+                cells = _split_cells(line.strip())
+                if len(cells) != 5:
+                    raise ValueError("expected 5 cells")
+                module, origin, rotation, mirror, row_phase = cells
+                point = [int(v) for v in origin.split()]
+                if len(point) != 3:
+                    raise ValueError("origin needs x y z")
+                rows.append({"module": module, "origin": point,
+                             "rotation": int(rotation), "mirror": mirror,
+                             "phase": int(row_phase)})
+            except ValueError as exc:
+                raise StampError(f"{path}: bad placements row {line.strip()!r} ({exc})") from None
     if phase is not None:
         rows = [row for row in rows if row.get("phase") == phase]
     return rows

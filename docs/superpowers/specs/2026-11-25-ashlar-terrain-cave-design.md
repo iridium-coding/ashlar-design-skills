@@ -100,6 +100,11 @@ plus its surface), and any of:
 5. **Features.** Positions per role and density become `place feature`
    commands in a features commands file (backup box grown by the feature
    reach), checked against the bundled 26.3 feature ids.
+   *Amended after the first live run (2026-11-25):* that run's only glow
+   lichen landed among moss and clay and placed nothing. Lichen spots must now
+   touch a block it grows on (`can_be_placed_on` in the 26.3 worldgen data) on
+   a wall or ceiling face after dressing, and lichen is planned first, before
+   moss patches and vines can cover that rock.
 
 ### Existing caves and player blocks (added 2026-11-25)
 

@@ -102,7 +102,11 @@ refused.
    between phases.
 4. **Features.** Spaced spots in the open air of each surface, at least 4
    blocks from any player block, become `place feature` commands in a commands
-   file, backed up with a reach of 8 blocks sideways and 16 up and down.
+   file, backed up with a reach of 8 blocks sideways and 16 up and down. Glow
+   lichen grows only on a wall or ceiling face of natural stone (stone,
+   andesite, diorite, granite, tuff, calcite, dripstone block or deepslate),
+   so its spots touch one after dressing, and it runs before moss patches and
+   vines can cover that rock.
 5. **Player blocks.** Every player block a layer changes is listed in the
    report's `built` section with its position, the action (`carve`, `move`,
    `pool`) and why, plus `loses_data` for contents or text a block write cannot

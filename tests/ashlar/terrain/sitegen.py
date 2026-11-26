@@ -17,8 +17,10 @@ and anything outside the box is dropped.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import numpy as np
 from terrain.site import Site, write_site
 
 Box = tuple[int, int, int, int, int, int]
@@ -109,10 +111,6 @@ def make_heights(path: str | Path | None, origin: tuple[int, int], ground, *,
     ``{"origin": [x1, z1], "size": [nx, nz], "ground": [...], "surface": [...],
     "top": [...]}`` flattened as ``F2[xi * nz + zi] -> arr[xi, zi]`` with None for NaN,
     the layout `terrain.site.load_heights` reads."""
-    import json
-
-    import numpy as np
-
     ground_arr = np.asarray(ground, dtype=float)
     nx, nz = ground_arr.shape
 

@@ -26,6 +26,10 @@ DIMENSIONS = ("overworld", "nether")
 ROLES = ("ballast", "surface", "edge", "deck", "pier", "lining", "railing", "guard",
          "lamp_post", "lamp", "end_block", "platform", "ice")
 VERSION = "26.3"
+TOP_KEYS = frozenset({
+    "element", "seed", "world", "dimension", "mode", "route", "from", "to", "via", "heights", "avoid",
+    "width", "lanes", "style", "palette", "profile", "limits", "bridges", "tunnels", "lights", "boosters",
+    "sections", "version"})
 
 _ELEMENT = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _BLOCK = re.compile(r"^(?:minecraft:)?[a-z0-9_]+$")
@@ -143,14 +147,9 @@ STYLES: dict[str, dict[str, dict[str, int]]] = {
 
 
 # ------------------------------------------------------------------ validators
-def _bad(message: str) -> ValueError:
-    """The refusal for a value of the wrong type or shape; always a ValueError naming the key."""
-    return ValueError(message)
-
-
 def _mapping(value, key: str) -> dict:
     if not isinstance(value, dict):
-        raise _bad(f"{key} must be an object, got {value!r}")
+        raise ValueError(f"{key} must be an object, got {value!r}")  # noqa: TRY004 - the design contract is ValueError
     return value
 
 
@@ -169,7 +168,7 @@ def _ratio(value, key: str) -> float:
 
 def _flag(value, key: str) -> bool:
     if not isinstance(value, bool):
-        raise _bad(f"{key} must be true or false, got {value!r}")
+        raise ValueError(f"{key} must be true or false, got {value!r}")  # noqa: TRY004 - the design contract is ValueError
     return value
 
 
@@ -220,12 +219,18 @@ def _palette(style: str, given) -> dict[str, dict[str, int]]:
     for role, blocks in _mapping(given, "palette").items():
         if role not in ROLES:
             raise ValueError(f"palette.{role} is not a role ({', '.join(ROLES)})")
-        weights = _mapping(blocks, f"palette.{role}")
-        if not weights:
-            raise ValueError(f"palette.{role} needs at least one block")
-        palette[role] = {_block(b, f"palette.{role}"): _int(w, f"palette.{role} weight", minimum=1)
-                         for b, w in weights.items()}
+        palette[role] = _weights(blocks, f"palette.{role}")
     return palette
+
+
+def _weights(value, key: str) -> dict[str, int]:
+    """A block id, or a ``{block: weight}`` map, as a normalised weighted-block map."""
+    if isinstance(value, str):
+        return {_block(value, key): 1}
+    weights = _mapping(value, key)
+    if not weights:
+        raise ValueError(f"{key} needs at least one block")
+    return {_block(b, key): _int(w, f"{key} weight", minimum=1) for b, w in weights.items()}
 
 
 def _default_tunnel(mode: str, lanes: int, width: int) -> tuple[int, int]:
@@ -241,6 +246,10 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
     """
     data = _mapping(data, "line design")
     project = Path(project_dir)
+    unknown = sorted(set(data) - TOP_KEYS)
+    if unknown:
+        hint = " (use sections.length)" if unknown[0] == "section_length" else ""
+        raise ValueError(f"{unknown[0]} is not a known line design key{hint}")
     element = data.get("element")
     if not isinstance(element, str) or not _ELEMENT.match(element):
         raise ValueError(f"element must be a lowercase name, got {element!r}")
@@ -263,11 +272,11 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
 
     raw_via = data.get("via", [])
     if not isinstance(raw_via, (list, tuple)):
-        raise _bad(f"via must be a list of [x, z], got {raw_via!r}")
+        raise ValueError(f"via must be a list of [x, z], got {raw_via!r}")  # noqa: TRY004 - the design contract is ValueError
     via = tuple(_pair(p, "via") for p in raw_via)
     raw_avoid = data.get("avoid", [])
     if not isinstance(raw_avoid, (list, tuple)):
-        raise _bad(f"avoid must be a list of [x1, z1, x2, z2], got {raw_avoid!r}")
+        raise ValueError(f"avoid must be a list of [x1, z1, x2, z2], got {raw_avoid!r}")  # noqa: TRY004 - the design contract is ValueError
     avoid = []
     for box in raw_avoid:
         if not isinstance(box, (list, tuple)) or len(box) != 4:
@@ -286,6 +295,8 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
         heights = project / heights_raw
 
     width = _int(data.get("width", 3), "width", minimum=1)
+    if width > 3:
+        raise ValueError(f"width must be 1 to 3, got {width}")
     lanes = _int(data.get("lanes", 1), "lanes", minimum=1)
     if lanes not in (1, 2):
         raise ValueError(f"lanes must be 1 or 2, got {lanes}")
@@ -294,7 +305,7 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
 
     raw_profile = data.get("profile", [])
     if not isinstance(raw_profile, (list, tuple)):
-        raise _bad(f"profile must be a list of [index, level], got {raw_profile!r}")
+        raise ValueError(f"profile must be a list of [index, level], got {raw_profile!r}")  # noqa: TRY004 - the design contract is ValueError
     profile = []
     for item in raw_profile:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
@@ -312,17 +323,22 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
         "flat": lambda v, k: _int(v, k, minimum=1), "slope": lambda v, k: _int(v, k, minimum=1)}))
 
     tw, th = _default_tunnel(mode, lanes, width)
-    tun = _fields(data, "tunnels", {"width": tw, "height": th, "roof": 3},
-                  {k: (lambda v, key: _int(v, key, minimum=1)) for k in ("width", "height", "roof")})
+    convert_tun = {k: (lambda v, key: _int(v, key, minimum=1)) for k in ("width", "height", "roof")}
+    convert_tun["lining"] = _weights
+    tun = _fields(data, "tunnels", {"width": tw, "height": th, "roof": 3, "lining": None}, convert_tun)
+    if tun.pop("lining") is not None:
+        palette["lining"] = _weights(data["tunnels"]["lining"], "tunnels.lining")
     nether = dimension == "nether"
     lit = _fields(data, "lights", {"block": "minecraft:shroomlight", "spacing": 4 if nether else 12,
-                                   "minimum": 12 if nether else 1},
+                                   "min": 12 if nether else 1},
                   {"block": _block, "spacing": lambda v, k: _int(v, k, minimum=1),
-                   "minimum": lambda v, k: _int(v, k, minimum=0)})
-    if lit["minimum"] > 15:
-        raise ValueError(f"lights.minimum must be at most 15, got {lit['minimum']}")
+                   "min": lambda v, k: _int(v, k, minimum=0)})
+    if lit["min"] > 15:
+        raise ValueError(f"lights.min must be at most 15, got {lit['min']}")
+    lit["minimum"] = lit.pop("min")
 
-    section_length = _int(data.get("section_length", 96), "section_length", minimum=1)
+    section_length = _fields(data, "sections", {"length": 96},
+                             {"length": lambda v, k: _int(v, k, minimum=1)})["length"]
     version = data.get("version", VERSION)
     if not isinstance(version, str) or not version:
         raise ValueError(f"version must be text, got {version!r}")

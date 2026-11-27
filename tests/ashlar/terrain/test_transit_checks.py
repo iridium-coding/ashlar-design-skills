@@ -7,7 +7,7 @@ from sitegen import STONE, make_site
 from terrain import blocks, structures, track, transit_checks
 from terrain import transit_design as td
 from terrain.route import Route, Section
-from terrain.site import base_id
+from terrain.site import Site, base_id
 
 Z0 = 20
 LAVA = "minecraft:lava[level=0]"
@@ -70,6 +70,10 @@ def _built(tmp_path, kind="rail-with-bridge-and-tunnel", *, light_spacing=None):
         parts = _line(tmp_path, "path", ["grade"] * 30)
     elif kind == "ice":
         parts = _line(tmp_path, "ice", ["grade"] * 30, levels=[66] * 30)
+    elif kind == "road-half":
+        parts = _line(tmp_path, "road", ["grade"] * 30, levels=[65] * 15 + [65.5] * 15)
+    elif kind == "room":
+        parts = _line(tmp_path, "rail", ["grade"] * 30, end_stop="room")
     elif kind == "nether-tunnel":
         parts = _line(tmp_path, "rail", ["tunnel"] * 40, levels=[70] * 40, ground=90,
                       extra={"dimension": "nether", "world": "world_nether"})
@@ -316,3 +320,136 @@ def test_the_same_tunnel_with_a_minimum_of_one_passes_the_light_check(tmp_path):
     design, r, sites = _built(tmp_path, kind="nether-tunnel", light_spacing=12)
     design = td.parse_line({**design.source, "lights": {"min": 1}}, tmp_path)
     assert "light" not in _failed(transit_checks.check_line(design, r, sites))
+
+
+# ------------------------------------------------------------------ fix round 1: coverage and owners
+def _cropped(site, x2):
+    """The site cut off after column x2."""
+    box = (*site.box[:3], x2, *site.box[4:])
+    return Site(box=box, world=site.world, columns={k: v for k, v in site.columns.items() if k[0] <= x2})
+
+
+def test_a_section_without_a_site_is_an_error_naming_it(tmp_path):
+    design, r, _ = _built(tmp_path)
+    with pytest.raises(ValueError, match="no site for section s01"):
+        transit_checks.check_line(design, r, {})
+
+
+def test_every_missing_section_is_named(tmp_path):
+    design, r, sites = _built(tmp_path)
+    r.sections = [Section("s01", 0, 20, r.sections[0].box, "world"), Section("s02", 21, 53, r.sections[0].box, "world"),
+                  Section("s03", 54, 53, r.sections[0].box, "world")]
+    with pytest.raises(ValueError, match="s02, s03"):
+        transit_checks.check_line(design, r, sites)
+
+
+@pytest.mark.parametrize(("kind", "check"), [("rail-with-bridge-and-tunnel", "continuity"), ("road", "clearance")])
+def test_a_site_that_misses_part_of_the_line_fails_naming_the_uncovered_cells(tmp_path, kind, check):
+    design, r, sites = _built(tmp_path, kind=kind)
+    report = transit_checks.check_line(design, r, {"s01": _cropped(sites["s01"], 20)})
+    failed = _failed(report)[check]
+    assert "not covered by any site" in failed["detail"]
+    assert 0 < len(failed["cells"]) <= 10
+    assert all(c[0] > 20 for c in failed["cells"])
+    assert not report["ok"]
+
+
+def _two_sections(tmp_path):
+    """A road read as sections a (0-14) and b (15-29), each with its own copy of the site."""
+    design, r, sites = _built(tmp_path, kind="road")
+    box = r.sections[0].box
+    r.sections = [Section("a", 0, 14, box, "world"), Section("b", 15, 29, box, "world")]
+    return design, r, sites["s01"]
+
+
+def _block_at(site, r, i):
+    x, z = r.cells[i]
+    return blocks.apply_writes(site, [("x", blocks.cells_write({(x, 65, z): STONE}))])
+
+
+def test_a_cell_is_read_from_the_site_of_its_own_section(tmp_path):
+    design, r, clear = _two_sections(tmp_path)
+    # Section a's site is blocked at index 20, which b owns and b's site leaves clear: no failure.
+    report = transit_checks.check_line(design, r, {"a": _block_at(clear, r, 20), "b": clear})
+    assert "clearance" not in _failed(report)
+    # The same block at index 5, owned by a, fails.
+    report = transit_checks.check_line(design, r, {"a": _block_at(clear, r, 5), "b": clear})
+    x, z = r.cells[5]
+    assert [x, 65, z] in _failed(report)["clearance"]["cells"]
+    # And a block only in b's site at an index a owns is ignored.
+    report = transit_checks.check_line(design, r, {"a": clear, "b": _block_at(clear, r, 5)})
+    assert "clearance" not in _failed(report)
+
+
+def test_a_boundary_cell_falls_back_to_another_site(tmp_path):
+    design, r, clear = _two_sections(tmp_path)
+    short = _cropped(clear, r.cells[10][0])      # a's own read ends before index 11
+    report = transit_checks.check_line(design, r, {"a": short, "b": _block_at(clear, r, 12)})
+    x, z = r.cells[12]
+    assert [x, 65, z] in _failed(report)["clearance"]["cells"]
+
+
+# ------------------------------------------------------------------ fix round 1: support and more behaviour
+@pytest.mark.parametrize("block", ["minecraft:sea_lantern", "minecraft:jack_o_lantern[facing=north]"])
+def test_full_cube_lantern_blocks_need_no_floor(tmp_path, block):
+    design, r, sites = _built(tmp_path, kind="path")
+    x, z = r.cells[10][0], Z0 + 4
+    cells = {(x, 70, z): block}
+    assert "support" not in _failed(transit_checks.check_line(design, r, _write(sites, cells)))
+
+
+def test_a_copper_lantern_still_needs_a_floor(tmp_path):
+    design, r, sites = _built(tmp_path, kind="path")
+    x, z = r.cells[10][0], Z0 + 4
+    report = transit_checks.check_line(design, r, _write(sites, {(x, 70, z): "minecraft:copper_lantern"}))
+    assert [x, 70, z] in _failed(report)["support"]["cells"]
+
+
+def test_a_powered_rail_on_a_corner_fails_boosters(tmp_path):
+    design, r, sites = _built(tmp_path)
+    c = next(c for i, c in enumerate(track.rail_cells(design, r)) if not c.booster and i > 1 and r.kinds[i] == "grade")
+    corner = _write(sites, {(c.x, c.y, c.z): "minecraft:powered_rail[powered=true,shape=north_east]"})
+    assert [c.x, c.y, c.z] in _failed(transit_checks.check_line(design, r, corner))["boosters"]["cells"]
+
+
+@pytest.mark.parametrize(("kind", "cells"), [
+    pytest.param("road", lambda x, z: {(x, 65, z): STONE}, id="road"),
+    pytest.param("path", lambda x, z: {(x, 65, z): STONE}, id="path"),
+    pytest.param("ice", lambda x, z: {(x, 65, z): STONE}, id="ice"),
+])
+def test_grade_fails_on_a_raised_surface(tmp_path, kind, cells):
+    design, r, sites = _built(tmp_path, kind=kind)
+    x, z = r.cells[10]
+    report = transit_checks.check_line(design, r, _write(sites, cells(x, z)))
+    assert "grade" in _failed(report)
+
+
+def test_seal_fails_beside_a_tube(tmp_path):
+    design, r, sites = _built(tmp_path, kind="nether-tunnel")
+    r.kinds[5:25] = ["tube"] * 20
+    assert "seal" not in _failed(transit_checks.check_line(design, r, sites))
+    x, z = r.cells[15]
+    report = transit_checks.check_line(design, r, _write(sites, {(x, 71, z + 2): LAVA}))
+    assert [x, 71, z + 2] in _failed(report)["seal"]["cells"]
+
+
+def test_a_room_stop_is_lit_in_the_overworld(tmp_path):
+    design, r, sites = _built(tmp_path, kind="room")
+    report = transit_checks.check_line(design, r, sites)
+    assert report["ok"], report
+    assert any(c["name"] == "seal" for c in report["checks"])
+
+
+def test_a_dark_room_cell_fails_light(tmp_path, monkeypatch):
+    monkeypatch.setattr(transit_checks, "MAX_CELLS", 10_000)     # the room is the last cells, past the cap
+    design, r, sites = _built(tmp_path, kind="room")
+    end_x, end_z = r.cells[-1]
+    report = transit_checks.check_line(design, r, _mutate(sites, r, design, "remove_lights"))
+    assert any(abs(c[0] - end_x) <= 2 and abs(c[2] - end_z) <= 2 for c in _failed(report)["light"]["cells"])
+
+
+def test_a_road_half_step_of_exactly_half_a_block_passes_walk(tmp_path):
+    design, r, sites = _built(tmp_path, kind="road-half")
+    report = transit_checks.check_line(design, r, sites)
+    assert "walk" not in _failed(report), report
+    assert any(c["name"] == "walk" for c in report["checks"])

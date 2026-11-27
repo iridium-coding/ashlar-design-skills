@@ -2,8 +2,9 @@
 
 ``check_line`` runs the checks of ``CHECKS`` over per-section sites (the projected state, or
 fresh reads after a build) and reports each check with up to ten failing cells. Every cell is
-read from the site of the section that owns its route index; a cell no site covers is skipped.
-Block states are compared by parsed properties, never by raw strings.
+read from the site of the section that owns its route index, and from another site only when
+the owner's site does not contain the cell (a boundary cell). A route section without a site
+is an error; a cell a check needs that no site covers fails that check. Block states are compared by parsed properties, never by raw strings.
 
 Conventions follow `track` and `structures`: the running cell of a rail is its level; a road
 or path stands on the surface row ``floor(level) - 1`` (a half level adds a bottom slab at
@@ -22,16 +23,17 @@ import numpy as np
 from .blocks import cell_classes, flood, full_cube, light_of, site_light
 from .route import Route
 from .site import (
-    _AIR,
+    ATTACHED,
+    LEAVES,
     NATURAL,
     NETHER_NATURAL,
-    TRUNK,
+    PLANTS,
     Site,
     base_id,
     liquid_kind,
     natural_for,
 )
-from .structures import _VEGETATION, PLATFORM, ROOM
+from .structures import PLATFORM, ROOM, pier_ground
 from .track import RailCell, footprint, heading, inside, rail_cells, side_cell
 from .transit_design import LineDesign, formation_half
 
@@ -42,7 +44,11 @@ Cell = tuple[int, int, int]
 _RAILS = frozenset({"minecraft:rail", "minecraft:powered_rail"})
 _CORNERS = frozenset({"north_east", "north_west", "south_east", "south_west"})
 _ALL_NATURAL = NATURAL | NETHER_NATURAL
-_SOFT = _VEGETATION - TRUNK     # growth that carries nothing, trunks aside
+_AIR = frozenset({"minecraft:air", "minecraft:cave_air", "minecraft:void_air"})
+_SOFT = PLANTS | LEAVES | ATTACHED | frozenset(f"minecraft:{b}" for b in (
+    "cobweb", "glow_lichen", "sculk_vein", "pointed_dripstone", "powder_snow", "amethyst_cluster",
+    "small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud"))     # growth that carries nothing
+_NOT_LANTERN = frozenset({"minecraft:sea_lantern", "minecraft:jack_o_lantern"})
 _PARTIAL_LAYERS = frozenset({"minecraft:snow"})
 _FULL_EXTRA = frozenset({"minecraft:jack_o_lantern"})
 _COLLIDES = ("_slab", "_stairs", "_fence", "_fence_gate", "_wall", "_pane", "_bars", "_trapdoor", "_door",
@@ -62,15 +68,12 @@ def _parse(state: str) -> tuple[str, Mapping[str, str]]:
     return block, MappingProxyType(props)
 
 
-def _solid(state: str, natural: frozenset[str] = _ALL_NATURAL, *, ground: bool = False) -> bool:
-    """A full cube or natural terrain; air, liquids, plants and partial blocks are not.
-
-    `ground` also refuses tree trunks, as a pier's ground must (the rule of `structures`).
-    """
+def _solid(state: str, natural: frozenset[str] = _ALL_NATURAL) -> bool:
+    """A full cube or natural terrain; air, liquids, plants and partial blocks are not."""
     block = base_id(state)
     if block in _AIR or block in _PARTIAL_LAYERS or liquid_kind(state) is not None:
         return False
-    if block in (_VEGETATION if ground else _SOFT):
+    if block in _SOFT:
         return False
     return block in natural or block in _FULL_EXTRA or full_cube(state)
 
@@ -148,6 +151,7 @@ class _Line:
         self.half = formation_half(design)
         self.rails: list[RailCell] = rail_cells(design, route) if design.mode == "rail" else []
         self._owners: dict[int, list[Site]] = {}
+        self.uncovered: dict[Cell, None] = {}     # cells the running check needed that no site covers
         self._light: dict[int, np.ndarray] = {}
 
     def owners(self, i: int) -> list[Site]:
@@ -161,9 +165,14 @@ class _Line:
     def site_for(self, i: int, x: int, y: int, z: int) -> Site | None:
         return next((s for s in self.owners(i) if inside(s, x, y, z)), None)
 
-    def state(self, i: int, x: int, y: int, z: int) -> str | None:
+    def state(self, i: int, x: int, y: int, z: int, *, need: bool = False) -> str | None:
+        """The state at a cell, or None when no site covers it (`need`: the running check fails on that)."""
         site = self.site_for(i, x, y, z)
-        return None if site is None else site.block(x, y, z)
+        if site is None:
+            if need:
+                self.uncovered.setdefault((x, y, z))
+            return None
+        return site.block(x, y, z)
 
     def light(self, i: int, x: int, y: int, z: int) -> int | None:
         site = self.site_for(i, x, y, z)
@@ -185,12 +194,20 @@ class _Line:
 
 @dataclass
 class _Outcome:
-    bad: list[Cell]
+    bad: list[Cell]         # the first MAX_CELLS failing cells
     checked: int
     problem: str
+    failures: int = 0
+    _seen: set[Cell] | None = None
 
     def add(self, cell: Cell) -> None:
-        if cell not in self.bad:
+        if self._seen is None:
+            self._seen = set()
+        if cell in self._seen:
+            return
+        self._seen.add(cell)
+        self.failures += 1
+        if len(self.bad) < MAX_CELLS:
             self.bad.append(cell)
 
 
@@ -205,7 +222,7 @@ def _continuity(line: _Line) -> _Outcome | None:
         return None
     out = _Outcome([], 0, "rail cells missing or with the wrong shape")
     for i, rc in enumerate(line.rails):
-        state = line.state(i, rc.x, rc.y, rc.z)
+        state = line.state(i, rc.x, rc.y, rc.z, need=True)
         if state is None:
             continue
         out.checked += 1
@@ -222,15 +239,15 @@ def _corridor(line: _Line) -> dict[tuple[int, int], tuple[int, int, int]]:
     for i in range(line.n):
         base = line.level_cell(i)
         for xz in footprint(line.route, i, -reach, reach):
-            _, lo, hi = strip.get(xz, (i, base - 1, base + 6))
-            strip[xz] = strip.get(xz, (i, 0, 0))[0], min(lo, base - 1), max(hi, base + 6)
+            first, lo, hi = strip.setdefault(xz, (i, base - 1, base + 6))
+            strip[xz] = first, min(lo, base - 1), max(hi, base + 6)
     return strip
 
 
 def _support(line: _Line) -> _Outcome:
     out = _Outcome([], 0, "items without a block to stand on or hang from")
     for i, rc in enumerate(line.rails):
-        below = line.state(i, rc.x, rc.y - 1, rc.z)
+        below = line.state(i, rc.x, rc.y - 1, rc.z, need=True)
         if below is None:
             continue
         out.checked += 1
@@ -244,11 +261,10 @@ def _support(line: _Line) -> _Outcome:
             if rhi < lo or rlo > hi or not any(k in state for k in ("lantern", "torch", "carpet")):
                 continue
             block, props = _parse(state)
-            if block == "minecraft:jack_o_lantern":
-                continue
-            hanging = block.endswith("lantern") and props.get("hanging") == "true"
+            lantern = block.endswith("lantern") and block not in _NOT_LANTERN
+            hanging = lantern and props.get("hanging") == "true"
             torch = block.endswith("torch") and not block.endswith("wall_torch")
-            standing = (block.endswith(("lantern", "_carpet")) or torch) and not hanging
+            standing = (lantern or torch or block.endswith("_carpet")) and not hanging
             if not (hanging or standing):
                 continue
             for y in range(max(rlo, lo), min(rhi, hi) + 1):
@@ -272,7 +288,7 @@ def _boosters(line: _Line) -> _Outcome | None:
         return None
     out = _Outcome([], 0, "boosters without power or a redstone block, or powered rails on a corner")
     for i, rc in enumerate(line.rails):
-        state = line.state(i, rc.x, rc.y, rc.z)
+        state = line.state(i, rc.x, rc.y, rc.z, need=True)
         if state is None:
             continue
         block, props = _parse(state)
@@ -281,7 +297,7 @@ def _boosters(line: _Line) -> _Outcome | None:
         if not rc.booster:
             continue
         out.checked += 1
-        below = line.state(i, rc.x, rc.y - 1, rc.z)
+        below = line.state(i, rc.x, rc.y - 1, rc.z, need=True)
         if block != "minecraft:powered_rail" or props.get("powered") != "true" or (
                 below is not None and base_id(below) != "minecraft:redstone_block"):
             out.add((rc.x, rc.y, rc.z))
@@ -296,7 +312,7 @@ def _clearance(line: _Line) -> _Outcome:
         base = line.running_y(i)
         half = not rail and level != base
         for y in range(base + 1, base + 3) if rail else range(base, base + 3):
-            state = line.state(i, x, y, z)
+            state = line.state(i, x, y, z, need=True)
             if state is None:
                 continue
             out.checked += 1
@@ -315,7 +331,7 @@ def _surface(line: _Line, i: int, x: int, z: int) -> float | None:
     """
     base = math.floor(line.route.levels[i])
     for y in range(base + 1, base - 4, -1):
-        state = line.state(i, x, y, z)
+        state = line.state(i, x, y, z, need=True)
         if state is None:
             return math.nan
         top = _walk_top(state)
@@ -370,6 +386,9 @@ def _lit_cells(line: _Line) -> list[tuple[int, Cell]]:
     """(route index, cell) of every open cell above the floors that need light, in route order."""
     design, route = line.design, line.route
     cells: dict[Cell, int] = {}
+    # The formation is every offset within formation_half of the centreline (1 each side for a
+    # rail or a 3-wide path); a bridge uses its deck width, a bore its bore width. The terminus
+    # platform follows `structures`: 2 wide, its inner edge at -(ceil(formation_half) - 1).
     lo_f, hi_f = -int(line.half), int(line.half)
     deck = _span(round(2 * line.half) + 2)
     bore = _span(design.tunnels.width)
@@ -388,7 +407,8 @@ def _lit_cells(line: _Line) -> list[tuple[int, Cell]]:
                     for x, z in footprint(route, j, edge - width + 1, edge):
                         cells.setdefault((x, line.level_cell(j) + 1, z), j)
         elif stop == "room":
-            cells.update({c: i for c in _room_cells(line, i, end)[0]} | cells)
+            for c in _room_cells(line, i, end)[0]:
+                cells.setdefault(c, i)
     return sorted(((i, c) for c, i in cells.items()), key=lambda t: t[0])
 
 
@@ -414,7 +434,7 @@ def _light(line: _Line) -> _Outcome:
     minimum = line.design.lights.minimum
     out = _Outcome([], 0, f"floor cells with block light below {minimum}")
     for i, (x, y, z) in _lit_cells(line):
-        cell, below = line.state(i, x, y, z), line.state(i, x, y - 1, z)
+        cell, below = line.state(i, x, y, z, need=True), line.state(i, x, y - 1, z, need=True)
         if cell is None or below is None or base_id(cell) in _RAILS or not _open(cell):
             continue
         if not spawnable_floor(below):
@@ -441,12 +461,13 @@ def _deck(line: _Line) -> _Outcome | None:
         x, z = route.cells[i]
         top = math.floor(route.levels[i]) - 2
         cells, y = [], top
+        line.state(i, x, top, z, need=True)
         while (state := line.state(i, x, y, z)) is not None and base_id(state) in piers:
             cells.append((x, y, z))
             y -= 1
         column[i] = cells
         below = line.state(i, x, y, z)
-        if below is not None and _solid(below, line.natural, ground=True):
+        if below is not None and pier_ground(below, line.design.dimension):
             grounded.update(cells or [(x, top, z)])
     reach = line.design.bridges.pier_spacing // 2 + 1
     # Arch fill reaches ground through the fill beside it: grow the grounded set across touching pier cells.
@@ -494,7 +515,7 @@ def _seal(line: _Line) -> _Outcome | None:
         return None
     out = _Outcome([], 0, "liquid cells touching a bore or room")
     for i, (x, y, z) in bores:
-        state = line.state(i, x, y, z)
+        state = line.state(i, x, y, z, need=True)
         if state is None:
             continue
         out.checked += 1
@@ -516,6 +537,7 @@ def _grade(line: _Line) -> _Outcome:
         level = route.levels[i]
         if design.mode == "rail":
             want = line.rails[i].y
+            line.state(i, x, want, z, need=True)
             found = [y for y in range(want - 3, want + 4)
                      if (s := line.state(i, x, y, z)) is not None and base_id(s) in _RAILS]
             if found:
@@ -526,7 +548,7 @@ def _grade(line: _Line) -> _Outcome:
             ice = frozenset(design.palette["ice"])
             y = math.floor(level) - 1
             for gx, gz in footprint(route, i, 0, 1):
-                state = line.state(i, gx, y, gz)
+                state = line.state(i, gx, y, gz, need=True)
                 if state is not None:
                     out.checked += 1
                     if base_id(state) not in ice:
@@ -551,14 +573,28 @@ def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site]) -> d
 
     Each check is ``{"name", "ok", "detail", "cells"}`` with up to ten failing cells as ``[x, y, z]``.
     Checks that do not apply to the mode, or find nothing to check on this route, are left out.
+    A cell a check needs that no site covers fails that check.
+
+    Raises:
+        ValueError: when a route section has no entry in `sites`.
     """
+    missing = [s.name for s in route.sections if s.name not in sites]
+    if missing:
+        raise ValueError(f"no site for section {', '.join(missing)}")
     line = _Line(design, route, sites)
     checks = []
     for name in CHECKS:
+        line.uncovered = {}
         outcome = _RUN[name](line)
         if outcome is None:
             continue
-        bad = outcome.bad
-        detail = f"{len(bad)} of {outcome.checked}: {outcome.problem}" if bad else f"{outcome.checked} checked"
-        checks.append({"name": name, "ok": not bad, "detail": detail, "cells": [list(c) for c in bad[:MAX_CELLS]]})
+        gaps = list(line.uncovered)
+        parts = []
+        if outcome.failures:
+            parts.append(f"{outcome.failures} of {outcome.checked}: {outcome.problem}")
+        if gaps:
+            parts.append(f"{len(gaps)} cells not covered by any site")
+        cells = [*outcome.bad, *gaps][:MAX_CELLS]
+        checks.append({"name": name, "ok": not parts, "detail": "; ".join(parts) or f"{outcome.checked} checked",
+                       "cells": [list(c) for c in cells]})
     return {"ok": all(c["ok"] for c in checks), "checks": checks}

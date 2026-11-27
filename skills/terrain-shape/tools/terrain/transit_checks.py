@@ -61,7 +61,7 @@ _STAND_ON_POST = ("_fence", "_wall")    # a lantern or torch stands on the top o
 
 # ------------------------------------------------------------------ block predicates
 @cache
-def _parse(state: str) -> tuple[str, Mapping[str, str]]:
+def parse_state(state: str) -> tuple[str, Mapping[str, str]]:
     """The block id and the properties of a state; property order never matters."""
     block, _, rest = state.partition("[")
     props = dict(p.split("=", 1) for p in rest.rstrip("]").split(",") if "=" in p)
@@ -80,7 +80,7 @@ def _solid(state: str, natural: frozenset[str] = _ALL_NATURAL) -> bool:
 
 def _full_face(state: str, natural: frozenset[str]) -> bool:
     """A full cube, a ``type=top`` or ``double`` slab or ``half=top`` stairs: a rail or carpet stands on it."""
-    block, props = _parse(state)
+    block, props = parse_state(state)
     if block.endswith("_slab"):
         return props.get("type") in ("top", "double")
     if block.endswith("_stairs"):
@@ -118,7 +118,7 @@ def spawnable_floor(state: str) -> bool:
     o'lanterns and lit redstone lamps stay spawnable (a known game bug). A bottom slab or a
     carpet is not a floor.
     """
-    block, props = _parse(state)
+    block, props = parse_state(state)
     if block in _NO_SPAWN or block.endswith(("glass", "_trapdoor", "_leaves")) or "copper_grate" in block:
         return False
     if light_of(state) >= 14 and block not in _SPAWN_BUG:
@@ -132,7 +132,7 @@ def spawnable_floor(state: str) -> bool:
 
 def _walk_top(state: str) -> float | None:
     """The height above its cell floor that a walker stands at on `state`, else None."""
-    block, props = _parse(state)
+    block, props = parse_state(state)
     if block.endswith("_slab"):
         return 0.5 if props.get("type") == "bottom" else 1.0
     if block.endswith("_stairs"):
@@ -234,7 +234,7 @@ def _continuity(line: _Line) -> _Outcome | None:
         if state is None:
             continue
         out.checked += 1
-        block, props = _parse(state)
+        block, props = parse_state(state)
         if block not in _RAILS or props.get("shape") != rc.shape:
             out.add((rc.x, rc.y, rc.z))
     return out
@@ -272,7 +272,7 @@ def _support(line: _Line) -> _Outcome:
         for rlo, rhi, state in site.columns[(x, z)]:
             if rhi < lo or rlo > hi or not any(k in state for k in ("lantern", "torch", "carpet")):
                 continue
-            block, props = _parse(state)
+            block, props = parse_state(state)
             lantern = block.endswith("lantern") and block not in _NOT_LANTERN
             hanging = lantern and props.get("hanging") == "true"
             torch = block.endswith("torch") and not block.endswith("wall_torch")
@@ -305,7 +305,7 @@ def _boosters(line: _Line) -> _Outcome | None:
         state = line.state(i, rc.x, rc.y, rc.z, need=True)
         if state is None:
             continue
-        block, props = _parse(state)
+        block, props = parse_state(state)
         if block == "minecraft:powered_rail" and props.get("shape") in _CORNERS:
             out.add((rc.x, rc.y, rc.z))
         if not rc.booster:
@@ -332,7 +332,7 @@ def _clearance(line: _Line) -> _Outcome:
             if state is None:
                 continue
             out.checked += 1
-            block, props = _parse(state)
+            block, props = parse_state(state)
             if y == base and half and block.endswith("_slab") and props.get("type") == "bottom":
                 continue
             if not _passable(state):

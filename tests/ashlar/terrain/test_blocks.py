@@ -42,3 +42,7 @@ def test_natural_for_dimension():
     assert "minecraft:netherrack" not in NATURAL
     assert "minecraft:netherrack" in natural_for("nether")
     assert "minecraft:stone" in natural_for("nether")
+
+
+def test_portal_blocks_emit_light_eleven():
+    assert blocks.light_of("minecraft:nether_portal[axis=x]") == 11

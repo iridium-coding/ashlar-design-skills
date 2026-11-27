@@ -165,6 +165,18 @@ def _edge(design: LineDesign, x: int, y: int, z: int) -> str:
     return f"{block}[type=double,waterlogged=false]" if base_id(block).endswith("_slab") else block
 
 
+def floor_slab(design: LineDesign, x: int, y: int, z: int) -> str:
+    """The floor block of a room that nothing may spawn on: the edge role as a bottom slab.
+
+    Raises:
+        ValueError: when the palette's edge role gives a block that is not a slab.
+    """
+    block = pick(design, "edge", x, y, z)
+    if not base_id(block).endswith("_slab"):
+        raise ValueError(f"palette.edge must be a slab for a floor nothing spawns on, got {block}")
+    return f"{base_id(block)}[type=bottom,waterlogged=false]"
+
+
 # ------------------------------------------------------------------ bridges
 def _pier_indices(design: LineDesign, run: tuple[int, int], kind: str) -> list[int]:
     s, e = run
@@ -298,12 +310,13 @@ def _section_cells(design: LineDesign, route: Route, i: int) -> tuple[set[Cell],
     return bore, shell
 
 
-def _enclose(design: LineDesign, site: Site, bore: set[Cell], shell: dict[Cell, str], *,
+def enclose(design: LineDesign, site: Site, bore: set[Cell], shell: dict[Cell, str], *,
              reserved: set[Cell], lamps: set[Cell]) -> list[tuple[str, LiveWrite]]:
     """Carve the bore, line the shell where it is natural or air, light the `lamps` cells.
 
     Existing non-natural solid blocks are kept (never written over). Water or lava in the bore
-    or shell raises `RouteError` naming the cell.
+    or shell raises `RouteError` naming the cell. A shell cell's role is a palette role, ``edge``
+    (a full mouth block) or ``slab`` (a bottom slab floor, see `floor_slab`).
     """
     carve: dict[Cell, str] = {}
     build: dict[Cell, str] = {}
@@ -323,7 +336,8 @@ def _enclose(design: LineDesign, site: Site, bore: set[Cell], shell: dict[Cell, 
             continue
         x, y, z = cell
         role = shell[cell]
-        build[cell] = _edge(design, x, y, z) if role == "edge" else pick(design, role, x, y, z)
+        build[cell] = (_edge(design, x, y, z) if role == "edge" else floor_slab(design, x, y, z)
+                       if role == "slab" else pick(design, role, x, y, z))
         if cell in lamps:
             light[cell] = design.lights.block
     return live_layers(site, carve=carve, build=build, light=light)
@@ -369,7 +383,7 @@ def tunnel_layers(design: LineDesign, route: Route, section: Section, site: Site
                 lamps.add((x, _base(route, i) + 1, z))
     for cell in bore:
         shell.pop(cell, None)
-    return _enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
+    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
 
 
 def nether_kinds(design: LineDesign, route: Route, section: Section, site: Site) -> list[str]:
@@ -426,7 +440,7 @@ def _room(design: LineDesign, route: Route, site: Site, i: int,
         for t, s in ((half_l + 1, -1), (half_l + 1, 1), (-1, -half_w - 1), (1, -half_w - 1),
                      (-1, half_w + 1), (1, half_w + 1)):
             lamps.add((x0 + t * dx + s * px, base + height - 2, z0 + t * dz + s * pz))
-    return _enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
+    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
 
 
 def _terminus(design: LineDesign, route: Route, site: Site, end: bool, spacing: int

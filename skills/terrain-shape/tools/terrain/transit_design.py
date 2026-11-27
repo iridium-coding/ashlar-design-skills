@@ -214,7 +214,7 @@ def _pair(value, key: str) -> tuple[int, int]:
     return integer_level(value[0], key), integer_level(value[1], key)
 
 
-def _palette(style: str, given) -> dict[str, dict[str, int]]:
+def palette_for(style: str, given) -> dict[str, dict[str, int]]:
     palette = {role: dict(blocks) for role, blocks in STYLES[style].items()}
     for role, blocks in _mapping(given, "palette").items():
         if role not in ROLES:
@@ -301,7 +301,7 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
     if lanes not in (1, 2):
         raise ValueError(f"lanes must be 1 or 2, got {lanes}")
     style = _choice(data.get("style", "nether" if dimension == "nether" else "stone"), "style", tuple(STYLES))
-    palette = _palette(style, data.get("palette", {}))
+    palette = palette_for(style, data.get("palette", {}))
 
     raw_profile = data.get("profile", [])
     if not isinstance(raw_profile, (list, tuple)):

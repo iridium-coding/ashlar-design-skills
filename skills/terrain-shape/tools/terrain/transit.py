@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import blocks, corridor, structures, track, transit_checks, verify
+from . import blocks, corridor, portals, structures, track, transit_checks, verify
 from .ashlar_emit import EmitResult, check_form_layers, emit_field, plan_rows_toon
 from .emit import VerifyError
 from .live import LiveWrite, greedy_fills
@@ -34,7 +34,7 @@ from .site import Site, base_id, integer_level, load_site, natural_for
 from .transit_design import KINDS, LineDesign, load_line
 from .transit_preview import cross_sections, profile_view, route_map
 
-TRANSIT_COMMANDS = {"route", "line", "transit-check"}
+TRANSIT_COMMANDS = {"route", "line", "portal", "transit-check"}
 MODES = ("carve", "build", "track", "light")
 HALVINGS = 4        # a section's lamp spacing halves at most this many times
 Cell = tuple[int, int, int]
@@ -498,14 +498,37 @@ def add_transit_parsers(commands) -> None:
     output.add_argument("--standalone", action="store_true", help="also write plan.toon (not with --preview)")
     line.add_argument("--approve-built", metavar="TOKEN",
                       help="the report's built.token, after the user approved every touched player block")
+    portal = commands.add_parser("portal", help="plan a Nether portal pair: list the reads, then write both worlds' phases")
+    portal.add_argument("design", type=Path)
+    portal.add_argument("--project", type=Path, required=True)
+    portal.add_argument("--first-phase", type=int, required=True)
+    pout = portal.add_mutually_exclusive_group()
+    pout.add_argument("--preview", action="store_true", help="write the report only")
+    pout.add_argument("--standalone", action="store_true", help="also write plan.toon (not with --preview)")
+    portal.add_argument("--approve-built", metavar="TOKEN",
+                        help="the report's built.token, after the user approved every touched player block")
     check = commands.add_parser("transit-check", help="check fresh post-build reads of a transit line")
     check.add_argument("design", type=Path)
     check.add_argument("--sites", type=Path, nargs="+", required=True, metavar="DIR")
     check.add_argument("--project", type=Path)
 
 
+def _run_portal(args) -> int:
+    pair = portals.load_portal(args.design, args.project)
+    if args.command == "portal":
+        result = portals.emit_portal(pair, args.project, first_phase=args.first_phase, preview=args.preview,
+                                     standalone=args.standalone, approve_built=args.approve_built)
+        print(json.dumps({k: result[k] for k in ("preview", "phases", "bbox", "notes", "report")}, indent=2))
+        return 0
+    report = portals.check_reads(pair, args.project or pair.project, args.sites)
+    print(json.dumps(report, indent=2))
+    return 0 if report["ok"] else 1
+
+
 def run_transit(args) -> int:
     """Run a transit command; print JSON; return the exit status."""
+    if args.command == "portal" or (args.command == "transit-check" and args.design.name.endswith(".portal.json")):
+        return _run_portal(args)
     design = load_line(args.design, args.project)
     if args.command == "route":
         print(json.dumps(run_route(design, args.project, preview=args.preview), indent=2))

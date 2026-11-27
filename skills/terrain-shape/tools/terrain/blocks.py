@@ -27,6 +27,7 @@ _LIGHT_LEVELS = {
     **{f"minecraft:{n}": 14 for n in ("torch", "wall_torch", "end_rod")},
     **{f"minecraft:{n}": 10 for n in (
         "soul_lantern", "soul_torch", "soul_wall_torch", "crying_obsidian", "soul_fire")},
+    "minecraft:nether_portal": 11,
     "minecraft:glow_lichen": 7,
     "minecraft:amethyst_cluster": 5,
     "minecraft:large_amethyst_bud": 4,

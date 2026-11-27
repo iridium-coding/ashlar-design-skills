@@ -295,3 +295,14 @@ def test_a_diagonal_path_step_gets_stairs_facing_up_the_slope(tmp_path):
     design, r, section, site = _line(tmp_path, "path", cells, [65] * 5 + [66] * 5)
     after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
     assert after.block(5, 65, Z0 + 5).endswith("_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]")
+
+
+def test_nether_rail_clearance_carves_netherrack(tmp_path):
+    cells = {(x, y, Z0): "minecraft:netherrack" for x in range(30) for y in (66, 67)}
+    design, r, section, site = _line(
+        tmp_path, "rail", [(x, Z0) for x in range(30)], [65] * 30, site_cells=cells,
+        extra={"dimension": "nether", "world": "world_nether",
+               "from": {"at": [0, 65, Z0], "stop": None}, "to": {"at": [29, 65, Z0], "stop": None}})
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert after.block(10, 66, Z0) == "minecraft:air"
+    assert after.block(10, 67, Z0) == "minecraft:air"

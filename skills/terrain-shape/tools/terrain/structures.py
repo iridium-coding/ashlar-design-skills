@@ -24,13 +24,13 @@ from .site import (
     _AIR,
     ATTACHED,
     LEAVES,
-    NATURAL,
     PLANTS,
     TRUNK,
     Site,
     base_id,
     is_still,
     liquid_kind,
+    natural_for,
 )
 from .track import (
     AIR,
@@ -55,11 +55,6 @@ TUBE_REACH = 24         # a tube pier must find ground within this many cells be
 ROOM = (5, 4, 5)        # width, height and length of a room around the end cell
 PLATFORM = (2, 8)       # width and length of a terminus platform
 
-# Nether terrain a tunnel is cut through. The overworld NATURAL set does not know these blocks.
-_NETHER_ROCK = frozenset(f"minecraft:{b}" for b in (
-    "netherrack", "nether_quartz_ore", "nether_gold_ore", "ancient_debris", "soul_sand", "soul_soil",
-    "blackstone", "gilded_blackstone", "basalt", "polished_basalt", "glowstone", "crimson_nylium",
-    "warped_nylium", "nether_wart_block", "warped_wart_block", "shroomlight"))
 _VEGETATION = PLANTS | LEAVES | ATTACHED | TRUNK
 
 
@@ -80,11 +75,11 @@ def _is_air(state: str) -> bool:
 def _host(design: LineDesign, state: str) -> bool:
     """Terrain a structure may replace: natural blocks, and Nether rock in the Nether."""
     block = base_id(state)
-    return block in NATURAL or (design.dimension == "nether" and block in _NETHER_ROCK)
+    return block in natural_for(design.dimension)
 
 
 def _carvable(design: LineDesign, state: str) -> bool:
-    return carvable(state) or (design.dimension == "nether" and base_id(state) in _NETHER_ROCK)
+    return carvable(state, natural_for(design.dimension))
 
 
 def _solid(state: str) -> bool:
@@ -422,7 +417,7 @@ def _terminus(design: LineDesign, route: Route, site: Site, end: bool, spacing: 
             if inside(site, px, py - 1, pz) and _is_air(site.block(px, py - 1, pz)):
                 build[(px, py - 1, pz)] = pick(design, "platform", px, py - 1, pz)
             for above in (py + 1, py + 2):
-                if inside(site, px, above, pz) and carvable(site.block(px, above, pz)):
+                if inside(site, px, above, pz) and _carvable(design, site.block(px, above, pz)):
                     carve[(px, above, pz)] = AIR
         if (n - 1 - j if end else j) % spacing == 0:
             px, pz = side_cell(route, j, edge - width + 1)

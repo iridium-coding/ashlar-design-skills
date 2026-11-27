@@ -280,10 +280,11 @@ def cells_write(cells: Mapping[tuple[int, int, int], str]) -> LiveWrite | None:
 
 
 def touched_blocks(site: Site, layers: Sequence[tuple[str, LiveWrite]],
-                   why: Callable[[str, tuple[int, int, int]], str]) -> list[dict]:
+                   why: Callable[[str, tuple[int, int, int]], str], *,
+                   natural: frozenset[str] = NATURAL) -> list[dict]:
     """Every player block a layer changes; ``why(mode, cell)`` gives each one's reason."""
     ids, names = site_ids(site)
-    built = np.array([n not in NATURAL for n in names])[ids]
+    built = np.array([n not in natural for n in names])[ids]
     x1, y1, z1 = site.box[:3]
     current: dict[tuple[int, int, int], str] = {}
     items: list[dict] = []
@@ -299,7 +300,7 @@ def touched_blocks(site: Site, layers: Sequence[tuple[str, LiveWrite]],
         for cell in sorted(cells):
             new = write.palette[write.codes[cell[0] - ox, cell[1] - oy, cell[2] - oz]]
             old = current.get(cell) or site.block(*cell)
-            if base_id(old) in NATURAL or new == old:
+            if base_id(old) in natural or new == old:
                 current[cell] = new
                 continue
             item = {"cell": list(cell), "block": old, "action": mode, "why": why(mode, cell)}

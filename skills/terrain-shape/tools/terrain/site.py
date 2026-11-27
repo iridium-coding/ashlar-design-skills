@@ -20,11 +20,11 @@ import json
 import math
 import re
 from bisect import bisect_left, bisect_right
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from functools import cache, lru_cache
+from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 from scipy import ndimage
@@ -137,6 +137,21 @@ NATURAL: frozenset[str] = (
     | ATTACHED | PLANTS)
 
 
+# Nether terrain and growth. Kept apart from NATURAL, which must keep treating netherrack in
+# an overworld read as something a player placed. Lava is a liquid, handled by `liquid_kind`.
+NETHER_NATURAL: frozenset[str] = _mc(
+    "netherrack", "soul_sand", "soul_soil", "basalt", "smooth_basalt", "blackstone", "magma_block",
+    "glowstone", "nether_gold_ore", "nether_quartz_ore", "ancient_debris", "gravel", "crimson_nylium",
+    "warped_nylium", "nether_wart_block", "warped_wart_block", "shroomlight", "crimson_stem",
+    "warped_stem", "crimson_roots", "warped_roots", "nether_sprouts", "crimson_fungus", "warped_fungus",
+    "weeping_vines", "weeping_vines_plant", "twisting_vines", "twisting_vines_plant")
+
+
+def natural_for(dimension: str) -> frozenset[str]:
+    """The blocks that count as terrain in `dimension` (``"overworld"`` or ``"nether"``)."""
+    return NATURAL | NETHER_NATURAL if dimension == "nether" else NATURAL
+
+
 def base_id(state: str) -> str:
     """The block id of a state string, without its ``[...]`` part."""
     return state.split("[", 1)[0]
@@ -145,7 +160,7 @@ def base_id(state: str) -> str:
 _AIR_K, _WATER_K, _LAVA_K, _TRUNK_K, _LEAF_K, _ATT_K, _PLANT_K, _OTHER_K = range(8)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _kind(state: str) -> int:
     b = base_id(state)
     if b in _AIR:
@@ -258,7 +273,7 @@ def write_site(path: str | Path, site: Site) -> None:
     blob = gzip.compress(json.dumps(payload, sort_keys=True, separators=(",", ":"))
                          .encode("utf-8"), mtime=0)
     manifest = {"version": 1, "box": list(site.box), "world": site.world,
-                "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "created": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "columns": len(payload["columns"]), "sha256": hashlib.sha256(blob).hexdigest(),
                 "plugin": None, "complete": True}
     path.mkdir(parents=True, exist_ok=True)

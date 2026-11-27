@@ -21,7 +21,7 @@ import numpy as np
 from .blocks import cells_write
 from .live import LiveWrite
 from .route import Route, Section
-from .site import _AIR, _LAVA, NATURAL, Site, base_id, is_water_state
+from .site import _AIR, _LAVA, NATURAL, Site, base_id, is_water_state, natural_for
 from .transit_design import LineDesign
 
 _DIRS = {(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}
@@ -191,17 +191,18 @@ def inside(site: Site, x: int, y: int, z: int) -> bool:
     return x1 <= x <= x2 and y1 <= y <= y2 and z1 <= z <= z2
 
 
-def carvable(state: str) -> bool:
+def carvable(state: str, natural: frozenset[str] = NATURAL) -> bool:
     block = base_id(state)
-    return block in NATURAL and block not in _AIR and block not in _LAVA and not is_water_state(state)
+    return block in natural and block not in _AIR and block not in _LAVA and not is_water_state(state)
 
 
-def _carve(site: Site, columns: dict[tuple[int, int], int], height: int = CLEARANCE) -> dict:
+def _carve(site: Site, columns: dict[tuple[int, int], int], height: int = CLEARANCE, *,
+           natural: frozenset[str] = NATURAL) -> dict:
     """Air for the natural, non-liquid blocks `height` cells up from each column's lowest y."""
     out = {}
     for (x, z), y0 in columns.items():
         for y in range(y0, y0 + height):
-            if inside(site, x, y, z) and carvable(site.block(x, y, z)):
+            if inside(site, x, y, z) and carvable(site.block(x, y, z), natural):
                 out[(x, y, z)] = AIR
     return out
 
@@ -262,7 +263,8 @@ def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacin
     light: dict[tuple[int, int, int], str] = {}
     _lights(design, route, section, spacing, -1, 1, lambda i: rails[i].y, LIT_KINDS, light)
     build.update(power)     # every bed first, so no ballast replaces a booster's redstone block
-    return live_layers(site, carve=_carve(site, carve_at), build=build, track=track, light=light)
+    natural = natural_for(design.dimension)
+    return live_layers(site, carve=_carve(site, carve_at, natural=natural), build=build, track=track, light=light)
 
 
 # ------------------------------------------------------------------ road
@@ -296,7 +298,8 @@ def _road(design: LineDesign, route: Route, section: Section, site: Site, spacin
     light: dict[tuple[int, int, int], str] = {}
     _lights(design, route, section, spacing, lo, hi, lambda i: int(np.floor(route.levels[i])) + 1,
             LIT_KINDS, light)
-    return live_layers(site, carve=_carve(site, carve_at), track=track, light=light)
+    natural = natural_for(design.dimension)
+    return live_layers(site, carve=_carve(site, carve_at, natural=natural), track=track, light=light)
 
 
 # ------------------------------------------------------------------ path
@@ -338,7 +341,8 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
         near = set().union(*(footprint(route, j, *spans[j]) for j in spans if abs(j - i) <= 3))
         if cell not in near:
             lamp_column(design, cell, int(route.levels[i]), light)
-    return live_layers(site, carve=_carve(site, carve_at), track=track, light=light)
+    natural = natural_for(design.dimension)
+    return live_layers(site, carve=_carve(site, carve_at, natural=natural), track=track, light=light)
 
 
 # ------------------------------------------------------------------ ice
@@ -363,7 +367,8 @@ def _ice(design: LineDesign, route: Route, section: Section, site: Site, spacing
         x, z = side_cell(route, i, 2 if (i // spacing) % 2 else -1)
         if (x, z) not in lane:
             light[(x, level, z)] = design.lights.block
-    return live_layers(site, carve=_carve(site, carve_at, CLEARANCE + 1), track=track, light=light)
+    natural = natural_for(design.dimension)
+    return live_layers(site, carve=_carve(site, carve_at, CLEARANCE + 1, natural=natural), track=track, light=light)
 
 
 _MODES = {"rail": _rail, "road": _road, "path": _path, "ice": _ice}

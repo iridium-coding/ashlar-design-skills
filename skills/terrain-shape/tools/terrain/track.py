@@ -33,7 +33,7 @@ TERMINUS_QUIET = 8      # cells next to a terminus end without boosters
 LAUNCH = (8, 11)        # launch group: the 9th to 11th cells from a terminus end
 CLEARANCE = 3
 _SALT = {"ballast": 1, "surface": 2, "edge": 3, "guard": 4, "lamp_post": 5, "lamp": 6, "end_block": 7,
-         "ice": 8, "width": 9}
+         "ice": 8, "width": 9, "deck": 10, "pier": 11, "lining": 12, "railing": 13, "platform": 14}
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ def _rail_state(cell: RailCell) -> str:
 
 
 # ------------------------------------------------------------------ helpers
-def _heading(route: Route, i: int, *, incoming: bool = False) -> tuple[int, int]:
+def heading(route: Route, i: int, *, incoming: bool = False) -> tuple[int, int]:
     cells = route.cells
     if len(cells) < 2:
         return (1, 0)
@@ -135,29 +135,29 @@ def _cross(x: int, z: int, heading: tuple[int, int], lo: int, hi: int) -> set[tu
     return {(x - dz * off, z + dx * off) for dx, dz in axes for off in range(lo, hi + 1)}
 
 
-def _footprint(route: Route, i: int, lo: int, hi: int) -> set[tuple[int, int]]:
+def footprint(route: Route, i: int, lo: int, hi: int) -> set[tuple[int, int]]:
     """Cells at offsets lo..hi across the line at cell i.
 
     Where the heading changes (a corner or a bend) the incoming and outgoing cross-sections
     are joined and the rectangle they span is filled, so the outer wedge is not left empty.
     """
     x, z = route.cells[i]
-    out = _heading(route, i)
+    out = heading(route, i)
     cells = _cross(x, z, out, lo, hi)
-    if i > 0 and _heading(route, i, incoming=True) != out:
-        cells |= _cross(x, z, _heading(route, i, incoming=True), lo, hi)
+    if i > 0 and heading(route, i, incoming=True) != out:
+        cells |= _cross(x, z, heading(route, i, incoming=True), lo, hi)
         xs, zs = [c[0] for c in cells], [c[1] for c in cells]
         cells = {(a, b) for a in range(min(xs), max(xs) + 1) for b in range(min(zs), max(zs) + 1)}
     return cells
 
 
-def _side_cell(route: Route, i: int, offset: int) -> tuple[int, int]:
+def side_cell(route: Route, i: int, offset: int) -> tuple[int, int]:
     x, z = route.cells[i]
-    dx, dz = _heading(route, i)
+    dx, dz = heading(route, i)
     return x - dz * offset, z + dx * offset
 
 
-def _pick(design: LineDesign, role: str, *key: int) -> str:
+def pick(design: LineDesign, role: str, *key: int) -> str:
     """A weighted block of `role`, fixed by the design seed and `key` (world coordinates)."""
     weights = design.palette[role]
     names = list(weights)
@@ -178,7 +178,7 @@ def _variant(block: str, suffix: str) -> str:
     return f"minecraft:{name}{suffix}"
 
 
-def _slab(block: str) -> str:
+def slab(block: str) -> str:
     return f"{_variant(block, '_slab')}[type=bottom,waterlogged=false]"
 
 
@@ -186,12 +186,12 @@ def _stairs(block: str, facing: str) -> str:
     return f"{_variant(block, '_stairs')}[facing={facing},half=bottom,shape=straight,waterlogged=false]"
 
 
-def _inside(site: Site, x: int, y: int, z: int) -> bool:
+def inside(site: Site, x: int, y: int, z: int) -> bool:
     x1, y1, z1, x2, y2, z2 = site.box
     return x1 <= x <= x2 and y1 <= y <= y2 and z1 <= z <= z2
 
 
-def _carvable(state: str) -> bool:
+def carvable(state: str) -> bool:
     block = base_id(state)
     return block in NATURAL and block not in _AIR and block not in _LAVA and not is_water_state(state)
 
@@ -201,7 +201,7 @@ def _carve(site: Site, columns: dict[tuple[int, int], int], height: int = CLEARA
     out = {}
     for (x, z), y0 in columns.items():
         for y in range(y0, y0 + height):
-            if _inside(site, x, y, z) and _carvable(site.block(x, y, z)):
+            if inside(site, x, y, z) and carvable(site.block(x, y, z)):
                 out[(x, y, z)] = AIR
     return out
 
@@ -210,22 +210,22 @@ def _lower(columns: dict[tuple[int, int], int], x: int, z: int, y: int) -> None:
     columns[(x, z)] = min(columns.get((x, z), y), y)
 
 
-def _layers(site: Site, **layers: dict) -> list[tuple[str, LiveWrite]]:
+def live_layers(site: Site, **layers: dict) -> list[tuple[str, LiveWrite]]:
     """Live writes of the named cell maps, clipped to the site and without the empty ones."""
     out = []
     for name, cells in layers.items():
-        write = cells_write({c: s for c, s in cells.items() if _inside(site, *c)})
+        write = cells_write({c: s for c, s in cells.items() if inside(site, *c)})
         if write is not None:
             out.append((name, write))
     return out
 
 
-def _lamp_column(design: LineDesign, cell: tuple[int, int], base: int,
-                 out: dict[tuple[int, int, int], str]) -> None:
+def lamp_column(design: LineDesign, cell: tuple[int, int], base: int,
+                out: dict[tuple[int, int, int], str]) -> None:
     x, z = cell
-    out[(x, base, z)] = _pick(design, "lamp_post", x, base, z)
-    out[(x, base + 1, z)] = _pick(design, "lamp_post", x, base + 1, z)
-    out[(x, base + 2, z)] = _pick(design, "lamp", x, base + 2, z)
+    out[(x, base, z)] = pick(design, "lamp_post", x, base, z)
+    out[(x, base + 1, z)] = pick(design, "lamp_post", x, base + 1, z)
+    out[(x, base + 2, z)] = pick(design, "lamp", x, base + 2, z)
 
 
 def _lights(design: LineDesign, route: Route, section: Section, spacing: int, lo: int, hi: int,
@@ -236,10 +236,10 @@ def _lights(design: LineDesign, route: Route, section: Section, spacing: int, lo
         if i % spacing or route.kinds[i] not in kinds:
             continue
         side = lo - 1 if (i // spacing) % 2 else hi + 1
-        cell = _side_cell(route, i, side)
-        near = set().union(*(_footprint(route, j, lo, hi) for j in range(max(0, i - 3), min(n, i + 4))))
+        cell = side_cell(route, i, side)
+        near = set().union(*(footprint(route, j, lo, hi) for j in range(max(0, i - 3), min(n, i + 4))))
         if cell not in near:
-            _lamp_column(design, cell, base(i), out)
+            lamp_column(design, cell, base(i), out)
 
 
 # ------------------------------------------------------------------ rail
@@ -251,18 +251,18 @@ def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacin
     track: dict[tuple[int, int, int], str] = {}
     for i in range(section.start, section.end + 1):
         rc = rails[i]
-        foot = _footprint(route, i, -1, 1)
+        foot = footprint(route, i, -1, 1)
         for x, z in foot:
             _lower(carve_at, x, z, rc.y + 1)
             if route.kinds[i] in BED_KINDS:
-                build[(x, rc.y - 1, z)] = _pick(design, "ballast", x, rc.y - 1, z)
+                build[(x, rc.y - 1, z)] = pick(design, "ballast", x, rc.y - 1, z)
         if rc.booster:
             power[(rc.x, rc.y - 1, rc.z)] = REDSTONE_BLOCK
         track[(rc.x, rc.y, rc.z)] = _rail_state(rc)
     light: dict[tuple[int, int, int], str] = {}
     _lights(design, route, section, spacing, -1, 1, lambda i: rails[i].y, LIT_KINDS, light)
     build.update(power)     # every bed first, so no ballast replaces a booster's redstone block
-    return _layers(site, carve=_carve(site, carve_at), build=build, track=track, light=light)
+    return live_layers(site, carve=_carve(site, carve_at), build=build, track=track, light=light)
 
 
 # ------------------------------------------------------------------ road
@@ -271,32 +271,32 @@ def _road(design: LineDesign, route: Route, section: Section, site: Site, spacin
     lo, hi = -((width - 1) // 2), width // 2
     idx = range(section.start, section.end + 1)
     surfaced = [i for i in idx if route.kinds[i] in BED_KINDS]
-    road_cells = set().union(*(_footprint(route, i, lo, hi) for i in idx))
+    road_cells = set().union(*(footprint(route, i, lo, hi) for i in idx))
     carve_at: dict[tuple[int, int], int] = {}
     track: dict[tuple[int, int, int], str] = {}
     for i in idx:
         level = route.levels[i]
         top = int(np.ceil(level))
-        for x, z in _footprint(route, i, lo - 1, hi + 1):
+        for x, z in footprint(route, i, lo - 1, hi + 1):
             _lower(carve_at, x, z, top)
     for i in surfaced:
         base = int(np.floor(route.levels[i]))
         half = route.levels[i] != base
-        for x, z in _footprint(route, i, lo - 1, hi + 1) - road_cells:
-            track[(x, base - 1, z)] = _pick(design, "surface", x, base - 1, z)
-            track[(x, base, z)] = (_pick(design, "surface", x, base, z) if half
-                                   else f"{_pick(design, 'edge', x, base, z)}[type=bottom,waterlogged=false]")
+        for x, z in footprint(route, i, lo - 1, hi + 1) - road_cells:
+            track[(x, base - 1, z)] = pick(design, "surface", x, base - 1, z)
+            track[(x, base, z)] = (pick(design, "surface", x, base, z) if half
+                                   else f"{pick(design, 'edge', x, base, z)}[type=bottom,waterlogged=false]")
     for i in surfaced:
         base = int(np.floor(route.levels[i]))
-        for x, z in _footprint(route, i, lo, hi):
-            block = _pick(design, "surface", x, base - 1, z)
+        for x, z in footprint(route, i, lo, hi):
+            block = pick(design, "surface", x, base - 1, z)
             track[(x, base - 1, z)] = block
             if route.levels[i] != base:
-                track[(x, base, z)] = _slab(block)
+                track[(x, base, z)] = slab(block)
     light: dict[tuple[int, int, int], str] = {}
     _lights(design, route, section, spacing, lo, hi, lambda i: int(np.floor(route.levels[i])) + 1,
             LIT_KINDS, light)
-    return _layers(site, carve=_carve(site, carve_at), track=track, light=light)
+    return live_layers(site, carve=_carve(site, carve_at), track=track, light=light)
 
 
 # ------------------------------------------------------------------ path
@@ -314,10 +314,10 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
     track: dict[tuple[int, int, int], str] = {}
     for i in idx:
         level = int(route.levels[i])
-        for x, z in _footprint(route, i, *spans[i]):
+        for x, z in footprint(route, i, *spans[i]):
             _lower(carve_at, x, z, level)
             if route.kinds[i] in BED_KINDS:
-                track[(x, level - 1, z)] = _pick(design, "surface", x, level - 1, z)
+                track[(x, level - 1, z)] = pick(design, "surface", x, level - 1, z)
     for i in idx:
         if route.kinds[i] not in BED_KINDS:
             continue
@@ -325,7 +325,7 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
         for j in (i - 1, i + 1):
             if 0 <= j < len(route.cells) and int(route.levels[j]) == level - 1:
                 facing = _facing(route.cells[j], route.cells[i])
-                for x, z in _footprint(route, i, *spans[i]):
+                for x, z in footprint(route, i, *spans[i]):
                     if not base_id(track[(x, level - 1, z)]).endswith("_stairs"):
                         track[(x, level - 1, z)] = _stairs(track[(x, level - 1, z)], facing)
                 break
@@ -334,36 +334,36 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
         if i % spacing or route.kinds[i] not in LIT_KINDS:
             continue
         lo, hi = spans[i]
-        cell = _side_cell(route, i, lo - 1 if (i // spacing) % 2 else hi + 1)
-        near = set().union(*(_footprint(route, j, *spans[j]) for j in spans if abs(j - i) <= 3))
+        cell = side_cell(route, i, lo - 1 if (i // spacing) % 2 else hi + 1)
+        near = set().union(*(footprint(route, j, *spans[j]) for j in spans if abs(j - i) <= 3))
         if cell not in near:
-            _lamp_column(design, cell, int(route.levels[i]), light)
-    return _layers(site, carve=_carve(site, carve_at), track=track, light=light)
+            lamp_column(design, cell, int(route.levels[i]), light)
+    return live_layers(site, carve=_carve(site, carve_at), track=track, light=light)
 
 
 # ------------------------------------------------------------------ ice
 def _ice(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
     idx = range(section.start, section.end + 1)
-    lane = set().union(*(_footprint(route, i, 0, 1) for i in idx))
+    lane = set().union(*(footprint(route, i, 0, 1) for i in idx))
     carve_at: dict[tuple[int, int], int] = {}
     track: dict[tuple[int, int, int], str] = {}
     light: dict[tuple[int, int, int], str] = {}
     for i in idx:
         level = int(route.levels[i])
-        for x, z in _footprint(route, i, -1, 2):
+        for x, z in footprint(route, i, -1, 2):
             _lower(carve_at, x, z, level)
-        for x, z in _footprint(route, i, 0, 1):
-            track[(x, level - 1, z)] = _pick(design, "ice", x, level - 1, z)
-        for x, z in _footprint(route, i, -1, 2) - lane:
-            track[(x, level, z)] = _slab(_pick(design, "guard", x, level, z))
+        for x, z in footprint(route, i, 0, 1):
+            track[(x, level - 1, z)] = pick(design, "ice", x, level - 1, z)
+        for x, z in footprint(route, i, -1, 2) - lane:
+            track[(x, level, z)] = slab(pick(design, "guard", x, level, z))
     for i in idx:
         if i % spacing:
             continue
         level = int(route.levels[i])
-        x, z = _side_cell(route, i, 2 if (i // spacing) % 2 else -1)
+        x, z = side_cell(route, i, 2 if (i // spacing) % 2 else -1)
         if (x, z) not in lane:
             light[(x, level, z)] = design.lights.block
-    return _layers(site, carve=_carve(site, carve_at, CLEARANCE + 1), track=track, light=light)
+    return live_layers(site, carve=_carve(site, carve_at, CLEARANCE + 1), track=track, light=light)
 
 
 _MODES = {"rail": _rail, "road": _road, "path": _path, "ice": _ice}

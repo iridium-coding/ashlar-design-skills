@@ -32,6 +32,8 @@ TOE_NOISE = 1.5
 EXTEND = 4          # cells of centerline kept past each section end
 RING = 6            # width of the unchanged ring sampled for the surface palette
 MAX_SINGLE = 0.85   # heaviest surface block; the emitter's monoculture check allows 92%
+SUPPORT = {"minecraft:sand": "minecraft:sandstone", "minecraft:red_sand": "minecraft:red_sandstone",
+           "minecraft:snow_block": "minecraft:stone"}
 SEAM_DEVIATION = 1  # how far a seam row's points may stray from its straight line
 
 
@@ -85,13 +87,20 @@ def _surface_weights(site: Site, ground: np.ndarray, changed: np.ndarray) -> dic
         ring = ~changed
     x1, _, z1 = site.box[:3]
     counts: Counter[str] = Counter()
+    under: dict[str, Counter[str]] = {}
     for i, j in np.argwhere(ring):
         g = ground[i, j]
         if not math.isfinite(g):
             continue
-        state = _state_at(site.columns[(x1 + int(i), z1 + int(j))], int(g))
-        if state is not None and base_id(state) in _SURFACE:
-            counts[base_id(state)] += 1
+        runs = site.columns[(x1 + int(i), z1 + int(j))]
+        state = _state_at(runs, int(g))
+        if state is None or base_id(state) not in _SURFACE:
+            continue
+        block = base_id(state)
+        counts[block] += 1
+        below = _state_at(runs, int(g) - 1)
+        if below is not None and base_id(below) in _SURFACE and base_id(below) != block:
+            under.setdefault(block, Counter())[base_id(below)] += 1
     selected = counts.most_common(4)
     if not selected:
         return None
@@ -99,11 +108,10 @@ def _surface_weights(site: Site, ground: np.ndarray, changed: np.ndarray) -> dic
     weights = {block: n / total for block, n in selected}
     top, share = max(weights.items(), key=lambda kv: kv[1])
     if share > MAX_SINGLE:
-        # A cut or fill face shows the layer under the turf, so give the rest to soil.
-        soil = "minecraft:dirt" if top == "minecraft:coarse_dirt" else "minecraft:coarse_dirt"
-        weights = {b: w * (1 - MAX_SINGLE) / (1 - share) if b != top else MAX_SINGLE for b, w in weights.items()
-                   } if share < 1 else {top: MAX_SINGLE}
-        weights[soil] = weights.get(soil, 0.0) + (1 - sum(weights.values()))
+        # A cut or fill face shows the layer under the surface, so the cap's remainder goes to it.
+        support = under[top].most_common(1)[0][0] if under.get(top) else SUPPORT.get(top, "minecraft:coarse_dirt")
+        weights[top] = MAX_SINGLE
+        weights[support] = weights.get(support, 0.0) + share - MAX_SINGLE
     return weights
 
 

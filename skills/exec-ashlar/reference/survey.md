@@ -11,7 +11,8 @@ Run when a design skill asks for `survey <project>`, before it designs.
    - Neither: ask the user.
 2. **Check for overlap.** Read `.minecraft-builder/registry.json`
    (`registry.md`). For every other project that is not `rolled-back`, compare
-   its `bbox` with the site's x/z box. If the boxes overlap, say so and name the
+   its `bbox` (or, when it has `boxes`, every box in `boxes`) with the site's
+   x/z box. If the boxes overlap, say so and name the
    project; choose another site or ask the user before you design on it. If
    `<project>` itself is already in the registry and the user is not iterating
    that same build, stop and ask for another name: a reused name overwrites the

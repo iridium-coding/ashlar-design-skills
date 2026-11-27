@@ -38,14 +38,15 @@ Before the first write, show the user:
 - how many existing trees will be removed whole, and the farthest any write
   reaches outside the terrain box;
 - an estimated duration for big jobs;
-- any other registry project whose `bbox` overlaps this build's box (a build
+- any other registry project whose `bbox` (or, when it has `boxes`, any box in `boxes`)
+  overlaps this build's box (a build
   over another build overwrites it);
 - every ordinary console command in a `commands` phase, exactly as it will
   run, with the `minecraft:` prefix;
 - each `commands` phase's exact eligible force-load chunks in the approved
   world or dimension. The gate authorizes adding only eligible chunks absent
   from the pre-phase query and removing only the phase's confirmed additions;
-- every test `load` command exactly as it will run;
+- every test `load` and `summon` command exactly as it will run;
 - the exact chunks each agent test may force-load and its maximum hold time.
   Add only chunks the pre-run query shows are absent and remove only
   confirmed additions. Include the expanded row timeouts and bounded time

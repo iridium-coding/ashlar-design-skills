@@ -166,7 +166,8 @@ With both, run only the named manual tests.
    ([commands.md](reference/commands.md)). Use the approved hold budget
    starting at the first add attempt. Bound calls and waits so cleanup can
    start by its reserved time. Record each confirmed addition.
-4. **At rest check:** run `python3 <skill>/scripts/ashlar_place.py read` over
+4. **At rest check** (only when the plan has redstone; skip it for a transit
+   plan): run `python3 <skill>/scripts/ashlar_place.py read` over
    the extent covering both the machine box and any recorded pre-build
    background, including its modelled cells outside the machine box. Keep
    force-loads and writes within the approved scope.
@@ -186,7 +187,12 @@ With both, run only the named manual tests.
    observed container at its approved coordinates. A failing row ends that
    test and records what was seen. Continue only if the next test fits before
    the cleanup reserve.
-6. If this run attempted force-loads, start cleanup when it finishes, is
+6. If a test summoned entities, kill them when that test ends, and always
+   before any force-load is released, whether it passed, failed or was
+   interrupted: `kill @e[tag=ashlar.<project>,tag=<test tag>]` inside the
+   test's force-load pair. Check that none is left with
+   `execute if entity @e[tag=ashlar.<project>,tag=<test tag>]`; it must fail.
+   If this run attempted force-loads, start cleanup when it finishes, is
    interrupted or reaches the cutoff. Release only its confirmed additions
    and check the result with `forceload query`. If cleanup cannot be
    confirmed, report the affected chunks and the last result.

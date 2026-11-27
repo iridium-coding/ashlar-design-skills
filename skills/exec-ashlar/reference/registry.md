@@ -65,6 +65,9 @@ so there is one history.
 - An after-the-fact `<host>-ground` project records `grounds: "<host>"` in its
   own entry. A project can also record `terrain` with its recipe path,
   expected-surface file and placements file. Preserve unknown keys.
+- A project whose shape is not one box (a transit line) records `boxes`: a
+  list of inclusive `[x1, y1, z1, x2, y2, z2]` boxes copied from its line
+  report. `bbox` still bounds them all. Preserve the key.
 - `citations` holds the sources for replicas, so the build can be checked
   against them.
 - A project may carry extra keys the design skill needs (for example `rooms`,

@@ -3,11 +3,15 @@
 `mc_command` runs a command with full operator rights. Use only these forms,
 and only for what Ashlar's other tools cannot do. Commands that change the world
 must be listed exactly in the approved plan's `commands` table or as agent test
-`load` rows in its [`tests` table](plan-format.md#tests). Test loads are world
-changes. Show each one at the [approval gate](execution.md#approval-gate)
+`load` or `summon` rows in its [`tests` table](plan-format.md#tests). Test
+loads and summons are world changes. Show each one at the [approval gate](execution.md#approval-gate)
 exactly as it will run, for example `minecraft:item replace block 104 64 -350
 container.0 with minecraft:cobblestone 40`. The read-only checks may run
 whenever surveying or verification needs them.
+A test's `summon` entities carry `ashlar`, `ashlar.<project>` and a test tag.
+`test` mode ends each test with `kill @e[tag=ashlar.<project>,tag=<test tag>]`,
+inside the test's force-load pair.
+
 Verification and rollback may run their own position and entity checks and
 `kill @e[tag=ashlar.<project>]` without a plan row, each inside its own paired
 force-load (below), unless a player is near the site.

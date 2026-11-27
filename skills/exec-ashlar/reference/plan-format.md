@@ -135,6 +135,10 @@ fails the build.
 | `seam` | `from,to,max_step[,outward]` | along the edge from `from` to `to`, adjacent ground differs by at most `max_step`. For apron rows `outward` names the adjacent direction as `x`, `-x`, `z` or `-z`. At a protected edge it points toward the host. At an outer edge it points outside the terrain box. |
 | `water_continuity` | `region_a,region_b,level` | every sampled column whose bed is below `level` holds water from the bed up to `level`, with no air gap, and no water cell borders air at the region's edge |
 | `cave` | `file` | `terrain.py cave-check` on a fresh exact read of the cave passes for the design in `file`: varied ceilings, no span wider than its limit, every floor cell lit (lit caves) and the roof kept outside shafts |
+| `transit` | `file` | `terrain.py transit-check` on fresh exact reads of every box of the line passes for the design in `file` (a `.line.json` or `.portal.json`): sound track, lit and clear running surface, supported bridges, bores and stops, and for a portal the frame, axis blocks, landing light and the pair |
+
+`transit{file}` is the row `terrain.py line` and `terrain.py portal` write into
+their plan rows; `file` is the project-relative design (`terrain/<element>.line.json`).
 
 Coordinates in rows are `x y z` triples; regions are two corners. If you cannot
 write a row because you do not know the answer (is this door reachable?), the
@@ -201,8 +205,9 @@ closed. The first pass and nine repeats give ten cycles.)
 | Kind | `at` | `detail` | `expect` | Run by |
 | --- | --- | --- | --- | --- |
 | `load` | the container | one quoted inventory load command (`item replace block` or `data merge block` with an `Items` payload only) | `-` | agent |
+| `summon` | where the entity starts | one quoted `summon` command with a test tag in `Tags` (see `commands.md`), for example `summon minecraft:minecart <x> <y> <z> {Tags:["ashlar","ashlar.<project>","ashlar.<project>.ride"],Motion:[0.0d,0.0d,0.4d]}` | `-` | agent |
 | `settle` | a region | `containers` or `blocks`: what to read | `timeout <seconds>`: repeat the reads until two in a row agree, or fail | agent |
-| `await` | a container or cell | `container` or `block` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail | agent |
+| `await` | a container, a cell or an entity's position | `container`, `block` or `entity` | a condition plus `within <seconds>`, for example `minecraft:sugar_cane>=8 within 3600`: repeat the reads until it holds, or fail. For `entity` the condition is `<tag> within <seconds>`, where `<tag>` is the full test tag (for example `ashlar.<project>.ride`): repeat `data get entity @e[tag=ashlar.<project>,tag=<tag>,limit=1] Pos` until the entity is within 2 blocks of `at`, or fail | agent |
 | `expect` | a container, a cell or a region | `container` or `block` | `container`: either `gained` and the items the container gained since this test's baseline, or `holds` and its exact contents, each as `id=count` joined by `\|` (nothing else may have been gained, or be held); `block`: a block state that every cell must match (unspecified properties are wildcards) | agent |
 | `conserve` | a region | `containers` | `-`: for every item, the total across the region's containers equals this test's baseline total plus this test's loads, and no container outside this test's `gained` rows gained anything | agent |
 | `rest` | a region | `blocks` | `baseline`: components with modelled power properties have the same block IDs and power states as in this test's baseline | agent |
@@ -212,8 +217,11 @@ closed. The first pass and nine repeats give ten cycles.)
 A test with a `manual` row is a manual test; any other test is an agent test.
 Manual tests use user actions and passive observation. Put any `load` rows in
 a separate agent test.
-Every `load` command is a world change: validation checks it against
-`commands.md`, and the approval gate shows it as it will run.
+Every `load` and `summon` command is a world change: validation checks it
+against `commands.md`, and the approval gate shows it as it will run. A ride
+test is a `summon` of a minecart on the line's rail, an `await entity` at the
+far stop, and nothing else; `test` mode kills the test's tagged entities when
+each test ends, and always before it releases the force-loads.
 
 **Each test has its own baseline.** Before a test's first row, `test` mode
 settles the machine's containers and reads the machine (block states and
@@ -308,6 +316,11 @@ Stop and report if any of these fails:
     `Items` would clear the container). The command's coordinates must equal the
     row's single `at` position inside the `bbox` and identify a planned or
     observed container. Confirm the container is present before executing.
+    A `summon` row is in an agent test and its command matches the `summon`
+    form in `commands.md`, with the tags `ashlar`, `ashlar.<project>` and the
+    test tag in `Tags`. The command's position must equal the row's `at`
+    position inside the `bbox`. An `await` row with detail `entity` names a
+    test tag that an earlier `summon` row of the same test carries.
 11. Every test that drives the machine ends with a `rest` row after expanding
     any `repeat` rows.
 12. A plan written by `system-redstone` has at least one test for each input, or

@@ -133,8 +133,9 @@ def test_deck_railings_and_lamps_follow_the_level(tmp_path):
     assert base_id(after.block(x, 65, z + 2)) in design.palette["railing"]
     assert base_id(after.block(x, 65, z - 2)) in design.palette["railing"]
     assert after.block(x, 65, z) == "minecraft:air"
-    lit = [after.block(r.cells[i][0], 67, r.cells[i][1] + off) for i in (4, 8) for off in (-2, 2)]
-    assert design.lights.block in lit
+    heads = [base_id(after.block(r.cells[i][0], 67, r.cells[i][1] + off)) for i in (4, 8) for off in (-2, 2)]
+    assert set(heads) & set(design.palette["lamp"])
+    assert base_id(after.block(r.cells[4][0], 66, r.cells[4][1] - 2)) in design.palette["lamp_post"]
 
 
 def test_deck_leaves_a_boosters_redstone_block_alone(tmp_path):
@@ -284,6 +285,7 @@ def test_terminus_end_block_and_platform(tmp_path):
     assert base_id(after.block(*end)) in design.palette["end_block"]
     assert all(base_id(after.block(x, 65, Z0 + off)) in design.palette["platform"]
                for x in range(32, 40) for off in (-2, -1))
+    assert base_id(after.block(39, 68, Z0 - 2)) in design.palette["lamp"]
     assert after.block(31, 65, Z0 - 1) == site.block(31, 65, Z0 - 1)
     assert after.block(35, 65, Z0 + 1) == site.block(35, 65, Z0 + 1)
 
@@ -313,3 +315,92 @@ def test_a_room_keeps_built_blocks(tmp_path):
     site = make_site(tmp_path / "keep", site.box, ground=64, cells=walled, world="world")
     after = blocks.apply_writes(site, structures.stop_layers(design, r, section, site, light_spacing=12))
     assert after.block(42, 66, 20) == PLANKS
+
+
+# ------------------------------------------------------------------ fix round 1
+def test_tube_piers_are_contiguous_from_the_floor_to_the_ground(tmp_path):
+    design, r, section, site = _nether_line(tmp_path, cavern=range(20, 30))
+    r.kinds = structures.nether_kinds(design, r, section, site)
+    layers, stats = structures.bridge_layers(design, r, section, site)
+    after = blocks.apply_writes(site, layers)
+    assert stats["piers"] > 0
+    for x in (20, 28, 29):
+        assert all(base_id(after.block(x, y, 1)) in design.palette["pier"] for y in range(60, 69))
+        assert after.block(x, 59, 1) == site.block(x, 59, 1)
+
+
+@pytest.mark.parametrize("kind", ["beam", "arch"])
+def test_a_bridge_across_a_section_boundary_emits_each_sections_own_cells(tmp_path, kind):
+    line = _row(30)
+    ground = {(x, z): 52 for x in range(-5, 45) for z in range(Z0 - 12, Z0 + 13)}
+    design, r, _, _ = _build(tmp_path / "full", line, [65] * 30, ["bridge"] * 30, ground=ground,
+                             extra={"bridges": {"kind": kind}})
+    r.ground = [52.0] * 30
+    sections = [Section("s01", 0, 14, (2, 40, Z0 - 4, 21, 100, Z0 + 4), "world"),
+                Section("s02", 15, 29, (19, 40, Z0 - 4, 38, 100, Z0 + 4), "world")]
+    r.sections = sections
+    after_all = None
+    stats_all = []
+    for k, sec in enumerate(sections):
+        site = make_site(tmp_path / f"s{k}", sec.box, ground={(x, z): 52 for x in range(-5, 45)
+                                                               for z in range(Z0 - 12, Z0 + 13)}, world="world")
+        layers, stats = structures.bridge_layers(design, r, sec, site)
+        stats_all.append(stats["piers"])
+        for _, w in layers:
+            ox, _, _ = w.origin
+            assert ox >= sec.box[0]
+            assert ox + w.codes.shape[0] - 1 <= sec.box[3]
+        after_all = layers if after_all is None else [*after_all, *layers]
+    assert stats_all[0] >= 1
+    assert stats_all[1] >= 1
+    full = make_site(tmp_path / "all", (2, 40, Z0 - 4, 38, 100, Z0 + 4), ground=52, world="world")
+    after = blocks.apply_writes(full, after_all)
+    x0, x1 = r.cells[0][0], r.cells[-1][0]
+    assert all(base_id(after.block(x, 63, Z0)) in design.palette["pier"] for x in (x0, x1)) or kind == "beam"
+    assert all(base_id(after.block(x0, y, Z0)) in design.palette["pier"] for y in range(53, 64))
+    assert all(base_id(after.block(x1, y, Z0)) in design.palette["pier"] for y in range(53, 64))
+
+
+def test_a_one_cell_arch_run_is_a_beam(tmp_path):
+    design, r, section, site = _build(tmp_path, [(5, Z0)], [65], ["bridge"], ground=52,
+                                      extra={"bridges": {"kind": "arch"}})
+    _, stats = structures.bridge_layers(design, r, section, site)
+    assert stats["piers"] == 1
+
+
+@pytest.mark.parametrize("below", ["minecraft:crimson_roots", "minecraft:weeping_vines[age=3]",
+                                   "minecraft:oak_slab[type=bottom,waterlogged=false]"])
+def test_plants_and_partial_blocks_are_not_pier_ground(tmp_path, below):
+    x, z = _row(12)[0]
+    design, r, section, site = _valley_bridge(tmp_path, cells={(x, 58, z): below})
+    after = blocks.apply_writes(site, structures.bridge_layers(design, r, section, site)[0])
+    assert all(base_id(after.block(x, y, z)) in design.palette["pier"] for y in range(53, 64))
+
+
+def test_the_mouth_is_only_where_a_neighbour_is_neither_tunnel_nor_tube(tmp_path):
+    kinds = ["tunnel"] * 15 + ["tube"] * 15
+    design, r, section, site = _hill_tunnel(tmp_path, kinds=kinds)
+    after = blocks.apply_writes(site, structures.tunnel_layers(design, r, section, site, light_spacing=50))
+    for i in (14, 15):
+        x, z = r.cells[i]
+        assert "type=double" not in after.block(x, 67, z + 2)
+    for i in (0, 29):
+        x, z = r.cells[i]
+        assert "type=double" in after.block(x, 67, z + 2)
+
+
+def _half_road_tunnel(tmp_path):
+    line = _row(30)
+    return _build(tmp_path, line, [65.5] * 30, ["tunnel"] * 30, mode="road", ground=80)
+
+
+@pytest.mark.parametrize("tunnel_first", [True, False])
+def test_a_half_level_road_slab_survives_in_either_order(tmp_path, tunnel_first):
+    design, r, section, site = _half_road_tunnel(tmp_path)
+    tun = structures.tunnel_layers(design, r, section, site, light_spacing=50)
+    road = track.track_layers(design, r, section, site)
+    after = blocks.apply_writes(site, [*tun, *road] if tunnel_first else [*road, *tun])
+    x, z = r.cells[10]
+    assert "_slab" in after.block(x, 65, z)
+    assert base_id(after.block(x, 64, z)) in design.palette["surface"]
+    assert all(after.block(x, y, z) == "minecraft:air" for y in range(66, 70))

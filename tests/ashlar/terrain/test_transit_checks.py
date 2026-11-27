@@ -453,3 +453,30 @@ def test_a_road_half_step_of_exactly_half_a_block_passes_walk(tmp_path):
     report = transit_checks.check_line(design, r, sites)
     assert "walk" not in _failed(report), report
     assert any(c["name"] == "walk" for c in report["checks"])
+
+
+# ------------------------------------------------------------------ one section on its own
+def test_check_line_can_check_one_section_on_its_own(tmp_path):
+    design, r, clear = _two_sections(tmp_path)
+    blocked = _block_at(clear, r, 20)                       # a block on b's part of the road
+    # a on its own needs only a's site and ignores b's cells, here and beyond the boundary.
+    assert transit_checks.check_line(design, r, {"a": blocked}, sections=["a"])["ok"]
+    # b on its own fails on the block.
+    x, z = r.cells[20]
+    report = transit_checks.check_line(design, r, {"b": blocked}, sections=["b"])
+    assert [x, 65, z] in _failed(report)["clearance"]["cells"]
+    # Without the limit every section needs its site, as before.
+    with pytest.raises(ValueError, match="no site for section b"):
+        transit_checks.check_line(design, r, {"a": blocked})
+    with pytest.raises(ValueError, match="no site for section a"):
+        transit_checks.check_line(design, r, {"b": blocked}, sections=["a", "b"])
+    with pytest.raises(ValueError, match="no route section c"):
+        transit_checks.check_line(design, r, {"a": blocked}, sections=["c"])
+
+
+def test_a_limited_check_counts_only_the_cells_of_its_sections(tmp_path):
+    design, r, clear = _two_sections(tmp_path)
+    whole = {c["name"]: c["detail"] for c in transit_checks.check_line(design, r, {"a": clear, "b": clear})["checks"]}
+    part = {c["name"]: c["detail"] for c in
+            transit_checks.check_line(design, r, {"a": clear}, sections=["a"])["checks"]}
+    assert whole["clearance"] == "90 checked" and part["clearance"] == "45 checked"

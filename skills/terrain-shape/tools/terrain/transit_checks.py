@@ -13,7 +13,7 @@ or path stands on the surface row ``floor(level) - 1`` (a half level adds a bott
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import cache
 from types import MappingProxyType
@@ -144,15 +144,21 @@ def _walk_top(state: str) -> float | None:
 class _Line:
     """A design and route with the sites that cover it, and cell reads that find the right site."""
 
-    def __init__(self, design: LineDesign, route: Route, sites: Mapping[str, Site]) -> None:
+    def __init__(self, design: LineDesign, route: Route, sites: Mapping[str, Site],
+                 indices: frozenset[int] | None = None) -> None:
         self.design, self.route, self.sites = design, route, sites
         self.natural = natural_for(design.dimension)
         self.n = len(route.cells)
         self.half = formation_half(design)
         self.rails: list[RailCell] = rail_cells(design, route) if design.mode == "rail" else []
+        self.indices = indices                    # the route indices to check; None checks them all
         self._owners: dict[int, list[Site]] = {}
         self.uncovered: dict[Cell, None] = {}     # cells the running check needed that no site covers
         self._light: dict[int, np.ndarray] = {}
+
+    def keep(self, i: int) -> bool:
+        """Whether route index i is checked."""
+        return self.indices is None or i in self.indices
 
     def owners(self, i: int) -> list[Site]:
         """The sites for route index i: those of the sections that hold i first, then the rest."""
@@ -222,6 +228,8 @@ def _continuity(line: _Line) -> _Outcome | None:
         return None
     out = _Outcome([], 0, "rail cells missing or with the wrong shape")
     for i, rc in enumerate(line.rails):
+        if not line.keep(i):
+            continue
         state = line.state(i, rc.x, rc.y, rc.z, need=True)
         if state is None:
             continue
@@ -237,6 +245,8 @@ def _corridor(line: _Line) -> dict[tuple[int, int], tuple[int, int, int]]:
     reach = math.ceil(line.half) + 3
     strip: dict[tuple[int, int], tuple[int, int, int]] = {}
     for i in range(line.n):
+        if not line.keep(i):
+            continue
         base = line.level_cell(i)
         for xz in footprint(line.route, i, -reach, reach):
             first, lo, hi = strip.setdefault(xz, (i, base - 1, base + 6))
@@ -247,6 +257,8 @@ def _corridor(line: _Line) -> dict[tuple[int, int], tuple[int, int, int]]:
 def _support(line: _Line) -> _Outcome:
     out = _Outcome([], 0, "items without a block to stand on or hang from")
     for i, rc in enumerate(line.rails):
+        if not line.keep(i):
+            continue
         below = line.state(i, rc.x, rc.y - 1, rc.z, need=True)
         if below is None:
             continue
@@ -288,6 +300,8 @@ def _boosters(line: _Line) -> _Outcome | None:
         return None
     out = _Outcome([], 0, "boosters without power or a redstone block, or powered rails on a corner")
     for i, rc in enumerate(line.rails):
+        if not line.keep(i):
+            continue
         state = line.state(i, rc.x, rc.y, rc.z, need=True)
         if state is None:
             continue
@@ -308,6 +322,8 @@ def _clearance(line: _Line) -> _Outcome:
     out = _Outcome([], 0, "cells blocked in the way")
     rail = line.design.mode == "rail"
     for i, (x, z) in enumerate(line.route.cells):
+        if not line.keep(i):
+            continue
         level = line.route.levels[i]
         base = line.running_y(i)
         half = not rail and level != base
@@ -362,6 +378,8 @@ def _walk(line: _Line) -> _Outcome | None:
         return cell, h
 
     for i in range(line.n):
+        if not line.keep(i):
+            continue
         for off in range(lo, hi + 1):
             here, h = height(i, off)
             if h is not None and math.isnan(h):
@@ -371,7 +389,7 @@ def _walk(line: _Line) -> _Outcome | None:
                 out.add(here)
                 continue
             for j, o in ((i, off + 1), (i + 1, off)):
-                if j >= line.n or o > hi:
+                if j >= line.n or o > hi or not line.keep(j):
                     continue
                 there, g = height(j, o)
                 if g is None or math.isnan(g):
@@ -393,6 +411,8 @@ def _lit_cells(line: _Line) -> list[tuple[int, Cell]]:
     deck = _span(round(2 * line.half) + 2)
     bore = _span(design.tunnels.width)
     for i in range(line.n):
+        if not line.keep(i):
+            continue
         lo, hi = bore if route.kinds[i] in ("tunnel", "tube") else deck if route.kinds[i] == "bridge" else (lo_f, hi_f)
         y = line.level_cell(i)
         for x, z in footprint(route, i, lo, hi):
@@ -403,10 +423,10 @@ def _lit_cells(line: _Line) -> list[tuple[int, Cell]]:
         i = line.n - 1 if end else 0
         if stop == "terminus":
             for j in range(line.n - length, line.n) if end else range(length):
-                if 0 <= j < line.n:
+                if 0 <= j < line.n and line.keep(j):
                     for x, z in footprint(route, j, edge - width + 1, edge):
                         cells.setdefault((x, line.level_cell(j) + 1, z), j)
-        elif stop == "room":
+        elif stop == "room" and line.keep(i):
             for c in _room_cells(line, i, end)[0]:
                 cells.setdefault(c, i)
     return sorted(((i, c) for c, i in cells.items()), key=lambda t: t[0])
@@ -450,7 +470,7 @@ def _light(line: _Line) -> _Outcome:
 
 def _deck(line: _Line) -> _Outcome | None:
     route = line.route
-    bridge = [i for i in range(line.n) if route.kinds[i] == "bridge"]
+    bridge = [i for i in range(line.n) if route.kinds[i] == "bridge" and line.keep(i)]
     if not bridge:
         return None
     piers = frozenset(line.design.palette["pier"])
@@ -498,13 +518,13 @@ def _bores(line: _Line) -> list[tuple[int, Cell]]:
     lo, hi = _span(design.tunnels.width)
     out: list[tuple[int, Cell]] = []
     for i in range(line.n):
-        if route.kinds[i] in ("tunnel", "tube"):
+        if route.kinds[i] in ("tunnel", "tube") and line.keep(i):
             base = line.level_cell(i)
             out += [(i, (x, y, z)) for x, z in footprint(route, i, lo, hi)
                     for y in range(base, base + design.tunnels.height)]
     for end, stop in ((False, design.start.stop), (True, design.end.stop)):
-        if stop == "room":
-            i = line.n - 1 if end else 0
+        i = line.n - 1 if end else 0
+        if stop == "room" and line.keep(i):
             out += [(i, c) for c in _room_cells(line, i, end)[1]]
     return out
 
@@ -534,6 +554,8 @@ def _grade(line: _Line) -> _Outcome:
     design, route = line.design, line.route
     out = _Outcome([], 0, "cells off their level")
     for i, (x, z) in enumerate(route.cells):
+        if not line.keep(i):
+            continue
         level = route.levels[i]
         if design.mode == "rail":
             want = line.rails[i].y
@@ -568,20 +590,30 @@ _RUN: dict[str, Callable[[_Line], _Outcome | None]] = {
     "walk": _walk, "light": _light, "deck": _deck, "seal": _seal, "grade": _grade}
 
 
-def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site]) -> dict:
+def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
+               sections: Collection[str] | None = None) -> dict:
     """Run the checks over per-section sites; the result is ``{"ok", "checks": [...]}``.
 
     Each check is ``{"name", "ok", "detail", "cells"}`` with up to ten failing cells as ``[x, y, z]``.
     Checks that do not apply to the mode, or find nothing to check on this route, are left out.
-    A cell a check needs that no site covers fails that check.
+    A cell a check needs that no site covers fails that check. `sections` (names) limits the run
+    to those route sections: only their sites are required and only their route indices are
+    checked, with cells still read from any site that covers them. None checks every section.
 
     Raises:
-        ValueError: when a route section has no entry in `sites`.
+        ValueError: when a checked route section has no entry in `sites`, or `sections` names a
+            section the route does not have.
     """
-    missing = [s.name for s in route.sections if s.name not in sites]
+    if sections is not None:
+        unknown = sorted(set(sections) - {s.name for s in route.sections})
+        if unknown:
+            raise ValueError(f"no route section {', '.join(unknown)}")
+    checked = [s for s in route.sections if sections is None or s.name in sections]
+    missing = [s.name for s in checked if s.name not in sites]
     if missing:
         raise ValueError(f"no site for section {', '.join(missing)}")
-    line = _Line(design, route, sites)
+    indices = None if sections is None else frozenset(i for s in checked for i in range(s.start, s.end + 1))
+    line = _Line(design, route, sites, indices)
     checks = []
     for name in CHECKS:
         line.uncovered = {}

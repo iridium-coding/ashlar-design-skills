@@ -162,7 +162,15 @@ def _infrastructure(design: LineDesign, route: Route, section: Section, graded: 
               *track.track_layers(design, route, section, graded, light_spacing=spacing)]
     merged: dict[str, dict[Cell, str]] = {}
     for mode, write in sorted(layers, key=lambda layer: MODES.index(layer[0])):
-        merged.setdefault(mode, {}).update(_cells(write))
+        cells = _cells(write)
+        into = merged.setdefault(mode, {})
+        if mode == "light":
+            # A lamp column is one stack: where two structures put one on the same cell, the later
+            # replaces the earlier whole, so the two never stack a lantern on a lantern.
+            columns = {(x, z) for x, _, z in cells}
+            for cell in [c for c in into if (c[0], c[2]) in columns]:
+                del into[cell]
+        into.update(cells)
     out = [(mode, write) for mode, cells in merged.items() if (write := blocks.cells_write(cells)) is not None]
     return out, stats
 

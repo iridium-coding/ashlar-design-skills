@@ -219,6 +219,15 @@ def test_failed_projected_checks_refuse_emission_but_not_the_preview(tmp_path):
     assert all(s["light_spacing"] == 1 for s in report["sections"])     # the densest layout was kept
 
 
+def test_a_platform_lamp_and_a_line_lamp_on_one_cell_make_one_column(tmp_path):
+    """The terminus platform's lamp column and the line's own meet on a cell: one column, a supported lantern."""
+    design, project = _project(tmp_path, lights={"spacing": 6}, ground=lambda x, z: 64,
+                               **{"from": {"at": [10, 65, Z0], "stop": "terminus"},
+                                  "to": {"at": [190, 65, Z0], "stop": "terminus"}})
+    result = transit.emit_line(design, project, first_phase=1, preview=True)
+    assert result.report["check"]["ok"], result.report["check"]
+
+
 def test_lamp_spacing_halves_until_each_section_is_lit(tmp_path):
     design, project = _project(tmp_path, lights={"spacing": 64})
     report = transit.emit_line(design, project, first_phase=1, preview=True).report

@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from sitegen import make_heights, make_site
-from terrain import blocks, route, transit
+from terrain import blocks, route, transit, transit_checks
 from terrain import transit_design as td
 from terrain.emit import VerifyError
 from terrain.live import decode
@@ -39,21 +39,21 @@ def _data(**extra) -> dict:
     return data
 
 
-def _project(tmp_path, built=None, **extra):
+def _project(tmp_path, built=None, ground=_ground, **extra):
     """Heights, a rail design across the hill and the valley, its route and every section read."""
     project = tmp_path / "proj"
     project.mkdir(parents=True)
     nx, nz = SIZE
-    ground = np.array([[_ground(ORIGIN[0] + i, ORIGIN[1] + j) for j in range(nz)] for i in range(nx)], float)
-    make_heights(project / "heights.json", ORIGIN, ground)
+    heights = np.array([[ground(ORIGIN[0] + i, ORIGIN[1] + j) for j in range(nz)] for i in range(nx)], float)
+    make_heights(project / "heights.json", ORIGIN, heights)
     (project / "terrain").mkdir()
     (project / DESIGN).write_text(json.dumps(_data(**extra)), encoding="utf-8")
     design = td.load_line(project / DESIGN, project)
     transit.run_route(design, project)
     for s in _route(project).sections:
         x1, _, z1, x2, _, z2 = s.box
-        heights = {(x, z): _ground(x, z) for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)}
-        make_site(project / f"site/north-line-{s.name}", s.box, ground=heights, cells=built or {}, world="world")
+        columns = {(x, z): ground(x, z) for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)}
+        make_site(project / f"site/north-line-{s.name}", s.box, ground=columns, cells=built or {}, world="world")
     return design, project
 
 
@@ -103,13 +103,23 @@ def _remove_one_rail(read, project):
     raise AssertionError("no rail in the read")
 
 
-def _cli(command, project, *args):
-    return subprocess.run([sys.executable, str(LAUNCHER), command, str(project / DESIGN), *map(str, args)],
+def _put(read, cells):
+    """Overwrite cells of a (built) read in place."""
+    site = load_site(read)
+    write_site(read, blocks.apply_writes(site, [("x", blocks.cells_write(cells))]))
+
+
+def _cli(command, project, *args, design=DESIGN):
+    return subprocess.run([sys.executable, str(LAUNCHER), command, str(project / design), *map(str, args)],
                           capture_output=True, text=True, check=False)
 
 
-def _check(project, dirs):
-    return _cli("transit-check", project, "--sites", *dirs, "--project", project)
+def _check(project, dirs, design=DESIGN):
+    return _cli("transit-check", project, "--sites", *dirs, "--project", project, design=design)
+
+
+def _failed(run):
+    return {c["name"] for c in json.loads(run.stdout)["checks"] if not c["ok"]}
 
 
 # ------------------------------------------------------------------ emission
@@ -344,3 +354,104 @@ def test_netherrack_is_a_player_block_on_an_overworld_line(tmp_path):
     design, project = _project(tmp_path, built={(40, 66, 20): NETHERRACK})
     report = transit.emit_line(design, project, first_phase=1, preview=True).report
     assert [i["block"] for i in report["built"]["items"]] == [NETHERRACK]
+
+
+# ------------------------------------------------------------------ fix round 1
+NETHER_DESIGN = "terrain/deep-line.line.json"
+LAVA = "minecraft:lava[level=0]"
+
+
+def _knoll(x: int, z: int) -> int:
+    """A flat plain at 64 with a knoll two blocks high on the line."""
+    return 66 if 45 <= x <= 55 and 15 <= z <= 25 else 64
+
+
+def _gentle(x: int, z: int) -> int:
+    """A plain that rolls by a block."""
+    return 64 + round(math.sin(x / 7) + math.cos(z / 5))
+
+
+def test_transit_check_on_a_nether_build_fails_on_a_blocked_bore_and_on_lava_beside_it(tmp_path):
+    design, project = _nether(tmp_path)
+    transit.emit_line(design, project, first_phase=1)
+    built = _write_projected_sites(project)
+    run = _check(project, built, design=NETHER_DESIGN)
+    assert run.returncode == 0, run.stdout + run.stderr
+    x, z = 20, Z0                                   # a tunnel cell: the cave spans x 30-45
+    _put(built[0], {(x, 71, z): NETHERRACK})         # the bore blocked again
+    run = _check(project, built, design=NETHER_DESIGN)
+    assert run.returncode == 1 and "clearance" in _failed(run)
+    _put(built[0], {(x, 71, z): "minecraft:air", (x, 71, z + 2): LAVA})     # lava in the wall beside the bore
+    run = _check(project, built, design=NETHER_DESIGN)
+    assert run.returncode == 1 and _failed(run) == {"seal"}
+
+
+def test_transit_check_uses_the_kinds_the_build_used(tmp_path, monkeypatch):
+    design, project = _nether(tmp_path)
+    transit.emit_line(design, project, first_phase=1)
+    built = _write_projected_sites(project)
+    report = json.loads((project / "terrain/deep-line.line-report.json").read_text(encoding="utf-8"))
+    planned = route.load_route(project / "terrain/deep-line.route.json")
+    assert set(planned.kinds) == {"tunnel"} and {"tube", "tunnel"} <= set(report["kinds"])
+    checked = {}
+    real = transit_checks.check_line
+
+    def spy(design, line_route, sites, **kw):
+        checked["kinds"] = list(line_route.kinds)
+        return real(design, line_route, sites, **kw)
+
+    monkeypatch.setattr(transit_checks, "check_line", spy)
+    assert transit.check_reads(design, project, built)["ok"]
+    assert checked["kinds"] == report["kinds"]
+
+
+def test_transit_check_needs_the_line_report_of_a_nether_line(tmp_path):
+    design, project = _nether(tmp_path)
+    transit.emit_line(design, project, first_phase=1)
+    built = _write_projected_sites(project)
+    path = project / "terrain/deep-line.line-report.json"
+    report = json.loads(path.read_text(encoding="utf-8"))
+    path.write_text(json.dumps({**report, "route": "0" * 12}), encoding="utf-8")
+    with pytest.raises(ValueError, match="run terrain.py line again"):
+        transit.check_reads(design, project, built)
+    path.unlink()
+    with pytest.raises(ValueError, match="run terrain.py line first"):
+        transit.check_reads(design, project, built)
+
+
+@pytest.mark.parametrize("ground", [pytest.param(_knoll, id="flat-plain-with-a-knoll"),
+                                    pytest.param(_gentle, id="plain-rolling-by-a-block")])
+def test_corridor_grading_on_flat_and_gently_rolling_ground_is_emitted(tmp_path, ground):
+    design, project = _project(tmp_path, ground=ground)
+    result = transit.emit_line(design, project, first_phase=1)
+    assert any("-s01-mass-" in r["name"] for r in result.rows)
+    gate = (project / "terrain/north-line-s01.verify.txt").read_text(encoding="utf-8")
+    assert "no_ziggurat: not checked: corridor grading" in gate
+
+
+def test_a_section_with_nothing_to_grade_has_no_surface_match_row(tmp_path):
+    design, project = _project(tmp_path, ground=_knoll)       # s02 runs at grade over flat ground
+    result = transit.emit_line(design, project, first_phase=1)
+    s02 = result.report["sections"][1]
+    assert s02["cut_columns"] == s02["fill_columns"] == 0
+    assert not any("-s02-mass-" in r["name"] for r in result.rows)
+    assert [r["file"] for r in result.quality["surface_match"]] == ["terrain/north-line-s01.surface.json"]
+    assert "surface_match[1]{" in (project / "terrain/north-line.plan-rows.toon").read_text(encoding="utf-8")
+
+
+def test_preview_and_standalone_together_are_refused(tmp_path):
+    design, project = _project(tmp_path)
+    with pytest.raises(ValueError, match="standalone"):
+        transit.emit_line(design, project, first_phase=1, preview=True, standalone=True)
+    run = _cli("line", project, "--project", project, "--first-phase", "1", "--preview", "--standalone")
+    assert run.returncode != 0 and "--standalone" in run.stderr
+    assert not (project / "terrain/north-line.line-report.json").exists()
+
+
+def test_the_design_is_copied_where_the_transit_row_points(tmp_path):
+    design, project = _project(tmp_path)
+    (project / DESIGN).unlink()
+    notes = transit.emit_line(design, project, first_phase=1).notes
+    assert json.loads((project / DESIGN).read_text(encoding="utf-8")) == design.source
+    assert any("copied" in n and DESIGN in n for n in notes)
+    assert not any("copied" in n for n in transit.emit_line(design, project, first_phase=1).notes)

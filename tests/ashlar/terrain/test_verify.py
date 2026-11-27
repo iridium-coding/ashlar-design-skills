@@ -255,3 +255,17 @@ def test_verify_seam_helper_still_works():
     wall = np.full((20, 20), 64.0)
     wall[10:, :] = 100.0
     assert not verify.verify_seam(wall, max_step=12).ok
+
+
+# ---------------------------------------------------------------------------
+# no_ziggurat can be left unchecked (corridor grading of existing ground)
+# ---------------------------------------------------------------------------
+def test_terraces_can_be_left_unchecked():
+    hf = HeightField(40, 40, sea_level=50)
+    hf.h[:] = 64.0
+    hf.h[10:30, 10:30] = 70.0                    # one flat-topped block on a flat plain
+    default = verify.verify(hf, require_relief=False)
+    assert not default.ok and ("no_ziggurat", False) in [c[:2] for c in default.checks]
+    report = verify.verify(hf, require_relief=False, check_terraces=False)
+    assert report.ok
+    assert ("no_ziggurat", True, "not checked: corridor grading") in report.checks

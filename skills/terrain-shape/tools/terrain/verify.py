@@ -46,7 +46,7 @@ def verify(hf, spec=None, recipe=None, *,
            min_height: float = -64.0, silhouette_var_min: float = 3.0,
            require_relief: bool = True, max_collinear_run: int = 12,
            palette_max_single: float = 0.92, seam_max_step: float = 12.0,
-           ground=None, water=None, existing_water=None,
+           ground=None, water=None, existing_water=None, check_terraces: bool = True,
            **_ignored) -> Report:
     """Check a heightfield against the non-negotiables. Returns a ``Report``;
     ``report.ok`` is the gate. Tunable thresholds default to the skill's rules.
@@ -63,7 +63,9 @@ def verify(hf, spec=None, recipe=None, *,
       relief              enough vertical variance that it reads as terrain
       land_present        some land above sea level (unless an intentional sea)
       no_ziggurat         not a stack of flat terraces (spiky height histogram
-                          + bimodal flat-top/vertical-wall slope distribution)
+                          + bimodal flat-top/vertical-wall slope distribution);
+                          ``check_terraces=False`` reports it ok, not checked,
+                          for corridor grading of existing (often flat) ground
       edge_irregularity   no straight coastline run longer than the limit. This
                           is the field-level pre-screen of the 7-block rule: it
                           measures the per-cell land/water interface (so the
@@ -102,10 +104,13 @@ def verify(hf, spec=None, recipe=None, *,
     land_ok = land >= min_land_fraction
     checks.append(("land_present", land_ok, f"{land:.1%} dry land"))
 
-    zig = _ziggurat_score(h)
-    no_zig = zig < 0.6
-    checks.append(("no_ziggurat", no_zig,
-                   f"terrace score {zig:.2f} (flag >=0.6)"))
+    if check_terraces:
+        zig = _ziggurat_score(h)
+        no_zig = zig < 0.6
+        checks.append(("no_ziggurat", no_zig,
+                       f"terrace score {zig:.2f} (flag >=0.6)"))
+    else:
+        checks.append(("no_ziggurat", True, "not checked: corridor grading"))
 
     run, edge_name = _edge_max_run(h, hf.sea_level, water=water)
     edge_ok = run <= max_collinear_run

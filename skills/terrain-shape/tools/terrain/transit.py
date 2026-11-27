@@ -169,8 +169,8 @@ def _infrastructure(design: LineDesign, route: Route, section: Section, graded: 
 
 def _lit(design: LineDesign, route: Route, section: Section, final: Site) -> bool:
     """Whether the section's own projected site passes the light check on its own cells."""
-    report = transit_checks.check_line(design, route, {section.name: final}, sections=[section.name])
-    return all(c["ok"] for c in report["checks"] if c["name"] == "light")
+    return transit_checks.check_line(design, route, {section.name: final}, sections=[section.name],
+                                     checks=["light"])["ok"]
 
 
 def _why(design: LineDesign, route: Route) -> Callable[[str, Cell], str]:
@@ -214,6 +214,7 @@ class _Planned:
     spacing: int                    # the lamp spacing that lit it
     stats: dict
     touched: list[dict]
+    first: int                      # the id of the section's first phase (its first grading phase)
     ids: list[int]                  # the section's phase ids, from its grading phases on
 
 
@@ -228,25 +229,36 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
     Per section, in route order: the corridor grading phases (``<element>-sNN-mass-k``), then the
     carve, build, track and light phases of its structures, stops and track, with contiguous ids
     from `first_phase`. The lamps start at ``lights.spacing`` and the spacing halves (at most
-    ``HALVINGS`` times) until the section's own light check passes.
+    ``HALVINGS`` times) until the section's own light check passes. A section with nothing to
+    grade has no grading phases and so no ``surface_match`` row; its ``seam`` rows are absent too.
+
+    The report ``terrain/<element>.line-report.json`` and the previews are written on every run,
+    so a refused write keeps them (the refusal points at the report). A preview writes nothing
+    else: phase files and plan rows of an earlier run stay in place. A write also copies the
+    design to ``terrain/<element>.line.json`` when the file there differs, because the plan's
+    ``transit`` row points at it (a note says so).
 
     Args:
         design: The validated line design.
         project: The project folder (``site/``, ``terrain/`` and ``phases/`` live here).
         first_phase: The id of the first phase in the host plan.
         preview: Write only the report (``terrain/<element>.line-report.json``) and previews.
-        standalone: Also write a ``plan.toon`` for a line that is its own project.
+        standalone: Also write a ``plan.toon`` for a line that is its own project (not with
+            `preview`).
         approve_built: The report's ``built.token``, given only after the user has seen and
             approved every player block the line touches.
         max_columns: Columns per phase tile.
 
     Raises:
-        ValueError: A missing or stale route; a missing section read, a read that does not
-            contain its section box or a read of another world (naming the section and folder).
+        ValueError: `preview` with `standalone`; a missing or stale route; a missing section read,
+            a read that does not contain its section box or a read of another world (naming the
+            section and folder).
         VerifyError: A layer breaks the emitter's checks or, outside a preview, the projected
             line fails its checks or touches player blocks without the matching token.
         RouteError: A structure that cannot be built (a pier in water, lava in a bore).
     """
+    if preview and standalone:
+        raise ValueError("--standalone writes plan.toon, which a preview never writes: drop --preview or --standalone")
     first_phase = integer_level(first_phase, "first_phase")
     if first_phase < 1:
         raise ValueError("first_phase must be positive")
@@ -269,10 +281,12 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
         start = len(rows)
         grading = None
         if mass is not None:
-            # Checked as a preview here; written only once the whole line passes (below).
+            # Checked as a preview here; written only once the whole line passes (below). The
+            # terrace check is off: it would judge the existing ground the corridor runs through.
             grading = emit_field(plan.field, plan.spec, site, project, element=f"{element}-{s.name}",
-                                 first_phase=first_phase + len(rows), protect=plan.protect,
-                                 require_relief=False, seam_rows=corridor.outer_seam_rows(design, route, s, plan),
+                                 first_phase=first_phase + start, protect=plan.protect,
+                                 require_relief=False, check_terraces=False,
+                                 seam_rows=corridor.outer_seam_rows(design, route, s, plan),
                                  max_columns=max_columns, preview=True)
             rows.extend(grading.phases)
         spacing, halvings = design.lights.spacing, 0
@@ -306,7 +320,7 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
                          "from": [min(f["from"][i] for f in fills) for i in range(3)],
                          "to": [max(f["to"][i] for f in fills) for i in range(3)],
                          "via": "placer", "rollback": "backup"})
-        planned.append(_Planned(s, plan, grading, final, spacing, stats, touched,
+        planned.append(_Planned(s, plan, grading, final, spacing, stats, touched, first_phase + start,
                                 [row["id"] for row in rows[start:]]))
 
     finals = {p.section.name: p.final for p in planned}
@@ -328,8 +342,11 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
                          "cut_columns": p.plan.cut_cells, "fill_columns": p.plan.fill_cells,
                          "light_spacing": p.spacing, "piers": p.stats["piers"], "phases": p.ids,
                          "touched": len(p.touched)})
+    # `route` and `kinds` record the classes the build used (Nether lines class them from the
+    # reads), so transit-check checks the built line against the same ones.
     report = {"sections": sections, "check": check, "built": built, "boxes": [list(s.box) for s in route.sections],
-              "displaced_water": displaced, "unsupported_tube": unsupported}
+              "displaced_water": displaced, "unsupported_tube": unsupported, "route": route.design_hash,
+              "kinds": list(route.kinds)}
     report_path = terrain / f"{element}.line-report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -355,6 +372,11 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
     if unsupported:
         notes.append(f"{unsupported} tube piers found no ground within {structures.TUBE_REACH} blocks below "
                      "and were left out")
+    design_path = terrain / f"{element}.line.json"
+    copy_design = not preview and (not design_path.exists()
+                                   or json.loads(design_path.read_text(encoding="utf-8")) != design.source)
+    if copy_design:
+        notes.append(f"copied the design to terrain/{element}.line.json, where the plan's transit row points")
     boxes = [(*row["from"], *row["to"]) for row in rows]
     boxes += [p.grading.bbox for p in planned if p.grading is not None]
     bbox = _union(boxes or [s.box for s in route.sections])
@@ -378,17 +400,16 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
                           f"block, where it is and why ({report_path}), and only after their yes rerun with "
                           f"--approve-built {token}")
 
-    design_path = terrain / f"{element}.line.json"
-    if not design_path.exists() or json.loads(design_path.read_text(encoding="utf-8")) != design.source:
+    if copy_design:
         design_path.write_text(json.dumps(design.source, indent=2) + "\n", encoding="utf-8")
     written = []
     for p in planned:
         if p.grading is None:
             continue
         result = emit_field(p.plan.field, p.plan.spec, reads[p.section.name], project,
-                            element=f"{element}-{p.section.name}", first_phase=p.ids[0],
-                            protect=p.plan.protect, require_relief=False, seam_rows=p.grading.quality["seam"],
-                            max_columns=max_columns)
+                            element=f"{element}-{p.section.name}", first_phase=p.first,
+                            protect=p.plan.protect, require_relief=False, check_terraces=False,
+                            seam_rows=p.grading.quality["seam"], max_columns=max_columns)
         if result.phases != p.grading.phases:
             raise RuntimeError(f"section {p.section.name}: the grading phases changed between the check and the write")
         written.append(result)
@@ -411,14 +432,38 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
 
 
 # ------------------------------------------------------------------ checking a build
+def _built_kinds(design: LineDesign, project: Path, found: Route) -> list[str]:
+    """The stretch kinds a line classed from its reads was built with, from its line report.
+
+    The fresh reads cannot class it again: every carved bore would read as an open tube.
+    """
+    name = f"terrain/{design.element}.line-report.json"
+    path = Path(project) / name
+    if not path.exists():
+        raise ValueError(f"{name} is missing: run terrain.py line first (the report records the tunnel and "
+                         "tube classes the build used)")
+    report = json.loads(path.read_text(encoding="utf-8"))
+    kinds = report.get("kinds")
+    if (report.get("route") != found.design_hash or not isinstance(kinds, list)
+            or len(kinds) != len(found.cells) or not set(kinds) <= set(KINDS)):
+        raise ValueError(f"{name} was written for another route: run terrain.py line again")
+    return kinds
+
+
 def check_reads(design: LineDesign, project: Path, reads: Sequence[Path]) -> dict:
     """Check fresh reads of a built line; each read stands for every section whose box it contains.
 
+    A Nether line, or a straight line without heights, is checked with the tunnel and tube
+    classes its build used, from ``terrain/<element>.line-report.json``.
+
     Raises:
-        ValueError: A missing or stale route, a read of another world, a read that contains no
-            section box, or a section that no read contains.
+        ValueError: A missing or stale route; for a line classed from its reads, a missing line
+            report or one written for another route; a read of another world, a read that
+            contains no section box, or a section that no read contains.
     """
     found = _line_route(design, project)
+    if _classed_from_reads(design):
+        found.kinds = _built_kinds(design, project, found)
     sites: dict[str, Site] = {}
     for path in reads:
         site = load_site(path)
@@ -448,8 +493,9 @@ def add_transit_parsers(commands) -> None:
     line.add_argument("design", type=Path)
     line.add_argument("--project", type=Path, required=True)
     line.add_argument("--first-phase", type=int, required=True)
-    line.add_argument("--preview", action="store_true", help="write the report and previews only")
-    line.add_argument("--standalone", action="store_true", help="also write plan.toon")
+    output = line.add_mutually_exclusive_group()
+    output.add_argument("--preview", action="store_true", help="write the report and previews only")
+    output.add_argument("--standalone", action="store_true", help="also write plan.toon (not with --preview)")
     line.add_argument("--approve-built", metavar="TOKEN",
                       help="the report's built.token, after the user approved every touched player block")
     check = commands.add_parser("transit-check", help="check fresh post-build reads of a transit line")

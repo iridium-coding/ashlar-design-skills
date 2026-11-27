@@ -664,3 +664,23 @@ def test_gravity_at_read_bottom_is_scoped_to_updates(tmp_path, floor, diagnostic
     recipe["forms"] = [form(tmp_path, "adjacent", (x, floor + 1, z), "minecraft:andesite")]
     with pytest.raises(VerifyError, match=diagnostic):
         emit_ashlar(recipe, tmp_path, first_phase=1)
+
+
+def test_emit_field_can_leave_terraces_unchecked(tmp_path):
+    from terrain.ashlar_emit import emit_field
+    from terrain.field import HeightField
+    from terrain.materialize import MaterialSpec
+    from terrain.site import load_site
+
+    make_site(tmp_path / "site", BOX, world="overworld")              # a flat plain at 64
+    site = load_site(tmp_path / "site")
+    hf = HeightField(BOX[3] - BOX[0] + 1, BOX[5] - BOX[2] + 1, sea_level=50)
+    hf.h[:] = 64.0
+    hf.h[8:20, 8:20] = 66.0                                              # a flat pad graded on it
+    spec = MaterialSpec.natural(hf, surface={"minecraft:grass_block": 0.8, "minecraft:dirt": 0.2})
+    with pytest.raises(VerifyError, match="no_ziggurat"):
+        emit_field(hf, spec, site, tmp_path, element="pad", first_phase=1, require_relief=False, preview=True)
+    result = emit_field(hf, spec, site, tmp_path, element="pad", first_phase=1, require_relief=False,
+                        preview=True, check_terraces=False)
+    assert ("no_ziggurat", True, "not checked: corridor grading") in result.report.checks
+    assert result.phases

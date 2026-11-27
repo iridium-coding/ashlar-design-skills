@@ -591,7 +591,7 @@ _RUN: dict[str, Callable[[_Line], _Outcome | None]] = {
 
 
 def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
-               sections: Collection[str] | None = None) -> dict:
+               sections: Collection[str] | None = None, checks: Collection[str] | None = None) -> dict:
     """Run the checks over per-section sites; the result is ``{"ok", "checks": [...]}``.
 
     Each check is ``{"name", "ok", "detail", "cells"}`` with up to ten failing cells as ``[x, y, z]``.
@@ -599,11 +599,16 @@ def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
     A cell a check needs that no site covers fails that check. `sections` (names) limits the run
     to those route sections: only their sites are required and only their route indices are
     checked, with cells still read from any site that covers them. None checks every section.
+    `checks` (names from ``CHECKS``) runs only those checks, in ``CHECKS`` order; None runs all.
 
     Raises:
         ValueError: when a checked route section has no entry in `sites`, or `sections` names a
-            section the route does not have.
+            section the route does not have, or `checks` names a check that does not exist.
     """
+    if checks is not None:
+        unknown = sorted(set(checks) - set(CHECKS))
+        if unknown:
+            raise ValueError(f"no check named {', '.join(unknown)} (checks: {', '.join(CHECKS)})")
     if sections is not None:
         unknown = sorted(set(sections) - {s.name for s in route.sections})
         if unknown:
@@ -614,8 +619,8 @@ def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
         raise ValueError(f"no site for section {', '.join(missing)}")
     indices = None if sections is None else frozenset(i for s in checked for i in range(s.start, s.end + 1))
     line = _Line(design, route, sites, indices)
-    checks = []
-    for name in CHECKS:
+    results = []
+    for name in CHECKS if checks is None else [c for c in CHECKS if c in checks]:
         line.uncovered = {}
         outcome = _RUN[name](line)
         if outcome is None:
@@ -627,6 +632,6 @@ def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
         if gaps:
             parts.append(f"{len(gaps)} cells not covered by any site")
         cells = [*outcome.bad, *gaps][:MAX_CELLS]
-        checks.append({"name": name, "ok": not parts, "detail": "; ".join(parts) or f"{outcome.checked} checked",
-                       "cells": [list(c) for c in cells]})
-    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+        results.append({"name": name, "ok": not parts, "detail": "; ".join(parts) or f"{outcome.checked} checked",
+                        "cells": [list(c) for c in cells]})
+    return {"ok": all(c["ok"] for c in results), "checks": results}

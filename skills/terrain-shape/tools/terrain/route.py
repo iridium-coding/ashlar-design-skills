@@ -647,7 +647,11 @@ def design_hash(design: LineDesign) -> str:
 
 
 def make_sections(design: LineDesign, route: Route, grid: Grid | None) -> list[Section]:
-    """Split a route into sections of ``section_length`` cells, each with its read box."""
+    """Split a route into sections of ``section_length`` cells, each with its read box.
+
+    With a heights grid, a box's floor lies 6 below the lowest ground under the whole box (or
+    below the line, if that is lower), so every column of the read reaches its ground.
+    """
     lim, tun = design.limits, design.tunnels
     reach = math.ceil(formation_half(design) + max(lim.max_fill * lim.fill_ratio,
                                                    lim.max_cut * lim.cut_ratio, tun.width) + 8)
@@ -662,13 +666,15 @@ def make_sections(design: LineDesign, route: Route, grid: Grid | None) -> list[S
         if grid is None:
             y1, y2 = math.floor(min(levels)) - 6, math.ceil(max(levels)) + tun.height + 6
         else:
-            ground = [g for g in route.ground[a:b + 1] if g is not None]
-            low = min([*ground, *(math.floor(v) - 1 for v in levels)])
-            y1 = math.floor(low) - 6
             ia, ja = x1 - grid.origin[0], z1 - grid.origin[1]
             nx, nz = grid.top.shape
-            window = grid.top[max(ia, 0):max(min(x2 - grid.origin[0] + 1, nx), 0),
-                              max(ja, 0):max(min(z2 - grid.origin[1] + 1, nz), 0)]
+            area = np.s_[max(ia, 0):max(min(x2 - grid.origin[0] + 1, nx), 0),
+                         max(ja, 0):max(min(z2 - grid.origin[1] + 1, nz), 0)]
+            under = grid.ground[area]
+            under = under[~np.isnan(under)]
+            low = min([float(under.min()) if under.size else math.inf, *(math.floor(v) - 1 for v in levels)])
+            y1 = math.floor(low) - 6
+            window = grid.top[area]
             window = window[~np.isnan(window)]
             top = float(window.max()) if window.size else -math.inf
             y2 = math.ceil(max(top + 2, max(levels) + tun.height + tun.roof + 2))

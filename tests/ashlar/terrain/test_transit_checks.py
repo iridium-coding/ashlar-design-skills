@@ -480,3 +480,12 @@ def test_a_limited_check_counts_only_the_cells_of_its_sections(tmp_path):
     part = {c["name"]: c["detail"] for c in
             transit_checks.check_line(design, r, {"a": clear}, sections=["a"])["checks"]}
     assert whole["clearance"] == "90 checked" and part["clearance"] == "45 checked"
+
+
+def test_check_line_runs_only_the_named_checks(tmp_path):
+    design, r, sites = _built(tmp_path, kind="road")
+    report = transit_checks.check_line(design, r, sites, checks=["light", "walk"])
+    assert [c["name"] for c in report["checks"]] == ["walk", "light"]        # in the order of CHECKS
+    assert report["ok"]
+    with pytest.raises(ValueError, match="no check named bogus"):
+        transit_checks.check_line(design, r, sites, checks=["light", "bogus"])

@@ -87,3 +87,25 @@ def test_route_command_writes_route_report_previews_and_reads(tmp_path):
     assert (project / "terrain/previews/north-line-route.png").exists()
     assert data["report"]["reads"][0]["out"] == "site/north-line-s01"
     assert data["report"]["length"] == 150
+
+
+def test_section_floor_reaches_the_lowest_ground_under_the_box(tmp_path):
+    from sitegen import make_site
+    from terrain import corridor
+
+    length = 40
+    nx, nz = length + 60, 41
+    ground = np.full((nx, nz), 64.0)
+    ground[:, 36:39] = 50.0                     # a trench at z 16-18, under the box margin only
+    make_heights(tmp_path / "heights.json", (-30, -20), ground)
+    design = td.parse_line(_design_data(length, **{"from": {"at": [0, 63, 10]},
+                                                   "to": {"at": [length - 1, 63, 10]}}), tmp_path)
+    r = route.plan_route(design, route.load_grid(design.heights))
+    section = r.sections[0]
+    assert all(g == 64 for g in r.ground) and section.box[1] <= 50 - 6
+    x1, _, z1, x2, _, z2 = section.box
+    columns = {(x, z): int(ground[x + 30, z + 20]) if -20 <= z <= 20 else 64
+               for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)}
+    site = make_site(tmp_path / "site", section.box, ground=columns, world="world")
+    _, mass, _ = corridor.graded_site(design, r, section, site)      # no "read lower to find the ground"
+    assert mass is not None

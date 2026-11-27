@@ -555,7 +555,8 @@ def check_form_layers(site: Site, layers: list[tuple[str, LiveWrite]], *, max_co
     return tiles
 
 
-def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns, *, require_relief=True):
+def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns, *, require_relief=True,
+             check_terraces=True):
     ox = integer_level(recipe["origin"][0], "origin x")
     oz = integer_level(recipe["origin"][2], "origin z")
     xi, zi = ox - site.box[0], oz - site.box[2]
@@ -573,6 +574,7 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns,
         water=water,
         existing_water=liquid_levels(site, surf=surf, excluded=drained_cells).level[crop],
         require_relief=require_relief,
+        check_terraces=check_terraces,
     )
     if not report.ok:
         raise VerifyError(str(report))
@@ -690,6 +692,7 @@ def _run(
     seam_rows=None,
     extra_notes=(),
     require_relief=True,
+    check_terraces=True,
 ):
     element = _label(element)
     first_phase = integer_level(first_phase, "first_phase")
@@ -704,7 +707,8 @@ def _run(
     if not preview:
         _check_approvals(bodies, drain_approved)
     report, layers, flow, reach, surface, stats, visible_water = _prepare(
-        hf, spec, site, recipe, water, forms, protect, bodies, max_columns, require_relief=require_relief
+        hf, spec, site, recipe, water, forms, protect, bodies, max_columns, require_relief=require_relief,
+        check_terraces=check_terraces,
     )
     rows, payloads, boxes = [], [], []
 
@@ -845,6 +849,7 @@ def emit_field(
     held_columns: int = 0,
     preview: bool = False,
     require_relief: bool = True,
+    check_terraces: bool = True,
 ) -> EmitResult:
     return _run(
         hf,
@@ -865,6 +870,7 @@ def emit_field(
         extra_notes=extra_notes,
         drain_approved=drain_approved,
         require_relief=require_relief,
+        check_terraces=check_terraces,
     )
 
 

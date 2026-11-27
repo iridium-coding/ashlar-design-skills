@@ -24,8 +24,6 @@ from .site import (
     _AIR,
     ATTACHED,
     LEAVES,
-    NATURAL,
-    NETHER_NATURAL,
     PLANTS,
     TRUNK,
     Site,
@@ -62,7 +60,6 @@ _VEGETATION = PLANTS | LEAVES | ATTACHED | TRUNK | frozenset(f"minecraft:{b}" fo
     "small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud", "crimson_roots", "warped_roots",
     "nether_sprouts", "crimson_fungus", "warped_fungus", "weeping_vines", "weeping_vines_plant",
     "twisting_vines", "twisting_vines_plant"))
-_TERRAIN = NATURAL | NETHER_NATURAL
 
 
 # ------------------------------------------------------------------ helpers
@@ -94,12 +91,16 @@ def _carvable(design: LineDesign, state: str) -> bool:
     return carvable(state, natural_for(design.dimension))
 
 
-def _solid(state: str) -> bool:
-    """Ground a pier stands on: a full cube (or natural terrain), not air, a liquid or a plant."""
+def pier_ground(state: str, dimension: str) -> bool:
+    """Whether a block is ground a pier stands on in `dimension`.
+
+    A full cube, or a natural block of the dimension, that is not air, a liquid, a plant or
+    another growth (vines, roots, lichen, cobweb, dripstone).
+    """
     block = base_id(state)
     if _is_air(state) or liquid_kind(state) is not None or block in _VEGETATION:
         return False
-    return block in _TERRAIN or full_cube(state)
+    return block in natural_for(dimension) or full_cube(state)
 
 
 def _runs(route: Route, kind: str) -> list[tuple[int, int]]:
@@ -121,7 +122,8 @@ def _boosters(design: LineDesign, route: Route) -> set[Cell]:
     return {(c.x, c.y - 1, c.z) for c in rail_cells(design, route) if c.booster}
 
 
-def _scan(site: Site, x: int, z: int, top: int, depth: int | None = None) -> tuple[list[tuple[int, str]], str | None]:
+def _scan(design: LineDesign, site: Site, x: int, z: int, top: int,
+          depth: int | None = None) -> tuple[list[tuple[int, str]], str | None]:
     """The cells from y=`top` down to the first solid block, with that block.
 
     Cells above the read are skipped. With `depth` the scan gives up after that many cells
@@ -134,7 +136,7 @@ def _scan(site: Site, x: int, z: int, top: int, depth: int | None = None) -> tup
     cells: list[tuple[int, str]] = []
     for y in range(min(top, y2), bottom - 1, -1):
         state = site.block(x, y, z)
-        if _solid(state):
+        if pier_ground(state, design.dimension):
             return cells, state
         cells.append((y, state))
     return cells, None
@@ -222,7 +224,7 @@ def bridge_layers(design: LineDesign, route: Route, section: Section, site: Site
         for i in (j for j in indices if first <= j <= last):
             stats["piers"] += 1
             for x, z in footprint(route, i, lo, hi):
-                _claim(design, _scan(site, x, z, deck[(x, z)][0] - 1)[0], x, z, piers, stats)
+                _claim(design, _scan(design, site, x, z, deck[(x, z)][0] - 1)[0], x, z, piers, stats)
         if arch:
             _arch(design, route, site, indices, (lo, hi), (first, last), piers, stats)
     _tube_piers(design, route, section, site, piers, stats)
@@ -243,7 +245,7 @@ def _arch(design: LineDesign, route: Route, site: Site, indices: list[int], span
             top = math.floor(route.levels[i]) - 2
             for x, z in footprint(route, i, lo, hi):
                 if site.box[0] <= x <= site.box[3] and site.box[2] <= z <= site.box[5]:
-                    found, _ = _scan(site, x, z, top)
+                    found, _ = _scan(design, site, x, z, top)
                     scans[(i, x, z)] = found
                     lows.append(found[-1][0] - 1 if found else top)
                 elif route.ground[i] is not None:
@@ -265,7 +267,7 @@ def _tube_piers(design: LineDesign, route: Route, section: Section, site: Site, 
             top = _floor(route, i) - 1
             columns = {}
             for x, z in footprint(route, i, lo - 1, hi + 1):
-                found, ground = _scan(site, x, z, top, TUBE_REACH)
+                found, ground = _scan(design, site, x, z, top, TUBE_REACH)
                 if ground is not None and not any(liquid_kind(s) for _, s in found):
                     columns[(x, z)] = found
             if route.cells[i] in columns:
@@ -335,11 +337,14 @@ def tunnel_layers(design: LineDesign, route: Route, section: Section, site: Site
     cell; the shell is one ring around it (floor, walls, roof). A tube is the same section
     standing free: its floor is the deck. The end cells of a run use the ``edge`` block (the
     mouth). Every ``light_spacing`` cells a wall block at ``level + 1`` becomes
-    ``lights.block``, alternating sides. `light_spacing` ``None`` means ``design.lights.spacing``.
+    ``lights.block``, alternating sides; where that cannot reach ``lights.minimum`` on the far side
+    (``14 - width < minimum``) both walls get a lamp at the first standing height instead, and
+    so does each mouth. `light_spacing` ``None`` means ``design.lights.spacing``.
     """
     spacing = design.lights.spacing if light_spacing is None else light_spacing
     lo, hi = _span(design.tunnels.width)
     last = len(route.cells) - 1
+    pairs = 14 - design.tunnels.width < design.lights.minimum
     bored = ("tunnel", "tube")
     bore: set[Cell] = set()
     shell: dict[Cell, str] = {}
@@ -349,13 +354,19 @@ def tunnel_layers(design: LineDesign, route: Route, section: Section, site: Site
             continue
         cells, ring = _section_cells(design, route, i)
         bore |= cells
-        if i == 0 or i == last or route.kinds[i - 1] not in bored or route.kinds[i + 1] not in bored:
+        mouth = i == 0 or i == last or route.kinds[i - 1] not in bored or route.kinds[i + 1] not in bored
+        if mouth:
             ring = {c: "edge" for c in ring}
         for cell, role in ring.items():
             shell.setdefault(cell, role)
-        if i % spacing == 0:
-            x, z = side_cell(route, i, lo - 1 if (i // spacing) % 2 else hi + 1)
-            lamps.add((x, _base(route, i) + 1, z))
+        if i % spacing == 0 or (pairs and mouth):
+            if pairs:
+                for off in (lo - 1, hi + 1):
+                    x, z = side_cell(route, i, off)
+                    lamps.add((x, _base(route, i), z))
+            else:
+                x, z = side_cell(route, i, lo - 1 if (i // spacing) % 2 else hi + 1)
+                lamps.add((x, _base(route, i) + 1, z))
     for cell in bore:
         shell.pop(cell, None)
     return _enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
@@ -406,9 +417,15 @@ def _room(design: LineDesign, route: Route, site: Site, i: int,
                 for y in range(floor_y, base + height + 1):
                     if not (door and base <= y < base + min(height, design.tunnels.height)):
                         shell[(x, y, z)] = "lining"
-    for t, s in ((half_l + 1, -1), (half_l + 1, 1), (-1, -half_w - 1), (1, -half_w - 1),
-                 (-1, half_w + 1), (1, half_w + 1)):
-        lamps.add((x0 + t * dx + s * px, base + height - 2, z0 + t * dz + s * pz))
+    if design.lights.minimum > 9:
+        # Every side-wall and far-wall cell at the first standing height: no floor cell is more than 3 away.
+        ring = [(t, s) for t in range(-half_l, half_l + 1) for s in (-half_w - 1, half_w + 1)]
+        ring += [(half_l + 1, s) for s in range(-half_w, half_w + 1)]
+        lamps |= {(x0 + t * dx + s * px, base, z0 + t * dz + s * pz) for t, s in ring}
+    else:
+        for t, s in ((half_l + 1, -1), (half_l + 1, 1), (-1, -half_w - 1), (1, -half_w - 1),
+                     (-1, half_w + 1), (1, half_w + 1)):
+            lamps.add((x0 + t * dx + s * px, base + height - 2, z0 + t * dz + s * pz))
     return _enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
 
 

@@ -141,7 +141,7 @@ STYLES: dict[str, dict[str, dict[str, int]]] = {
                  edge={"polished_blackstone_brick_slab": 1}, deck={"polished_blackstone_bricks": 1},
                  pier={"polished_blackstone_bricks": 3, "blackstone": 1},
                  lining={"nether_bricks": 5, "cracked_nether_bricks": 1}, railing={"nether_brick_fence": 1},
-                 guard={"nether_brick_fence": 1}, lamp_post={"nether_brick_fence": 1}, lamp={"soul_lantern": 1},
+                 guard={"nether_brick_fence": 1}, lamp_post={"nether_brick_fence": 1}, lamp={"lantern": 1},
                  end_block={"nether_bricks": 1}, platform={"polished_blackstone": 1}, ice={"packed_ice": 1}),
 }
 

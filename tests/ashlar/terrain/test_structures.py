@@ -5,7 +5,7 @@ from itertools import pairwise
 
 import pytest
 from sitegen import STONE, WATER, make_site
-from terrain import blocks, route, structures, track
+from terrain import blocks, route, structures, track, transit_checks
 from terrain import transit_design as td
 from terrain.route import Route, Section
 from terrain.site import base_id
@@ -404,3 +404,79 @@ def test_a_half_level_road_slab_survives_in_either_order(tmp_path, tunnel_first)
     assert "_slab" in after.block(x, 65, z)
     assert base_id(after.block(x, 64, z)) in design.palette["surface"]
     assert all(after.block(x, y, z) == "minecraft:air" for y in range(66, 70))
+
+
+# ------------------------------------------------------------------ follow-up 1: Nether light
+_ORDER = {"carve": 0, "build": 1, "track": 2, "light": 3}
+_NETHER = {"dimension": "nether", "world": "world_nether"}
+
+
+def _composed(design, r, section, site, spacing=None):
+    layers = [*structures.bridge_layers(design, r, section, site, light_spacing=spacing)[0],
+              *structures.tunnel_layers(design, r, section, site, light_spacing=spacing),
+              *structures.stop_layers(design, r, section, site, light_spacing=spacing),
+              *track.track_layers(design, r, section, site, light_spacing=spacing)]
+    layers.sort(key=lambda layer: _ORDER[layer[0]])
+    return {section.name: blocks.apply_writes(site, layers)}
+
+
+def _light_check(design, r, sites):
+    return next(c for c in transit_checks.check_line(design, r, sites)["checks"] if c["name"] == "light")
+
+
+def test_a_nether_rail_tunnel_is_lit_to_twelve(tmp_path):
+    line = _row(40)
+    design, r, section, site = _build(tmp_path, line, [70] * 40, ["tunnel"] * 40, ground=90, extra=_NETHER)
+    assert design.lights.spacing == 4
+    check = _light_check(design, r, _composed(design, r, section, site))
+    assert check["ok"], check
+
+
+def test_a_nether_ice_tunnel_is_lit_to_twelve(tmp_path):
+    line = _row(40)
+    design, r, section, site = _build(tmp_path, line, [70] * 40, ["tunnel"] * 40, mode="ice", ground=90,
+                                      extra=_NETHER)
+    check = _light_check(design, r, _composed(design, r, section, site, 2))
+    assert check["ok"], check
+
+
+def test_a_nether_room_is_lit_to_twelve(tmp_path, monkeypatch):
+    monkeypatch.setattr(transit_checks, "MAX_CELLS", 10_000)
+    line = _row(14)
+    design, r, section, site = _build(tmp_path, line, [65] * 14, ["grade"] * 14, end_stop="room",
+                                      extra=_NETHER)
+    check = _light_check(design, r, _composed(design, r, section, site, 4))
+    x_end = r.cells[-1][0]
+    room = {tuple(c) for c in check["cells"] if abs(c[0] - x_end) <= 2 and abs(c[2] - Z0) <= 2}
+    assert not room
+
+
+def test_the_overworld_tunnel_keeps_alternating_single_lamps(tmp_path):
+    design, r, section, site = _hill_tunnel(tmp_path)
+    after = blocks.apply_writes(site, structures.tunnel_layers(design, r, section, site, light_spacing=6))
+    x, z = r.cells[12]
+    assert after.block(x, 66, z + 2) == design.lights.block
+    assert after.block(x, 66, z - 2) != design.lights.block
+
+
+def test_the_nether_style_lamp_is_a_lantern(tmp_path):
+    design = _nether_line(tmp_path)[0]
+    assert design.palette["lamp"] == {"minecraft:lantern": 1}
+
+
+@pytest.mark.parametrize(("state", "dimension", "ground"), [
+    ("minecraft:stone", "overworld", True),
+    ("minecraft:oak_leaves[distance=1,persistent=false]", "overworld", False),
+    ("minecraft:short_grass", "overworld", False),
+    ("minecraft:water[level=0]", "overworld", False),
+    ("minecraft:air", "overworld", False),
+    ("minecraft:oak_planks", "overworld", True),
+    ("minecraft:oak_slab[type=bottom,waterlogged=false]", "overworld", False),
+    ("minecraft:netherrack", "nether", True),
+    ("minecraft:basalt[axis=y]", "nether", True),
+    ("minecraft:crimson_roots", "nether", False),
+    ("minecraft:weeping_vines[age=3]", "nether", False),
+    ("minecraft:lava[level=0]", "nether", False),
+])
+def test_pier_ground(state, dimension, ground):
+    assert structures.pier_ground(state, dimension) is ground

@@ -97,7 +97,7 @@ def test_formation_half_per_mode(tmp_path):
 
 def test_nether_defaults_to_the_nether_style(tmp_path):
     d = td.parse_line(_base(world="nether", route="straight"), tmp_path)
-    assert d.style == "nether" and d.palette["lamp"] == {"minecraft:soul_lantern": 1}
+    assert d.style == "nether" and d.palette["lamp"] == {"minecraft:lantern": 1}
     assert d.palette["ice"] == {"minecraft:packed_ice": 1}
 
 

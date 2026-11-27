@@ -81,13 +81,38 @@ def test_route_refuses_endpoints_on_null_or_outside_the_grid(tmp_path):
         route.search_cells(_design(tmp_path, mode="road", start=[5, 65, 20], end=[70, 65, 20], via=[[300, 5]]), grid)
 
 
-def test_search_passes_through_via_and_prefers_dry_columns(tmp_path):
+def test_search_passes_through_via(tmp_path):
+    d = _design(tmp_path, mode="road", start=[5, 65, 10], end=[55, 65, 10], via=[[30, 35]])
+    cells, _ = route.search_cells(d, _grid(60, 40, 64))
+    assert (30, 35) in cells and cells[0] == (5, 10) and cells[-1] == (55, 10)
+
+
+def test_search_detours_around_wet_columns(tmp_path):
     ground = np.full((60, 40), 64.0)
     surface = ground.copy()
-    surface[20:30, 0:30] = 66
-    d = _design(tmp_path, mode="road", start=[5, 65, 10], end=[55, 65, 10], via=[[30, 35]])
+    surface[20:41, 0:15] = 66
+    d = _design(tmp_path, mode="road", start=[5, 65, 10], end=[55, 65, 10])
     cells, _ = route.search_cells(d, route.grid_from_heights(make_heights(None, (0, 0), ground, surface=surface)))
-    assert (30, 35) in cells and cells[0] == (5, 10) and cells[-1] == (55, 10)
+    assert cells[0] == (5, 10) and cells[-1] == (55, 10)
+    assert not any(20 <= x <= 40 and z < 15 for x, z in cells)
+
+
+def test_search_prefers_level_ground_over_a_side_slope(tmp_path):
+    ground = np.full((80, 40), 64.0)
+    for z in range(14, 27):
+        ground[20:51, z] = 64 + 2 * (z - 20)
+    d = _design(tmp_path, mode="road", start=[5, 65, 20], end=[75, 65, 20])
+    cells, _ = route.search_cells(d, route.grid_from_heights(make_heights(None, (0, 0), ground)))
+    assert not any(20 <= x <= 50 and 14 <= z <= 26 for x, z in cells)
+
+
+def test_large_grid_routes_from_a_coarse_block_holding_a_null_column(tmp_path):
+    ground = np.full((600, 450), 64.0)
+    ground[11, 11] = np.nan
+    d = _design(tmp_path, mode="road", start=[10, 65, 10], end=[580, 65, 430])
+    cells, _ = route.search_cells(d, route.grid_from_heights(make_heights(None, (0, 0), ground)))
+    assert cells[0] == (10, 10) and cells[-1] == (580, 430)
+    assert (11, 11) not in cells
 
 
 def test_large_grid_is_searched_coarse_then_refined(tmp_path):

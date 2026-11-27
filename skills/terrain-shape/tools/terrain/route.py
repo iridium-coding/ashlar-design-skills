@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import warnings
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -110,7 +111,7 @@ def _blocked_mask(design: LineDesign, grid: Grid) -> np.ndarray:
     return blocked
 
 
-def _check_point(label: str, x: int, z: int, grid: Grid, blocked: np.ndarray, design: LineDesign) -> tuple[int, int]:
+def _check_point(label: str, x: int, z: int, grid: Grid, blocked: np.ndarray) -> tuple[int, int]:
     idx = grid.index(x, z)
     if idx is None:
         raise RouteError(f"{label} ({x}, {z}) is outside the heights grid")
@@ -135,7 +136,7 @@ def _astar(ground: np.ndarray, water: np.ndarray, allowed: np.ndarray, start: tu
         dx, dz = abs(i - gx), abs(j - gz)
         return dx + dz if axes_only else math.hypot(dx, dz)
 
-    def slope(gv: float, i: int, j: int, dx: int, dz: int) -> float:
+    def slope(i: int, j: int, dx: int, dz: int) -> float:
         px, pz = -dz, dx
         ai, aj, bi, bj = i + px, j + pz, i - px, j - pz
         if 0 <= ai < nx and 0 <= aj < nz and 0 <= bi < nx and 0 <= bj < nz:
@@ -166,8 +167,10 @@ def _astar(ground: np.ndarray, water: np.ndarray, allowed: np.ndarray, start: tu
             ni, nj = i + dx, j + dz
             if not (0 <= ni < nx and 0 <= nj < nz) or not ok[ni][nj]:
                 continue
+            if dx and dz and not ok[i + dx][j] and not ok[i][j + dz]:
+                continue  # no diagonal squeezing between two blocked cells
             ng = g[ni][nj]
-            step = math.hypot(dx, dz) * (1 + 0.5 * abs(ng - gv) + 0.3 * slope(ng, ni, nj, dx, dz))
+            step = math.hypot(dx, dz) * (1 + 0.5 * abs(ng - gv) + 0.3 * slope(ni, nj, dx, dz))
             if w[ni][nj]:
                 step += WATER_PENALTY
             if axes_only and d != nd - 1 and d != k:
@@ -204,7 +207,8 @@ def _coarsen(grid: Grid, blocked: np.ndarray, f: int) -> tuple[np.ndarray, np.nd
     pad_null = pad(np.zeros((nx, nz), dtype=bool), True)  # padded cells are not real columns
     any_null = blocks(np.isnan(g) & ~pad_null).any(axis=(1, 3))
     real = blocks(~pad_null).any(axis=(1, 3))
-    with np.errstate(invalid="ignore"):
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # all-null blocks have no mean
         gm = np.nanmean(blocks(g), axis=(1, 3))
         sm = np.nanmean(blocks(s), axis=(1, 3))
     gm = np.where(any_null | ~real, np.nan, gm)
@@ -221,7 +225,11 @@ def _leg_path(a: tuple[int, int], b: tuple[int, int], grid: Grid, blocked: np.nd
         f = math.ceil(math.sqrt(columns / COARSE_LIMIT))
         cg, cs, callowed = _coarsen(grid, blocked, f)
         ca, cb = (a[0] // f, a[1] // f), (b[0] // f, b[1] // f)
-        callowed[ca] = callowed[cb] = True
+        for cell in (ca, cb):  # forced-open endpoint blocks need a finite ground
+            callowed[cell] = True
+            if np.isnan(cg[cell]):
+                real = grid.ground[cell[0] * f:(cell[0] + 1) * f, cell[1] * f:(cell[1] + 1) * f]
+                cg[cell] = cs[cell] = np.nanmean(real)
         coarse = _astar(cg, cs > cg, callowed, ca, cb, axes_only)
         if coarse is None:
             raise RouteError(f"no route {what}: null columns, avoid boxes or the grid edge block every path")
@@ -280,7 +288,7 @@ def search_cells(design: LineDesign, grid: Grid) -> tuple[list[tuple[int, int]],
     labelled = [("from", *_points(design)[0])]
     labelled += [("via", x, z) for x, z in design.via]
     labelled.append(("to", design.end.x, design.end.z))
-    idx = [_check_point(label, x, z, grid, blocked, design) for label, x, z in labelled]
+    idx = [_check_point(label, x, z, grid, blocked) for label, x, z in labelled]
     path: list[tuple[int, int]] = []
     for n, (a, b) in enumerate(pairwise(idx)):
         what = f"from ({labelled[n][1]}, {labelled[n][2]}) to ({labelled[n + 1][1]}, {labelled[n + 1][2]})"

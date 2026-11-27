@@ -181,12 +181,6 @@ def test_rail_lamp_posts_alternate_sides_on_grade(tmp_path):
     assert after.block(18, 65, 22) == "minecraft:air"      # bridge cells light themselves
 
 
-def test_a_terminus_gets_an_end_block_past_the_last_rail(tmp_path):
-    design, r, section, site = _rail_line(tmp_path, levels=[65] * 30, end_stop="terminus")
-    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
-    assert base_id(after.block(30, 65, 20)) in design.palette["end_block"]
-
-
 def test_layers_come_in_order_and_skip_empty_ones(tmp_path):
     design, r, section, site = _rail_line(tmp_path, levels=[65] * 30)
     names = [n for n, _ in track.track_layers(design, r, section, site)]
@@ -256,3 +250,48 @@ def test_path_steps_get_stairs_facing_up_the_slope(tmp_path):
     down = _path_line(tmp_path, [66] * 5 + [65] * 5)
     after = blocks.apply_writes(down[3], track.track_layers(*down))
     assert after.block(4, 65, 20).endswith("_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]")
+
+
+def _holes(site, surface_ids, cells, y):
+    """Non-surface cells at height y whose opposite neighbours on an axis are both surface."""
+    x1, _, z1, x2, _, z2 = site.box
+    solid = {(x, z) for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)
+             if base_id(site.block(x, y, z)) in surface_ids}
+    near = {(x + dx, z + dz) for x, z in cells for dx in range(-8, 9) for dz in range(-8, 9)}
+    return [(x, z) for x, z in near - solid
+            if {(x - 1, z), (x + 1, z)} <= solid or {(x, z - 1), (x, z + 1)} <= solid]
+
+
+def _road_surface_ids(design):
+    return set(design.palette["surface"])
+
+
+def test_a_booster_before_a_corner_keeps_its_redstone_block(tmp_path):
+    cells = [(x, Z0) for x in range(26)] + [(25, z) for z in range(Z0 + 1, Z0 + 20)]
+    design, r, section, site = _line(tmp_path, "rail", cells, [65] * len(cells), corners=[25])
+    assert track.rail_cells(design, r)[24].booster
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert after.block(24, 64, Z0) == "minecraft:redstone_block"
+    assert after.block(24, 65, Z0).startswith("minecraft:powered_rail")
+
+
+def test_a_diagonal_road_has_no_holes_between_the_kerbs(tmp_path):
+    cells = [(i, Z0 + i) for i in range(20)]
+    design, r, section, site = _line(tmp_path, "road", cells, [65.0] * 20)
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert _holes(after, _road_surface_ids(design), cells, 64) == []
+
+
+def test_a_road_bend_fills_the_outer_corner(tmp_path):
+    cells = [(x, Z0) for x in range(16)] + [(15, z) for z in range(Z0 + 1, Z0 + 16)]
+    design, r, section, site = _line(tmp_path, "road", cells, [65.0] * len(cells))
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert _holes(after, _road_surface_ids(design), cells, 64) == []
+    assert base_id(after.block(16, 64, Z0 - 1)) in design.palette["surface"]
+
+
+def test_a_diagonal_path_step_gets_stairs_facing_up_the_slope(tmp_path):
+    cells = [(i, Z0 + i) for i in range(10)]
+    design, r, section, site = _line(tmp_path, "path", cells, [65] * 5 + [66] * 5)
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert after.block(5, 65, Z0 + 5).endswith("_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]")

@@ -57,6 +57,14 @@ def _toward(a: tuple[int, int, float], b: tuple[int, int, float]) -> str:
         raise ValueError(f"rail cells must be axis neighbours, got {a[:2]} and {b[:2]}") from None
 
 
+def _facing(a: tuple[int, int], b: tuple[int, int]) -> str:
+    """The compass direction from a to b along the dominant axis of the step (x on a tie)."""
+    dx, dz = b[0] - a[0], b[1] - a[1]
+    if abs(dx) >= abs(dz):
+        return "east" if dx > 0 else "west"
+    return "south" if dz > 0 else "north"
+
+
 def _one_higher(neighbour: tuple[int, int, float] | None, cell: tuple[int, int, float]) -> bool:
     return neighbour is not None and abs(neighbour[2] - cell[2] - 1) < 1e-9
 
@@ -121,13 +129,26 @@ def _heading(route: Route, i: int, *, incoming: bool = False) -> tuple[int, int]
     return (_sign(b[0] - a[0]), _sign(b[1] - a[1]))
 
 
+def _cross(x: int, z: int, heading: tuple[int, int], lo: int, hi: int) -> set[tuple[int, int]]:
+    """Cells at offsets lo..hi across `heading`; a diagonal heading takes both axis cross-sections."""
+    axes = [heading] if 0 in heading else [(heading[0], 0), (0, heading[1])]
+    return {(x - dz * off, z + dx * off) for dx, dz in axes for off in range(lo, hi + 1)}
+
+
 def _footprint(route: Route, i: int, lo: int, hi: int) -> set[tuple[int, int]]:
-    """Cells at offsets lo..hi across the line at cell i; a corner takes both legs."""
+    """Cells at offsets lo..hi across the line at cell i.
+
+    Where the heading changes (a corner or a bend) the incoming and outgoing cross-sections
+    are joined and the rectangle they span is filled, so the outer wedge is not left empty.
+    """
     x, z = route.cells[i]
-    headings = {_heading(route, i)}
-    if i in route.corners:
-        headings.add(_heading(route, i, incoming=True))
-    return {(x - dz * off, z + dx * off) for dx, dz in headings for off in range(lo, hi + 1)}
+    out = _heading(route, i)
+    cells = _cross(x, z, out, lo, hi)
+    if i > 0 and _heading(route, i, incoming=True) != out:
+        cells |= _cross(x, z, _heading(route, i, incoming=True), lo, hi)
+        xs, zs = [c[0] for c in cells], [c[1] for c in cells]
+        cells = {(a, b) for a in range(min(xs), max(xs) + 1) for b in range(min(zs), max(zs) + 1)}
+    return cells
 
 
 def _side_cell(route: Route, i: int, offset: int) -> tuple[int, int]:
@@ -224,9 +245,9 @@ def _lights(design: LineDesign, route: Route, section: Section, spacing: int, lo
 # ------------------------------------------------------------------ rail
 def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
     rails = rail_cells(design, route)
-    n = len(route.cells)
     carve_at: dict[tuple[int, int], int] = {}
     build: dict[tuple[int, int, int], str] = {}
+    power: dict[tuple[int, int, int], str] = {}
     track: dict[tuple[int, int, int], str] = {}
     for i in range(section.start, section.end + 1):
         rc = rails[i]
@@ -236,15 +257,11 @@ def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacin
             if route.kinds[i] in BED_KINDS:
                 build[(x, rc.y - 1, z)] = _pick(design, "ballast", x, rc.y - 1, z)
         if rc.booster:
-            build[(rc.x, rc.y - 1, rc.z)] = REDSTONE_BLOCK
+            power[(rc.x, rc.y - 1, rc.z)] = REDSTONE_BLOCK
         track[(rc.x, rc.y, rc.z)] = _rail_state(rc)
-        for stop, at in ((design.start.stop, 0), (design.end.stop, n - 1)):
-            if stop == "terminus" and i == at:
-                dx, dz = _heading(route, i, incoming=at > 0)
-                sx, sz = (1 if at else -1) * dx, (1 if at else -1) * dz
-                build[(rc.x + sx, rc.y, rc.z + sz)] = _pick(design, "end_block", rc.x + sx, rc.y, rc.z + sz)
     light: dict[tuple[int, int, int], str] = {}
     _lights(design, route, section, spacing, -1, 1, lambda i: rails[i].y, LIT_KINDS, light)
+    build.update(power)     # every bed first, so no ballast replaces a booster's redstone block
     return _layers(site, carve=_carve(site, carve_at), build=build, track=track, light=light)
 
 
@@ -307,7 +324,7 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
         level = int(route.levels[i])
         for j in (i - 1, i + 1):
             if 0 <= j < len(route.cells) and int(route.levels[j]) == level - 1:
-                facing = _toward((*route.cells[j], 0), (*route.cells[i], 0))
+                facing = _facing(route.cells[j], route.cells[i])
                 for x, z in _footprint(route, i, *spans[i]):
                     if not base_id(track[(x, level - 1, z)]).endswith("_stairs"):
                         track[(x, level - 1, z)] = _stairs(track[(x, level - 1, z)], facing)

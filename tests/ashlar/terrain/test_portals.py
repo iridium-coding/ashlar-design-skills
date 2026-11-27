@@ -68,9 +68,9 @@ def _bare_sites(tmp_path, design, extra=None, nether_lava=None, lava_everywhere=
     return sites
 
 
-def _pair_sites(tmp_path, extra_portal=None, doorways=(), nether_lava=None):
+def _pair_sites(tmp_path, extra_portal=None, doorways=(), nether_lava=None, axis="x"):
     """The design (nether end given at [10, 70, 5]) and both reads with the pair built."""
-    design = _design(tmp_path, nether_at=[10, 70, 5], doorways=[list(d) for d in doorways])
+    design = _design(tmp_path, nether_at=[10, 70, 5], axis=axis, doorways=[list(d) for d in doorways])
     extra = {extra_portal[:2] and (extra_portal[0], extra_portal[1]): PORTAL_X} if extra_portal else {}
     sites = _bare_sites(tmp_path, design, extra, nether_lava)
     if nether_lava is None:
@@ -235,8 +235,9 @@ def test_check_portal_passes_a_built_pair_and_fails_a_broken_one(tmp_path):
 def test_check_portal_fails_a_dark_landing(tmp_path):
     design, sites = _pair_sites(tmp_path)
     ox, oy, oz = portals.frame_origin(design, "nether")
+    # the lamp floors in front of the portal faces are what light the opening: take them away
     dark = blocks.apply_writes(sites["nether"], [("x", blocks.cells_write(
-        {(ox - 2, oy + 1, z): "minecraft:bricks" for z in range(oz - 6, oz + 7)}))])
+        {(ox + a, oy, oz + p): "minecraft:bricks" for a in (1, 2) for p in (-1, 1)}))])
     assert "light" in {c["name"] for c in portals.check_portal(design, {**sites, "nether": dark})["checks"] if not c["ok"]}
 
 
@@ -246,11 +247,11 @@ def _cli(command, project, *args):
                           capture_output=True, text=True, check=False)
 
 
-def _portal_project(tmp_path, **extra):
+def _portal_project(tmp_path, axis="x", **extra):
     project = tmp_path / "proj"
     (project / "terrain").mkdir(parents=True)
     data = _data(**extra)
-    data["overworld"] = {"world": "world", "at": [3600, 70, 0], "axis": "x"}
+    data["overworld"] = {"world": "world", "at": [3600, 70, 0], "axis": axis}
     (project / DESIGN).write_text(json.dumps(data), encoding="utf-8")
     return project
 
@@ -274,10 +275,19 @@ def test_portal_command_lists_reads_then_emits_phases_for_both_worlds(tmp_path):
     assert worlds == {"world", "world_nether"}
     ids = [int(p.name.split("-")[0]) for p in files]
     assert ids == list(range(3, 3 + len(ids)))
-    assert (project / "terrain/east-gate.plan-rows.toon").exists()
-    assert "transit" in (project / "terrain/east-gate.plan-rows.toon").read_text()
-    rows = json.loads(second.stdout)["phases"]
-    assert rows[0]["world"] == "world" and rows[-1]["world"] == "world_nether"
+    assert not (project / "terrain/east-gate.plan-rows.toon").exists()
+    overworld = (project / "terrain/east-gate-overworld.plan-rows.toon").read_text()
+    nether = (project / "terrain/east-gate-nether.plan-rows.toon").read_text()
+    assert "transit[1]{file}:\n    terrain/east-gate.portal.json" in nether and "transit[0]" in overworld
+    assert "east-gate-overworld-" in overworld and "east-gate-nether-" not in overworld
+    assert "east-gate-nether-" in nether and "east-gate-overworld-" not in nether
+    assert "world" not in overworld.split("phases")[1].splitlines()[0]          # no per-row world column
+    out = json.loads(second.stdout)
+    assert set(out["report"]["boxes"]) == {"overworld", "nether"} and set(out["bbox"]) == {"overworld", "nether"}
+    ow_rows = [r for r in out["phases"] if "overworld" in r["name"]]
+    box = out["report"]["boxes"]["overworld"]
+    assert box == [min(r["from"][i] for r in ow_rows) if i < 3 else max(r["to"][i - 3] for r in ow_rows)
+                   for i in range(6)] == out["bbox"]["overworld"]
 
 
 def test_portal_preview_writes_the_report_only(tmp_path):
@@ -285,7 +295,9 @@ def test_portal_preview_writes_the_report_only(tmp_path):
     _write_reads(project)
     run = _cli("portal", project, "--project", project, "--first-phase", "1", "--preview")
     assert run.returncode == 0, run.stderr
-    assert not (project / "phases").exists() and (project / "terrain/east-gate.portal-report.json").exists()
+    assert not (project / "phases").exists()
+    assert (project / "terrain/previews/east-gate.portal-report.json").exists()
+    assert not (project / "terrain/east-gate.portal-report.json").exists()
 
 
 def test_portal_command_needs_the_token_for_player_blocks(tmp_path):
@@ -295,9 +307,11 @@ def test_portal_command_needs_the_token_for_player_blocks(tmp_path):
     _write_reads(project, {(ox + 1, oy, oz): "minecraft:bricks"})
     run = _cli("portal", project, "--project", project, "--first-phase", "1")
     assert run.returncode == 1 and "--approve-built" in run.stderr
-    token = json.loads((project / "terrain/east-gate.portal-report.json").read_text())["built"]["token"]
+    assert not (project / "terrain/east-gate.portal-report.json").exists()     # a refused run is no build report
+    token = json.loads((project / "terrain/previews/east-gate.portal-report.json").read_text())["built"]["token"]
     ok = _cli("portal", project, "--project", project, "--first-phase", "1", "--approve-built", token)
     assert ok.returncode == 0, ok.stderr
+    assert (project / "terrain/east-gate.portal-report.json").exists()
 
 
 def test_portal_command_refuses_a_read_of_another_world(tmp_path):
@@ -309,21 +323,26 @@ def test_portal_command_refuses_a_read_of_another_world(tmp_path):
     assert run.returncode == 1 and "elsewhere" in run.stderr
 
 
-def test_transit_check_on_a_portal_design(tmp_path):
-    project = _portal_project(tmp_path)
-    _write_reads(project)
-    assert _cli("portal", project, "--project", project, "--first-phase", "1").returncode == 0
+def _built_reads(project):
+    from terrain.live import decode
     built = {}
     cells: dict = {}
     for path in sorted((project / "phases").glob("*.json"), key=lambda p: int(p.name.split("-")[0])):
         payload = json.loads(path.read_text())
-        from terrain.live import decode
         cells.setdefault(payload["world"], {}).update(decode(payload["fills"]))
-    for dim in ("overworld", "nether"):
+    for dim, world in (("overworld", "world"), ("nether", "world_nether")):
         site = load_site(project / f"site/east-gate-{dim}")
         out = project / "built" / dim
-        write_site(out, blocks.apply_writes(site, [("build", blocks.cells_write(cells["world" if dim == "overworld" else "world_nether"]))]))
+        write_site(out, blocks.apply_writes(site, [("build", blocks.cells_write(cells[world]))]))
         built[dim] = out
+    return built
+
+
+def test_transit_check_on_a_portal_design(tmp_path):
+    project = _portal_project(tmp_path)
+    _write_reads(project)
+    assert _cli("portal", project, "--project", project, "--first-phase", "1").returncode == 0
+    built = _built_reads(project)
     run = _cli("transit-check", project, "--sites", built["overworld"], built["nether"], "--project", project)
     assert run.returncode == 0, run.stdout + run.stderr
     assert {c["name"] for c in json.loads(run.stdout)["checks"]} >= {"frame", "axis", "light", "pair-overworld"}
@@ -333,3 +352,179 @@ def test_transit_check_on_a_portal_design(tmp_path):
     write_site(built["nether"], blocks.apply_writes(site, [("x", blocks.cells_write({gone: AIR}))]))
     bad = _cli("transit-check", project, "--sites", built["overworld"], built["nether"], "--project", project)
     assert bad.returncode == 1
+
+
+# ------------------------------------------------------------------ fix round 1
+def test_a_wide_frame_is_emitted_and_passes_transit_check(tmp_path):
+    project = _portal_project(tmp_path, size=[6, 5])
+    _write_reads(project)
+    run = _cli("portal", project, "--project", project, "--first-phase", "1")
+    assert run.returncode == 0, run.stderr
+    check = _cli("transit-check", project, "--sites", *_built_reads(project).values(), "--project", project)
+    assert check.returncode == 0, check.stdout + check.stderr
+
+
+def test_the_default_landing_lights_every_standing_cell(tmp_path):
+    _, sites = _pair_sites(tmp_path)
+    assert not any("below 12" in n for n in portals.landing_notes(_pair_sites(tmp_path)[0], sites["nether"]))
+
+
+def test_slab_floored_cells_below_twelve_are_noted_not_failed(tmp_path):
+    design, sites = _pair_sites(tmp_path)
+    nether = sites["nether"]
+    lamps = {(x, y, z): "minecraft:bricks" for (x, z), runs in nether.columns.items()
+             for lo, hi, state in runs if "shroomlight" in state for y in range(lo, hi + 1)
+             if z not in (design.nether.at[2] - 1, design.nether.at[2] + 1) or y != 70}
+    dark = blocks.apply_writes(nether, [("x", blocks.cells_write(lamps))])
+    notes = portals.landing_notes(design, dark)
+    assert notes and "landing cells are below 12; the slab floor keeps mobs off them" in notes[0]
+    assert portals.check_portal(design, {**sites, "nether": dark})["ok"]          # slabs are not spawnable
+
+
+def test_standalone_writes_one_plan_per_world(tmp_path):
+    project = _portal_project(tmp_path)
+    _write_reads(project)
+    run = _cli("portal", project, "--project", project, "--first-phase", "1", "--standalone")
+    assert run.returncode == 0, run.stderr
+    ow, ne = (project / "plan-overworld.toon").read_text(), (project / "plan-nether.toon").read_text()
+    assert "world: world\n" in ow and "world: world_nether\n" in ne
+    assert not (project / "plan.toon").exists()
+
+
+def test_a_refused_run_leaves_no_build_report(tmp_path):
+    project = _portal_project(tmp_path)
+    _write_reads(project, {(3601, 70, 0): "minecraft:bricks"})
+    assert _cli("portal", project, "--project", project, "--first-phase", "1").returncode == 1
+    assert not (project / "terrain/east-gate.portal-report.json").exists()
+    assert (project / "terrain/previews/east-gate.portal-report.json").exists()
+
+
+def test_a_doorway_below_the_standing_level_is_refused(tmp_path):
+    design = _design(tmp_path, nether_at=[10, 70, 5], doorways=[[13, 70, 9, "south"]])
+    site = _bare_sites(tmp_path, design)["nether"]
+    with pytest.raises(ValueError, match=r"doorway \[13, 70, 9, 'south'\]"):
+        portals.portal_layers(design, "nether", site)
+
+
+def test_each_end_has_its_own_default_style(tmp_path):
+    design, sites = _pair_sites(tmp_path)
+    ox, oy, oz = portals.frame_origin(design, "overworld")
+    assert sites["overworld"].block(ox + 1, oy, oz + 2) == "minecraft:smooth_stone"
+    assert "nether_bricks" in sites["nether"].block(8, 71, 5) or "shroomlight" in sites["nether"].block(8, 71, 5)
+    assert sites["nether"].block(9, 70, 3) in ("minecraft:nether_bricks", "minecraft:cracked_nether_bricks")
+    styled = _design(tmp_path, nether_at=[10, 70, 5], style="wood")
+    site = _bare_sites(tmp_path, styled)["overworld"]
+    after = blocks.apply_writes(site, portals.portal_layers(styled, "overworld", site))
+    assert after.block(ox + 1, oy, oz + 2) == "minecraft:spruce_planks"
+
+
+WATER = "minecraft:water[level=0]"
+
+
+def test_a_platform_standing_cell_in_water_is_refused_with_the_cell(tmp_path):
+    design = _design(tmp_path, nether_at=[10, 70, 5])
+    site = _bare_sites(tmp_path, design, {("overworld", (81, 71, 43)): WATER})["overworld"]
+    with pytest.raises(route.RouteError, match=r"\(81, 71, 43\)"):
+        portals.portal_layers(design, "overworld", site)
+
+
+def test_a_platform_over_still_water_needs_the_setting_and_is_counted(tmp_path):
+    design = _design(tmp_path, nether_at=[10, 70, 5])
+    site = _bare_sites(tmp_path, design, {("overworld", (81, 70, 43)): WATER})["overworld"]
+    with pytest.raises(route.RouteError, match=r"platform_in_water.*\(81, 70, 43\)|\(81, 70, 43\).*platform_in_water"):
+        portals.portal_layers(design, "overworld", site)
+    allowed = _design(tmp_path, nether_at=[10, 70, 5], platform_in_water=True)
+    assert portals.displaced_water(allowed, site) == 1
+    after = blocks.apply_writes(site, portals.portal_layers(allowed, "overworld", site))
+    assert "water" not in after.block(81, 70, 43)
+
+
+def test_flowing_water_or_lava_in_the_platform_is_always_refused(tmp_path):
+    design = _design(tmp_path, nether_at=[10, 70, 5], platform_in_water=True)
+    for state in ("minecraft:water[level=3]", LAVA):
+        site = _bare_sites(tmp_path, design, {("overworld", (81, 70, 43)): state})["overworld"]
+        with pytest.raises(route.RouteError, match=r"\(81, 70, 43\)"):
+            portals.portal_layers(design, "overworld", site)
+
+
+def test_the_search_origin_is_the_floor_of_the_point():
+    assert portals._block_of((-0.5, 70.2, 0.5)) == (-1, 70, 0)
+
+
+def test_the_winner_is_nearest_then_lower_y_and_ignores_beyond_the_radius():
+    import numpy as np
+    cells = np.array([(0, 5, 0), (0, 3, 0)])
+    assert portals._winner(cells, (0, 4, 0), 128) == (0, 3, 0)
+    assert portals._winner(np.array([(17, 4, 0)]), (0, 4, 0), 16) is None
+    assert portals._winner(np.array([(16, 4, 0)]), (0, 4, 0), 16) == (16, 4, 0)
+    assert portals._winner(np.array([(0, 4, 100)]), (0, 90, 0), 128) == (0, 4, 100)       # any height
+
+
+def _far_nether(tmp_path, **extra):
+    """Both ends given but unrelated: the Nether end is far from where the Overworld one leads."""
+    return _design(tmp_path, nether_at=[500, 70, 5], overworld_at=[80, 70, 40], **extra)
+
+
+def test_a_portal_beyond_the_search_radius_is_ignored_and_one_inside_it_is_not(tmp_path):
+    design = _far_nether(tmp_path)
+    origin = portals._block_of(portals.arrival_points(design, "nether")[0])
+    beyond = {("nether", (origin[0] + 17, origin[1], origin[2])): PORTAL_X}
+    inside_ = {("nether", (origin[0] + 16, origin[1], origin[2])): PORTAL_X}
+    ignored = portals.pair_check(design, _bare_sites(tmp_path / "a", design, beyond))["checks"][1]
+    assert not ignored["ok"] and ignored["cells"] == [] and "no portal block" in ignored["detail"]
+    caught = portals.pair_check(design, _bare_sites(tmp_path / "b", design, inside_))["checks"][1]
+    assert [origin[0] + 16, origin[1], origin[2]] in caught["cells"]
+
+
+def test_pair_check_fails_the_nether_side_when_a_portal_stands_on_an_arrival(tmp_path):
+    design, sites = _pair_sites(tmp_path)
+    origin = portals._block_of(portals.arrival_points(design, "nether")[0])
+    sites["nether"] = blocks.apply_writes(sites["nether"], [("x", blocks.cells_write({origin: PORTAL_X}))])
+    report = portals.pair_check(design, sites)
+    assert [c["ok"] for c in report["checks"]] == [True, False] and list(origin) in report["checks"][1]["cells"]
+
+
+def test_a_read_too_small_for_the_arrival_area_is_refused(tmp_path):
+    design, sites = _pair_sites(tmp_path)
+    small = make_site(tmp_path / "small", (0, 60, 0, 20, 80, 20), world="world")
+    with pytest.raises(ValueError, match="read that box again"):
+        portals.pair_check(design, {**sites, "overworld": small})
+
+
+def test_an_existing_end_writes_nothing_and_is_still_checked(tmp_path):
+    data = _data()
+    data["overworld"] = {"world": "world", "at": [80, 70, 40], "existing": True}
+    data["nether"] = {"world": "world_nether", "at": [10, 70, 5]}
+    design = portals.parse_portal(data, tmp_path)
+    sites = _bare_sites(tmp_path, design)
+    assert portals.portal_layers(design, "overworld", sites["overworld"]) == []
+    report = portals.check_portal(design, sites)
+    assert {c["name"] for c in report["checks"] if not c["ok"]} >= {"frame", "axis", "pair-overworld"}
+
+
+def test_a_z_axis_pair_end_to_end(tmp_path):
+    project = _portal_project(tmp_path, axis="z")
+    _write_reads(project)
+    run = _cli("portal", project, "--project", project, "--first-phase", "1")
+    assert run.returncode == 0, run.stderr
+    check = _cli("transit-check", project, "--sites", *_built_reads(project).values(), "--project", project)
+    assert check.returncode == 0, check.stdout + check.stderr
+    design = portals.load_portal(project / DESIGN, project)
+    assert {c[0] for c in portals.opening(design, "nether")} == {450}
+
+
+def test_a_doorway_opens_a_z_axis_wall(tmp_path):
+    design, sites = _pair_sites(tmp_path, axis="z", doorways=[[14, 71, 7, "east"]])
+    after = sites["nether"]
+    assert after.block(14, 71, 7) == AIR and after.block(16, 71, 7) == AIR and after.block(16, 72, 7) == AIR
+    assert after.block(16, 71, 6).endswith("[type=double,waterlogged=false]")
+    assert portals.check_portal(design, sites)["ok"]
+
+
+def test_no_nether_level_that_fits_is_refused_by_emit(tmp_path):
+    project = _portal_project(tmp_path)
+    design = portals.load_portal(project / DESIGN, project)
+    make_site(project / "site/east-gate-overworld", portals.read_boxes(design)["overworld"], ground=64, world="world")
+    _nether_site(project / "site/east-gate-nether", portals.read_boxes(design)["nether"], lava_everywhere=True)
+    with pytest.raises(route.RouteError, match=r"lava at \("):
+        portals.emit_portal(design, project, first_phase=1)

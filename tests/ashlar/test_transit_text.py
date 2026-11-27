@@ -47,3 +47,18 @@ def test_commands_and_execution_cover_the_ride_test():
     assert "`boxes`" in read("skills/exec-ashlar/reference/execution.md")
     verification = read("skills/exec-ashlar/reference/verification.md")
     assert "`verify/<element>-overworld`" in verification and "`verify/<element>-nether`" in verification
+
+
+def test_portal_pairs_are_two_builds_with_two_plans_and_entries():
+    api = read("skills/terrain-shape/reference/terrain/toolkit-api.md")
+    for needed in ("terrain/<element>-overworld.plan-rows.toon", "terrain/<element>-nether.plan-rows.toon",
+                   "plan-overworld.toon", "plan-nether.toon", "terrain/<element>.portal-report.json",
+                   "terrain/previews/"):
+        assert needed in api, needed
+    assert "`<element>-overworld`" in read("skills/exec-ashlar/reference/registry.md")
+    skill, hub = read("skills/system-transit/SKILL.md"), read("skills/system-transit/reference/nether-hub.md")
+    for text in (skill, hub):
+        assert "`<element>-overworld`" in text and "`<element>-nether`" in text
+        assert "shroomlight" in text
+    assert "standing level" in hub and "lanterns" not in hub.split("## Hubs")[0]
+    assert "bottom-slab floor and lanterns" not in skill

@@ -42,7 +42,15 @@ above the lava sea and below the roof).
 both reads writes per world an obsidian frame, `nether_portal` blocks with the axis
 (placed without physics, so no lighting step) and a landing: a platform in the
 Overworld, an enclosed, lit room in the Nether. The Nether landing gets a
-bottom-slab floor and lanterns, so nothing spawns on it.
+bottom-slab floor and shroomlight in the walls (and as the floor in front of each
+portal face), so nothing spawns on it and every spawnable cell is lit to 12. A
+doorway's `y` is the first open cell, the standing level (frame `at.y + 1` or
+higher): a lower one would cut through the floor and is refused.
+
+A pair is two builds, one per world: `portal` writes
+`terrain/<element>-overworld.plan-rows.toon` and `terrain/<element>-nether.plan-rows.toon`,
+and each is built with its own `exec-ashlar build` and recorded as its own registry
+entry (`<element>-overworld`, `<element>-nether`).
 
 ## Hubs
 

@@ -33,15 +33,23 @@ from .ashlar_emit import EmitResult, check_form_layers, plan_rows_toon
 from .emit import VerifyError
 from .live import LiveWrite, greedy_fills
 from .route import RouteError
-from .site import Site, base_id, integer_level, liquid_kind, load_site, natural_for
+from .site import (
+    Site,
+    base_id,
+    integer_level,
+    is_still,
+    liquid_kind,
+    load_site,
+    natural_for,
+)
 from .track import AIR, carvable, inside, live_layers
-from .transit_checks import MAX_CELLS, parse_state
+from .transit_checks import MAX_CELLS, parse_state, spawnable_floor
 from .transit_design import STYLES, palette_for
 
 DIMENSIONS = ("overworld", "nether")
 AXES = ("x", "z")
 FACINGS = {"north": (0, -1), "south": (0, 1), "west": (-1, 0), "east": (1, 0)}
-TOP_KEYS = frozenset({"element", "seed", "overworld", "nether", "size", "doorways", "style", "palette", "version"})
+TOP_KEYS = frozenset({"element", "seed", "overworld", "nether", "size", "doorways", "style", "palette", "platform_in_water", "version"})
 END_KEYS = frozenset({"world", "at", "axis", "existing"})
 SCALE = 8
 RADIUS = {"overworld": 128, "nether": 16}       # horizontal search radius of the game
@@ -81,6 +89,7 @@ class PortalDesign:
     palette: dict[str, dict[str, int]]
     project: Path
     source: dict = field(default_factory=dict, compare=False)
+    platform_in_water: bool = False
 
 
 # ------------------------------------------------------------------ parse
@@ -152,6 +161,9 @@ def parse_portal(data: dict, project_dir: Path) -> PortalDesign:
             raise ValueError(f"doorways must hold [x, y, z, facing] with facing one of {', '.join(FACINGS)}, "
                              f"got {item!r}")
         doorways.append((*(integer_level(v, "doorways") for v in item[:3]), item[3]))
+    in_water = data.get("platform_in_water", False)
+    if not isinstance(in_water, bool):
+        raise ValueError(f"platform_in_water must be true or false, got {in_water!r}")  # noqa: TRY004
     style = data.get("style", "nether")
     if style not in STYLES:
         raise ValueError(f"style must be one of {', '.join(STYLES)}, got {style!r}")
@@ -162,7 +174,7 @@ def parse_portal(data: dict, project_dir: Path) -> PortalDesign:
     made = {dim: PortalEnd(ends[dim][0], dim, ends[dim][1], axis, ends[dim][3]) for dim in DIMENSIONS}
     return PortalDesign(element=element, seed=seed, size=(w, h), overworld=made["overworld"], nether=made["nether"],
                         doorways=tuple(doorways), style=style, palette=palette, project=Path(project_dir),
-                        source=data)
+                        source=data, platform_in_water=in_water)
 
 
 def load_portal(path: Path, project_dir: Path | None = None) -> PortalDesign:
@@ -197,6 +209,14 @@ def _end_of(design: PortalDesign, dimension: str) -> PortalEnd:
     if dimension not in DIMENSIONS:
         raise ValueError(f"unknown dimension {dimension!r}")
     return design.overworld if dimension == "overworld" else design.nether
+
+
+def _dress(design: PortalDesign, dimension: str) -> _Dress:
+    """The palette of an end: the design's own when it sets ``style`` or ``palette``, else ``stone``
+    in the Overworld and ``nether`` in the Nether."""
+    own = "style" in design.source or "palette" in design.source
+    palette = design.palette if own or dimension == "nether" else palette_for("stone", {})
+    return _Dress(dimension, palette, design.seed, SimpleNamespace(block=LANDING_LAMP))
 
 
 def _other(dimension: str) -> str:
@@ -424,19 +444,29 @@ def _nether_room(design: PortalDesign) -> _Room:
     shell.update({c: "lining" for c in walls})
     lamps = {c for c in walls if c[1] == stand}
     lamps -= {_at(origin, axis, a, p, stand) for a in (-PAD - 1, w + PAD) for p in (-ROOM_DEPTH - 1, ROOM_DEPTH + 1)}
+    # In front of each portal cell the floor is a lamp block instead of a slab (a bottom slab would
+    # shut out the light from below): lit 14, not spawnable, flush with the frame's bottom row.
+    for a in range(1, w - 1):
+        for p in (-1, 1):
+            shell.pop(_at(origin, axis, a, p, stand), None)
+            bore.add(_at(origin, axis, a, p, stand))
+            lamps.add(_at(origin, axis, a, p, oy))
     room = _Room(bore, shell, lamps, walls, standing)
     for doorway in design.doorways:
-        _open_doorway(room, doorway)
+        _open_doorway(room, doorway, stand)
     return room
 
 
-def _open_doorway(room: _Room, doorway: tuple[int, int, int, str]) -> None:
+def _open_doorway(room: _Room, doorway: tuple[int, int, int, str], stand: int) -> None:
     """Leave a doorway open 2 high through the wall it faces, framed in the edge block.
 
     The doorway cell is the first open cell: its row and the one above stay air from there out
     through the wall, and the wall cells round the mouth become the edge block.
     """
     x, y, z, facing = doorway
+    if y < stand:
+        raise ValueError(f"doorway {list(doorway)} is below the standing level {stand}: it would cut through the "
+                         f"floor; its y is the first open cell, at least frame y + 1")
     dx, dz = FACINGS[facing]
     inner = room.bore | set(room.shell)
     path = []
@@ -485,27 +515,56 @@ def _frame_layers(design: PortalDesign, dimension: str, site: Site) -> list[tupl
     return live_layers(site, build={c: FRAME for c in frame}, portal={c: state for c in hole})
 
 
-def _overworld_layers(design: PortalDesign, site: Site) -> list[tuple[str, LiveWrite]]:
-    """A platform 3 deep on both faces at the frame's bottom row, with the space above cleared."""
+def _overworld_parts(design: PortalDesign, site: Site) -> tuple[dict[Cell, str], dict[Cell, str], int]:
+    """The platform and clearance cells of the Overworld end, and the still water cells the platform displaces.
+
+    Raises:
+        RouteError: naming the cell when the platform or the two cells above it hold lava or flowing
+            water, when a platform standing cell holds water, or when the platform stands in still
+            water without ``platform_in_water``.
+    """
     origin, axis = frame_origin(design, "overworld"), design.overworld.axis
     oy = origin[1]
     w, h = design.size
     natural = natural_for("overworld")
     skip = set(frame_cells(design, "overworld")) | set(opening(design, "overworld"))
-    dress = _Dress("overworld", design.palette, design.seed, SimpleNamespace(block=LANDING_LAMP))
+    dress = _dress(design, "overworld")
     carve: dict[Cell, str] = {}
     build: dict[Cell, str] = {}
+    displaced = 0
     for a in range(-PAD, w + PAD):
         for p in range(-PLATFORM_DEPTH, PLATFORM_DEPTH + 1):
+            for y in (oy + 1, oy + 2):
+                above = _at(origin, axis, a, p, y)
+                if above not in skip and inside(site, *above) and liquid_kind(site.block(*above)):
+                    raise RouteError(f"platform standing cell {above} holds {liquid_kind(site.block(*above))}")
             cell = _at(origin, axis, a, p, oy)
             if cell not in skip:
                 state = site.block(*cell) if inside(site, *cell) else ""
-                if state and (base_id(state) in natural or not blocks.full_cube(state)):
+                kind = liquid_kind(state) if state else None
+                if kind == "lava" or (kind == "water" and not is_still(state)):
+                    raise RouteError(f"platform cell {cell} stands in {'lava' if kind == 'lava' else 'flowing water'}")
+                if kind == "water":
+                    if not design.platform_in_water:
+                        raise RouteError(f"platform cell {cell} stands in water; set platform_in_water")
+                    displaced += 1
+                if state and (kind or base_id(state) in natural or not blocks.full_cube(state)):
                     build[cell] = structures.pick(dress, "platform", *cell)
             for y in range(oy + 1, oy + h):
                 above = _at(origin, axis, a, p, y)
                 if above not in skip and inside(site, *above) and carvable(site.block(*above), natural):
                     carve[above] = AIR
+    return carve, build, displaced
+
+
+def displaced_water(design: PortalDesign, site: Site) -> int:
+    """How many still water cells the Overworld platform replaces (0 when that end is existing)."""
+    return 0 if design.overworld.existing else _overworld_parts(design, site)[2]
+
+
+def _overworld_layers(design: PortalDesign, site: Site) -> list[tuple[str, LiveWrite]]:
+    """A platform 3 deep on both faces at the frame's bottom row, with the space above cleared."""
+    carve, build, _ = _overworld_parts(design, site)
     return live_layers(site, carve=carve, build=build)
 
 
@@ -529,7 +588,7 @@ def portal_layers(design: PortalDesign, dimension: str, site: Site) -> list[tupl
         return [*_overworld_layers(design, site), *_frame_layers(design, dimension, site)]
     room = _nether_room(design)
     _inside_all(site, [*frame, *room.bore, *room.shell], "landing", design, dimension)
-    dress = _Dress("nether", design.palette, design.seed, SimpleNamespace(block=LANDING_LAMP))
+    dress = _dress(design, "nether")
     lined = structures.enclose(dress, site, room.bore, room.shell, reserved=set(), lamps=room.lamps)
     framed = _frame_layers(design, dimension, site)
     # the lining first, then the frame, the portal blocks and the lamps
@@ -572,25 +631,47 @@ def fit_nether(design: PortalDesign, site: Site) -> PortalDesign:
 
 
 # ------------------------------------------------------------------ checks
-def _landing_light(design: PortalDesign, site: Site) -> tuple[list[Cell], int]:
-    """The open standing cells of the Nether landing with block light below the minimum, and how many were checked."""
+_OPEN_STATES = frozenset({"minecraft:air", "minecraft:cave_air", "minecraft:void_air", PORTAL})
+
+
+def _landing_light(design: PortalDesign, site: Site) -> tuple[list[Cell], int, int]:
+    """Spawnable standing cells of the Nether landing below the minimum light, how many were checked,
+    and how many slab-floored standing cells are below it (mobs cannot spawn on those).
+
+    A standing cell is the air or portal cell on the first standing row. It needs light when the
+    block under it is a spawnable floor (the opening cells over the bottom obsidian row, doorway
+    cells over the lining); a bottom slab floor is not one, so the cell above a slab is only counted.
+    """
     room = _nether_room(design)
-    skip = set(frame_cells(design, "nether")) | set(opening(design, "nether"))
-    level = blocks.flood(blocks.cell_classes(site)[1], blocks.site_light(site))
-    bad, checked = [], 0
+    posts = set(frame_cells(design, "nether"))
+    x1, y1, z1 = site.box[:3]
+    clear = blocks.cell_classes(site)[1]
+    for px, py, pz in _portal_cells(site):      # portal blocks pass light, though they are no partial block by name
+        clear[px - x1, py - y1, pz - z1] = True
+    level = blocks.flood(clear, blocks.site_light(site))
+    bad, checked, dim = [], 0, 0
     for cell in room.standing:
-        if cell in skip:
+        if cell in posts:
             continue
         if not inside(site, *cell):
             bad.append(cell)
             continue
+        x, y, z = cell
         state = site.block(*cell)
-        if blocks.full_cube(state) or liquid_kind(state):
-            continue
-        checked += 1
-        if int(level[cell[0] - site.box[0], cell[1] - site.box[1], cell[2] - site.box[2]]) < LANDING_LIGHT:
-            bad.append(cell)
-    return bad, checked
+        if base_id(state) in _OPEN_STATES:
+            if spawnable_floor(site.block(x, y - 1, z)):
+                checked += 1
+                if int(level[x - x1, y - y1, z - z1]) < LANDING_LIGHT:
+                    bad.append(cell)
+        elif base_id(state).endswith("_slab") and int(level[x - x1, y - y1, z - z1]) < LANDING_LIGHT:
+            dim += 1
+    return bad, checked, dim
+
+
+def landing_notes(design: PortalDesign, site: Site) -> list[str]:
+    """Notes on the Nether landing's light: how many slab-floored cells stay below 12."""
+    dim = _landing_light(design, site)[2]
+    return [f"{dim} landing cells are below {LANDING_LIGHT}; the slab floor keeps mobs off them"] if dim else []
 
 
 def check_portal(design: PortalDesign, sites: Mapping[str, Site]) -> dict:
@@ -632,8 +713,9 @@ def check_portal(design: PortalDesign, sites: Mapping[str, Site]) -> dict:
     results = [outcome("frame", frame_bad, n_frame, "frame cells that are not obsidian"),
                outcome("axis", axis_bad, n_axis, f"opening cells that are not nether_portal[axis={design.nether.axis}]")]
     if not design.nether.existing:
-        bad, checked = _landing_light(design, sites["nether"])
-        results.append(outcome("light", bad, checked, f"landing cells with block light below {LANDING_LIGHT}"))
+        bad, checked, _ = _landing_light(design, sites["nether"])
+        results.append(outcome("light", bad, checked,
+                               f"spawnable landing cells with block light below {LANDING_LIGHT}"))
     results += pair_check(design, sites)["checks"]
     return {"ok": all(c["ok"] for c in results), "checks": results}
 
@@ -763,6 +845,7 @@ def emit_portal(design: PortalDesign, project: Path, *, first_phase: int, previe
                              f"contain {list(boxes[dim])} (the Nether end is at level "
                              f"{frame_origin(design, 'nether')[1]}); read that box again")
     rows: list[dict] = []
+    by_world: dict[str, list[dict]] = {dim: [] for dim in DIMENSIONS}
     payloads: list[tuple[Path, dict]] = []
     finals: dict[str, Site] = {}
     touched: list[dict] = []
@@ -784,7 +867,8 @@ def emit_portal(design: PortalDesign, project: Path, *, first_phase: int, previe
             rows.append({"id": phase_id, "name": name, "file": file, "blocks": int(np.count_nonzero(tile.codes)),
                          "from": [min(f["from"][i] for f in fills) for i in range(3)],
                          "to": [max(f["to"][i] for f in fills) for i in range(3)],
-                         "via": "placer", "rollback": "backup", "world": site.world})
+                         "via": "placer", "rollback": "backup"})
+            by_world[dim].append(rows[-1])
     check = check_portal(design, finals)
     token = blocks.built_token(touched)
     by_block: dict[str, int] = {}
@@ -795,11 +879,25 @@ def emit_portal(design: PortalDesign, project: Path, *, first_phase: int, previe
     ends = {dim: {"world": _end_of(design, dim).world, "at": list(frame_origin(design, dim)),
                   "axis": _end_of(design, dim).axis, "existing": _end_of(design, dim).existing}
             for dim in DIMENSIONS}
-    report = {"ends": ends, "size": list(design.size), "check": check, "built": built,
-              "boxes": [list(boxes[d]) for d in DIMENSIONS],
+    written: dict[str, list[int]] = {}
+    for dim in DIMENSIONS:
+        if by_world[dim]:
+            written[dim] = list(_union([(*r["from"], *r["to"]) for r in by_world[dim]]))
+        else:
+            written[dim] = list(_union([(*c, *c) for c in frame_cells(design, dim)]))
+    displaced = displaced_water(design, sites["overworld"])
+    dim_cells = 0 if design.nether.existing else _landing_light(design, finals["nether"])[2]
+    report = {"ends": ends, "size": list(design.size), "check": check, "built": built, "boxes": written,
+              "phases": {d: [r["id"] for r in by_world[d]] for d in DIMENSIONS},
               "reads": [{"section": d, "box": list(boxes[d]), "out": f"site/{element}-{d}",
-                         "world": _end_of(design, d).world} for d in DIMENSIONS]}
-    report_path = _report_path(design, project)
+                         "world": _end_of(design, d).world} for d in DIMENSIONS],
+              "displaced_water": displaced, "dim_landing_cells": dim_cells}
+    # Only a successful build writes the report transit-check trusts; a preview or a refused run
+    # writes its own under terrain/previews/.
+    failed = [c for c in check["checks"] if not c["ok"]]
+    refused = bool(failed) or (bool(touched) and approve_built != token)
+    report_path = (project / "terrain" / "previews" / f"{element}.portal-report.json"
+                   if preview or refused else _report_path(design, project))
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
@@ -809,19 +907,20 @@ def emit_portal(design: PortalDesign, project: Path, *, first_phase: int, previe
                        for d in DIMENSIONS),
              "projected check: " + "; ".join(f"{c['name']} {'ok' if c['ok'] else 'FAILS'}: {c['detail']}"
                                              for c in check["checks"])]
+    if not design.nether.existing:
+        notes += landing_notes(design, finals["nether"])
+    if displaced:
+        notes.append(f"the platform displaces {displaced} still water cells (platform_in_water)")
     blocks_text = ", ".join(f"{n} {b}" for b, n in by_block.items())
     if touched:
         notes.append(f"touches {len(touched)} player blocks ({blocks_text}); approval token {token}; "
-                     f"list in terrain/{element}.portal-report.json")
-    walked = [r for r in rows if r["world"] == design.overworld.world] or rows
-    bbox = _union([(*r["from"], *r["to"]) for r in walked]) if walked else boxes["overworld"]
-    quality: dict[str, list[dict]] = {"transit": [{"file": f"terrain/{element}.portal.json"}],
-                                      "surface_match": [], "seam": []}
-    result = {"preview": preview, "phases": rows, "bbox": list(bbox), "notes": notes, "report": report,
+                     f"list in {report_path.relative_to(project)}")
+    quality = {dim: {"transit": [{"file": f"terrain/{element}.portal.json"}] if dim == "nether" else [],
+                     "surface_match": [], "seam": []} for dim in DIMENSIONS}
+    result = {"preview": preview, "phases": rows, "bbox": written, "notes": notes, "report": report,
               "quality": quality}
     if preview:
         return result
-    failed = [c for c in check["checks"] if not c["ok"]]
     if failed:
         raise VerifyError("the portal pair fails its own checks: "
                           + "; ".join(f"{c['name']}: {c['detail']}" for c in failed)
@@ -839,14 +938,16 @@ def emit_portal(design: PortalDesign, project: Path, *, first_phase: int, previe
     for path, payload in payloads:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
-    snippet = plan_rows_toon(EmitResult(rows, quality, notes, bbox, None, None))  # type: ignore[arg-type]
-    (project / "terrain" / f"{element}.plan-rows.toon").write_text(snippet, encoding="utf-8")
-    if standalone:
-        centre = [int((bbox[i] + bbox[i + 3]) // 2) for i in range(3)]
-        lines = ["plan:", f"  project: {project.resolve().name}", "  skill: system-transit",
-                 f"  world: {design.overworld.world}",
-                 f"  anchor: {{x: {centre[0]}, y: {centre[1]}, z: {centre[2]}}}",
-                 f"  bbox: {{from: {list(bbox[:3])}, to: {list(bbox[3:])}}}",
-                 f"  summary: {element} (portal pair)", "  approved: no"]
-        (project / "plan.toon").write_text("\n".join(lines) + "\n" + snippet, encoding="utf-8")
+    for dim in DIMENSIONS:
+        box = written[dim]
+        snippet = plan_rows_toon(EmitResult(by_world[dim], quality[dim], notes, tuple(box), None, None))  # type: ignore[arg-type]
+        (project / "terrain" / f"{element}-{dim}.plan-rows.toon").write_text(snippet, encoding="utf-8")
+        if standalone:
+            centre = [int((box[i] + box[i + 3]) // 2) for i in range(3)]
+            lines = ["plan:", f"  project: {project.resolve().name}", "  skill: system-transit",
+                     f"  world: {_end_of(design, dim).world}",
+                     f"  anchor: {{x: {centre[0]}, y: {centre[1]}, z: {centre[2]}}}",
+                     f"  bbox: {{from: {box[:3]}, to: {box[3:]}}}",
+                     f"  summary: {element} (portal pair, {dim} end)", "  approved: no"]
+            (project / f"plan-{dim}.toon").write_text("\n".join(lines) + "\n" + snippet, encoding="utf-8")
     return result

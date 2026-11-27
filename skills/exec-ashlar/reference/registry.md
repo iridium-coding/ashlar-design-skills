@@ -68,6 +68,10 @@ so there is one history.
 - A project whose shape is not one box (a transit line) records `boxes`: a
   list of inclusive `[x1, y1, z1, x2, y2, z2]` boxes copied from its line
   report. `bbox` still bounds them all. Preserve the key.
+- A portal pair spans two worlds, so it is recorded as two entries, `<element>-overworld`
+  and `<element>-nether`, each with its own `world` and the `boxes` of that world's
+  phases (`terrain/<element>-<world>.plan-rows.toon` and the report's `boxes`). Each is
+  built and verified on its own; the Nether entry carries the `transit` row.
 - `citations` holds the sources for replicas, so the build can be checked
   against them.
 - A project may carry extra keys the design skill needs (for example `rooms`,

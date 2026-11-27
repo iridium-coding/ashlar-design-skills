@@ -141,7 +141,11 @@ reads are missing it lists the boxes to read around both arrival areas, into
 `--world` for each) and run it again: it checks the pair, including the arrival
 spread, and any other portal that would steal the link, then writes the frame
 and landing phases for both worlds. Player blocks and the token work as for a
-line. The Nether landing gets a bottom-slab floor and lanterns. A piglin stays
+line. The Nether landing gets a bottom-slab floor and shroomlight in its walls; a
+doorway's y is the standing level. The pair is two `exec-ashlar build` runs, one per
+world, from `terrain/<element>-overworld.plan-rows.toon` and
+`terrain/<element>-nether.plan-rows.toon`, and two registry entries
+(`<element>-overworld`, `<element>-nether`) with each world's `boxes`. A piglin stays
 neutral only to a player wearing a piece of golden armour; placed gold blocks do
 not calm it.
 

@@ -1,7 +1,9 @@
 # Water, air, and vertical transit
 
 The network's nodes that are not simple linear routes — where boats berth,
-where aircraft sit, and where a route changes height.
+where aircraft sit, and where a route changes height. The toolkit does not
+generate these; this is guidance for the design skills that do, and for where the
+line ends at them.
 
 ## Docks, marinas, and harbors
 
@@ -27,8 +29,8 @@ Minecraft has no real powered flight (only elytra), so aircraft are
 
 - **Runway** — a long, flat, smooth strip; an apron and taxiways beside it.
 - **Helipad** — a small marked square.
-- **Hangars, terminals, and control towers** → `design-building`; you place
-  the footprints and the airside connections.
+- **Hangars, terminals, and control towers** → `design-building`; the line
+  supplies the footprints and the airside connections.
 - **Airship / zeppelin** — a tall mooring mast and a docking platform; a
   steampunk or fantasy showpiece.
 - An elytra launch point (a high platform, a drop, a bubble lift to altitude)
@@ -43,18 +45,18 @@ Where a route changes height sharply:
   (place kelp top-to-bottom and break the bottom kelp to convert flowing water
   to sources, then remove the kelp). The soul sand and water column are yours
   to design; any **activator** redstone (e.g. a switch to toggle soul sand vs.
-  magma) is an `system-redstone` handoff.
+  magma) is a `system-redstone` handoff.
 - **Drop column (down)** — a water column over **magma blocks** generates
   downward bubble currents, pulling entities down.
 - **Stairs and ladders** — a stairwell (about one block up per two across) or
   a ladder shaft, for a simple, no-mechanism climb.
 - **Ice drop / ramp** — a steep packed-ice ramp for a fast boat descent.
-- **Piston or slime-block lifts** are redstone contraptions — an `system-redstone`
-  handoff entirely; you only specify where the elevator goes.
+- **Piston or slime-block lifts** are redstone contraptions — a `system-redstone`
+  handoff entirely; this skill only specifies where the elevator goes.
 
 ## Connecting nodes into the network
 
 A dock, an airport, or an elevator is a **node** on the transit network —
-route a rail, road, or path right up to it so the modes connect, and label it
-on the network map. A dock with no road to it, or an elevator that does not
+route a rail, road, or path right up to it so the modes connect, and show it
+on the route preview and record it in the registry entry. A dock with no road to it, or an elevator that does not
 meet the rail, breaks the journey.

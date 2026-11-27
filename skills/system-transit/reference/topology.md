@@ -1,6 +1,6 @@
 # Topology, route-finding, and mode selection
 
-The three planning decisions that come before any blueprint: the *shape* of
+The three planning decisions that come before any route search: the *shape* of
 the network, the *path* of each link, and the *transport mode* of each link.
 
 ## Choosing the topology
@@ -38,9 +38,12 @@ travel:
 - **Route around** existing builds and natural landmarks — keep a buffer; do
   not plough a highway through someone's base or a named wonder.
 - **Cross, do not carve** — where terrain is in the way, prefer a bridge or a
-  tunnel to massive grading. When grading is genuinely needed, **flag a
-  `terrain-shape` step** rather than carving it into the plan yourself.
-- Keep the whole route within Y -64 to 320.
+  tunnel to massive grading. The line grades its own corridor to the limits in
+  its design; grading beyond that is a `terrain-shape` step.
+- Keep the whole route within Y -64 to 319.
+- The toolkit does the search (`terrain.py route`) over a heights file; you pick
+  the endpoints, `via` points, `avoid` boxes and limits. Add every registry build
+  box to `avoid`; a route never crosses a player build.
 
 ## Mode selection
 
@@ -52,14 +55,18 @@ Choose the transport mode per link by distance and purpose:
 | ~250 m – 1 km | A cobble or stone road, or a single rail line. |
 | ~1–3 km | A highway or a double rail line. |
 | 3 km+ | A **nether-hub** spoke first; an overworld rail or road only if the journey itself is meant to be scenic. |
-| Across water | A bridge (if the crossing should be seen and walked) or an ice-boat highway (if speed is the point). |
+| Across water | A bridge (if the crossing should be seen and walked) or an ice line (if speed is the point; it must be level end to end). |
 | Steep vertical | An elevator (see `water-and-air.md`). |
+
+Each link is its own line (`rail`, `road`, `path` or `ice`); junctions and
+crossovers are `system-redstone` work, so a network is a set of separate lines
+that meet at stations or landings.
 
 Speed-first projects lean on the nether and ice boats; scenery-first projects
 keep links on the surface with bridges and viaducts that frame the view.
 
 ## Per-link record
 
-For every link, the plan records: the two endpoints, the topology role
-(spoke, trunk, branch, ring segment), the chosen mode, the route, the major
-crossings (bridges, tunnels), and any `terrain-shape` grading flags.
+For every link, the project records: the two endpoints, the topology role
+(spoke, trunk, branch, ring segment), the chosen mode, the line design file, the
+major crossings (bridges, tunnels), and any `terrain-shape` grading flags.

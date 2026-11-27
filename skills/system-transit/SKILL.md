@@ -1,191 +1,236 @@
 ---
 name: system-transit
 description: >-
-  Designs and blueprints world-spanning transit and infrastructure networks in
-  a live Minecraft Java Edition world — rail lines, roads and highways, nether-hub
-  transit, bridges, tunnels, elevators, docks, and airports — the connective
-  network between separate builds. Chooses the network topology and routes the
-  links. Use when the user wants to connect two or more sites, build a transit
-  network, a nether hub, a highway, a bridge, a tunnel, or a rail line between
-  places. Part of the minecraft-builder workflow.
+  Designs and builds the transit between builds in a Minecraft Java world
+  reached through Ashlar: rail lines, roads, footpaths, ice-boat roads, bridges
+  and tunnels, matched nether portal pairs and nether hubs. Chooses the network
+  topology, finds each route over the real terrain, grades the corridor, lays
+  checked track and surface, and tests the ride. Use when the user wants to
+  connect two or more sites or asks for a rail line, a road, a highway, a bridge,
+  a tunnel or a nether hub between places.
 model: opus
 effort: high
+allowed-tools: mcp__ashlar__mc_status mcp__ashlar__mc_players mcp__ashlar__mc_survey mcp__ashlar__mc_render mcp__ashlar__mc_inspect
+metadata:
+  short-description: Route, grade, build and ride-test rail, road, path and ice lines and portal pairs through Ashlar
 ---
 
-# system-transit (Transit Architect)
+# system-transit
 
-You design the **connective network between builds** — how a player gets from
-one base, village, or landmark to another. Your output is a transit network: a
-topology, routed links, and the blueprints for every rail, road, nether
-tunnel, bridge, and dock in it. Your job is the design: interview the user,
-choose the topology, route the links, propose blueprints, iterate, and write a
-fully resolved plan.
+You design the network between builds: how a player gets from one base,
+village or landmark to another. You choose the topology, then take one link at
+a time from a short design file through route search, corridor grading, checked
+track and surface, bridges, tunnels, stops and portal pairs. The toolkit does
+the geometry and the checks; `exec-ashlar` builds it.
 
-## When to use — and not
+## When to use, and not
 
-Use when **two or more sites need to be linked** — a transit network, a nether
-hub, a highway, a rail line, a bridge or tunnel between places. Do not use for:
+Use when two or more sites need a link. Do not use for:
 
-- **Streets inside a single city or district** → `design-city` owns those.
-  You connect cities; design-city connects buildings.
-- A single building (a station hall, a terminal) → `design-building`.
-- Naturalistic terrain or a path through wild scenery with no network →
-  `terrain-shape` shapes the land; a designed garden path → `design-grounds`.
+- Streets inside one city or district: `design-city`.
+- A station hall or terminal: `design-building` (you supply the line's end and
+  the footprint).
+- A path through wild scenery with no network: `terrain-shape`; a designed
+  garden path: `design-grounds`.
+- Junctions, switches, crossings, launch buttons and detector brakes:
+  `system-redstone`. Command blocks stay forbidden.
+- Truss, suspension or cable-stayed superstructures: `design-monument` on top
+  of the deck and hidden piers the line supplies.
+- Lines in the End.
 
 ## Connection
 
-If a tool call fails because the MCP server is unreachable, stop and tell
-the user to run the `minecraft-mcp-setup` agent.
+Run `mc_status`. If Ashlar is unreachable, stop and tell the user. For a
+standalone request, start a project in `.minecraft-builder/<project>/`. A line
+or portal pair for an existing design project goes in that project's plan,
+before the stations and halls that meet it.
 
-## Core competency
+## Survey
 
-Two things are distinctively yours:
+Run `exec-ashlar survey <project>` using `../exec-ashlar/reference/survey.md`
+for the sites and the world. Read `.minecraft-builder/registry.json` for the
+existing builds: their boxes are routes' `avoid` boxes and the user's list of
+what must not be touched. Record every site's name, dimension and coordinates
+and who owns each build; no real names, addresses or coordinates go in the
+fork itself.
 
-1. **Topology choice** — given a set of sites, decide the *shape* of the
-   network: a direct line, a mesh, a hub-and-spoke, a ring, a trunk-and-branch,
-   or a nether hub. The wrong topology wastes enormous effort. See
-   `reference/topology.md`.
-2. **Route-finding under Java constraints** — trace each link across real
-   terrain, around protected builds and landmarks, choosing the cheapest
-   credible path and the right transport mode for the distance.
+Interview the user with [interview.md](reference/interview.md): the sites,
+whether one is a centre, distances, speed against scenery, era, tolerance for
+grading, builds to preserve and the project name.
 
-You design **static infrastructure only** — rails, roadbed, tunnels, bridges,
-the static parts of elevators and docks. Anything that needs **redstone** (a
-boost station, an automated junction switch, a drawbridge mechanism, a
-bubble-elevator activator) goes to `system-redstone` — flag it and return it to
-the orchestrator, which sequences that leaf.
+- Claude Code: use `AskUserQuestion` for choices.
+- Codex: use `request_user_input` when available.
+- Otherwise: ask in plain text.
 
-## Java realities
+Then choose the topology and each link's mode with
+[topology.md](reference/topology.md), and settle each link's endpoints, stops,
+`via` points and style.
 
-- **The nether is an 8:1 distance multiplier.** 1 block in the Nether = 8 in
-  the Overworld. For sites more than a few thousand blocks apart, a nether hub
-  beats any overworld route — it is the cheapest distance technique in the
-  game. Portal pairs must be **computed and built manually** (see
-  `reference/nether-hub.md`).
-- **Rail** runs at ~8 m/s straight (≈11.3 m/s diagonal); a powered rail roughly
-  every 38 blocks holds an occupied cart at top speed; three in a row launch
-  from rest.
-- **Ice boats** — on Java, **blue ice** is the fastest surface (~73 m/s boat
-  speed), and **packed ice** is noticeably slower (~40 m/s). Prefer blue ice
-  for high-speed highways; packed ice for budget corridors where speed matters
-  less than cost.
-- **Mob-proof the corridor** — light every route and cap tunnel floors so the
-  network does not become a mob spawner.
+## Design a line
 
-### Java-exclusive: station and route signage
+Write the line design as [lines.md](reference/lines.md) describes; it may live anywhere,
+and `line` copies it to `terrain/<element>.line.json`, where the `transit` row reads it.
+Each link is its own line and its own element. Order the links with the user
+(a network is built and checked link by link), then for each link:
 
-Station nameplates, platform signs, and floating route labels are Java-exclusive:
+1. **Heights.** For an Overworld search route, write a heights file over the
+   search box: the box around the endpoints and waypoints, grown by a quarter of
+   the link length (at least 64 blocks).
 
-- **`text_display` entities** (via `spawn` op / `entity_summon`) — floating text at any scale, any color, any position; `billboard:"center"` faces the player automatically. Use for overhead station names, platform numbers, and route markers that read from a distance.
-- **NBT signs** (via `block-nbt` op / `block_entity_set_nbt`) — set `front_text`/`back_text` messages as JSON text components directly; add `is_waxed:1b` to lock them against player edits. Standing, wall, and hanging signs all use the same NBT shape.
+   Run `ashlar_place.py heights --area X1 Z1 X2 Z2 --out .minecraft-builder/<project>/heights.json`
+   from `../exec-ashlar/scripts/` as `exec-ashlar` describes.
 
-Both are plan ops the `exec-worker` executes — emit `spawn` steps for display entities and `block-nbt` steps for sign text in `plan.toon`.
+   A Nether line or any `straight` route needs none: Nether height reads return
+   the bedrock roof, so it is classed from the section reads instead.
+2. **Route.** Run `terrain.py route DESIGN --project DIR --preview` as the
+   [toolkit API](../terrain-shape/reference/terrain/toolkit-api.md) shows. Read the
+   report (kinds, maximum cut and fill, the bridge and tunnel runs, the section
+   list) and the previews under `terrain/previews/` as
+   [previews-and-checks.md](reference/previews-and-checks.md) explains.
 
-## Inputs
+   - Claude Code: use `Read` on the PNG files.
+   - Codex: use `view_image` on the PNG files.
+   - Otherwise: give the report's measurements and ask the user to open the files.
 
-- **From `survey-site`** — the coordinates and surroundings of every site to
-  connect; the terrain between them.
-- **From `survey-research`** — real-world references when the user names a specific
-  bridge, road, or transit style.
-- **From the user** — the adaptive interview (`reference/interview.md`).
-- **From the world** — the `mcbuilder:registry` (command storage, read with
-  `data_storage_get`), for the existing builds and for iteration.
+   A refusal names the stretch (a bridge or tunnel shorter than its minimum
+   that the limits cannot absorb, water or lava in the way, a box outside the
+   heights file). Change the route, the limits or the endpoints; never read a
+   refusal as a reason to remove water.
+3. **Section reads.** The route report lists one read per section: `box`, `out`
+   and `world`. Take each exact read with
+   `ashlar_place.py backup --box X1 Y1 Z1 X2 Y2 Z2 --out .minecraft-builder/<project>/site/<element>-sNN`
+   (add `--world` for the Nether). Run `terrain.py survey --site DIR --box …` on a
+   section only to see its non-natural blocks. A section that holds someone's
+   build is not yours to cross: add an `avoid` box and run `route` again, and ask
+   about touching it only when no other route exists.
+4. **Line preview.** Run
+   `terrain.py line DESIGN --project DIR --first-phase N --preview`. It checks the
+   whole line on the planned final state and writes the report, previews and
+   projected checks. Read the notes, the stretch kinds, the displaced-water count,
+   `unsupported_tube` and the `built` list. Iterate on the design and preview
+   again until the checks pass; emission refuses a design whose projected checks
+   fail, naming each. Raise `limits` only with the user's OK.
 
-## Process
+## Player blocks and approval
 
-1. **Gather the sites** — every destination's coordinates and dimension; have
-   `survey-site` fill any gaps.
-2. **Interview** — `reference/interview.md`; record in `requirements.md`.
-3. **Choose the topology** — `reference/topology.md`.
-4. **Route each link** — trace a path per link, around protected builds and
-   landmarks; flag terrain that needs grading for `terrain-shape`.
-5. **Select the mode per link** — distance and purpose decide rail / road /
-   nether / bridge / ice-boat / trail.
-6. **Design the elements** — from the mode reference files.
-7. **Render and iterate** — produce a network map and element blueprints
-   (`reference/blueprints.md`), show the user, revise, **loop until approved**.
-8. **Write the plan and return** — `requirements.md`, `plan.toon`, registry.
-   Structure names follow the canonical colon form `mcb:<project>_<element>`.
+The report's `built` list names every player block the line would change: where
+it is, what it is and why, with `loses_data` for a chest, sign or other block
+whose contents or text would be lost. Show the user that whole list in plain
+words, group it by block with positions and reasons, and ask whether to go
+ahead. A block they want kept means an `avoid` box and a new route. Only after
+their yes, pass the report's token as `--approve-built TOKEN`; a changed design
+gets a new list and a new token. A line with an empty `built` list needs no
+token.
 
-   **Emit a `quality_contract` block** per the schema in
-   `${CLAUDE_PLUGIN_ROOT}/skills/exec-plan/SKILL.md`.
-   For transit networks the contract must include:
-   - **connectivity** rows for every site pair the network is supposed to
-     link. A disconnected segment is the Cape Aurelia "lost some lights on
-     the sidewalk" failure scaled up.
-   - **walkability** rows along every road, footbridge, and platform — the
-     route must be walkable, not just present.
-   - **headroom** rows inside every tunnel, under every overpass, and
-     through every covered station.
-   - **doors** rows for every station / dock / portal entrance.
-   - **edge_irregularity** rows for any naturalistic transit element
-     (forest path, mountain road, coastal road) — straight roads through
-     organic terrain read as paint.
-   - **continuity** rows for every 1-wide line (rail, redstone, thin wall) —
-     the scanned cell count must equal the intended count, so a silently
-     dropped batch entry can't leave a cart-stalling gap. See
-     `reference/blueprints.md`.
+Get **design approval** on the route map, the profile, the cross sections, the
+stretch kinds, any bridge piers in water (only with `piers_in_water: true`, still
+water only, the displaced cells counted in the report), any grading beyond the
+limits, the lights and the stops. Approval of a design is not approval of the
+build.
+
+## Portal pairs and hubs
+
+Where a link goes through the Nether, or a hub is wanted, write
+`terrain/<element>.portal.json` as [nether-hub.md](reference/nether-hub.md)
+describes. Route and approve the spoke lines first: each doorway the landing
+needs is known only then, and the spokes end at it (`stop: open`).
+
+Run `terrain.py portal DESIGN --project DIR --first-phase N --preview`. While
+reads are missing it lists the boxes to read around both arrival areas, into
+`site/<element>-overworld` and `site/<element>-nether`. Take them (with
+`--world` for each) and run it again: it checks the pair, including the arrival
+spread, and any other portal that would steal the link, then writes the frame
+and landing phases for both worlds. Player blocks and the token work as for a
+line. The Nether landing gets a bottom-slab floor and lanterns. A piglin stays
+neutral only to a player wearing a piece of golden armour; placed gold blocks do
+not calm it.
+
+## Emit and build
+
+When the design is approved, emit by running `terrain.py line DESIGN --project
+DIR --first-phase N` (add `--approve-built TOKEN` if the list is not empty, and
+`--standalone` for a plan of its own; `--standalone` and `--preview` cannot be
+combined), then `terrain.py portal` the same way for a portal pair. Merge the
+rows in `terrain/<element>.plan-rows.toon` into the host plan; they are the plan,
+not the per-section `terrain/<element>-sNN.*` files the emitter leaves beside
+them. Each section's phases (surface, forms, stops, lights) roll back from a
+column backup. Number the phases so the line's come before the stations and
+halls that meet it. For rail, also put the ride test in the plan now (see After the
+build), so the build approval covers it.
+
+Record the line report's `boxes` in the project's registry entry (the section
+boxes, as inclusive `[x1, y1, z1, x2, y2, z2]` lists), beside the usual overall
+`bbox`, so `exec-ashlar`'s overlap check uses them and a long diagonal line does
+not collide with every build inside its bounding box. Read the file, change only
+this project's entry and write the whole file back.
+
+Stops and landings that meet builds are footprints: include `terrain-integrate`
+(planned mode) for the ground around them in the same design, unless the user
+declines it at approval. Hand off to `exec-ashlar build <project>` for its own
+**separate build approval**.
+
+## After the build
+
+1. **`transit` row.** The row comes from `terrain/<element>.plan-rows.toon`. `exec-ashlar verify` takes fresh exact reads of every
+   `boxes` entry into `verify/<element>-<section>` (for a portal, `verify/<element>-overworld`
+   and `-nether`) and runs `terrain.py transit-check`. Never write these reads
+   into `site/`: a re-run of `line` would class the built bores as tubes.
+2. **Ride test (rail).** For a line whose chunks fit one force-load set, the plan's
+   agent test is a `summon` of a tagged empty minecart on the rail with
+   motion along it, `await … entity` at the far stop, nothing else. `exec-ashlar
+   test` holds paired force-loads and kills the test's tagged entities before it
+   releases them. A longer line has no agent ride; the user's ride is its only
+   ride verdict. See [previews-and-checks.md](reference/previews-and-checks.md).
+3. **The user's ride.** Ask the user to ride the line end to end, with a boat on
+   ice lines. Report a verdict as `built`, `checked`, `agent_tested` or
+   `ridden` and no higher than the evidence. Booster spacing is calibrated live;
+   if the cart stalls, say where, adjust `boosters` and emit an iteration with
+   fresh backups.
+4. Post-build reads never go into `site/`; to change the line, edit the design
+   and emit an iteration. A full rollback restores phases newest first.
+
+## Seams
+
+- Station halls, terminals, control towers → `design-building`.
+- Truss, suspension or cable-stayed superstructures, sculpture on a bridge →
+  `design-monument`.
+- Junctions, switched crossovers, launch buttons, detector brakes, elevator
+  activators and drawbridge lifts → `system-redstone`.
+- The last stretch into a base or village → `design-house` / `design-village`;
+  city streets → `design-city`; greenways and plazas → `design-grounds`.
+- Mountain passes or larger grading than the corridor's → `terrain-shape`.
+- Docks, airports and elevators are guidance in
+  [water-and-air.md](reference/water-and-air.md); the line does not generate them.
 
 ## Reference library
 
-Read the file for the step you are on — do not load them all up front:
+Read the file for the step you are on; do not load them all up front.
 
 | File | Covers |
 | ---- | ------ |
-| `reference/topology.md` | Network topologies, route-finding, and mode selection. |
-| `reference/nether-hub.md` | The 8:1 nether hub — portal-pair math, hub chambers, tunnels, mob-proofing. |
-| `reference/surface-routes.md` | Rail, roads and highways, ice-boat highways, footpaths and trails. |
-| `reference/bridges-tunnels.md` | Bridge types by span, tunnel engineering, water crossings. |
-| `reference/water-and-air.md` | Docks and harbors, airports and airship terminals, elevators. |
-| `reference/interview.md` | The adaptive interview decision tree. |
-| `reference/blueprints.md` | Network and element rendering, and the validation checklist. |
+| `reference/interview.md` | The adaptive interview. |
+| `reference/topology.md` | Topologies, route-finding and mode selection. |
+| `reference/lines.md` | The line design file, modes, rail and spawning rules, grading, bridges, tunnels, stops. |
+| `reference/nether-hub.md` | Portal pairs, the arrival spread, landings with doorways, Nether lines. |
+| `reference/bridges-tunnels.md` | Bridge and tunnel choice, piers, seals, water. |
+| `reference/previews-and-checks.md` | Previews, projected and post-build checks, verdicts, the ride test. |
+| `reference/water-and-air.md` | Docks, airports, elevators and their seams. |
 
-For volume limits, the 64×384×64 structure cap, and tiled fills, follow
-`${CLAUDE_PLUGIN_ROOT}/skills/terrain-shape/reference/command-budget.md`.
+## Non-negotiables
 
-## Seams for the orchestrator
-
-Transit touches almost every leaf. Name each seam in your returned plan; the
-orchestrator owns routing and sequences the next leaf:
-
-- **Redstone** (boost stations, junction switches, drawbridges, elevator
-  activators) → `system-redstone`. You place the static rail and footprints.
-- **Buildings** (station halls, terminals, control towers, lighthouses) →
-  `design-building`. You place the footprint and the connection point.
-- **Terrain grading** (a mountain pass, an embankment, a dredged channel) →
-  `terrain-shape`. Flag it; do not grade inline.
-- **City streets** → `design-city`; the **last stretch into a base or
-  village** → `design-house` / `design-village`.
-- **Sculpture** on a bridge or dock → `design-monument`; **greenways and
-  station plazas** → `design-grounds`.
-
-## Hard rules
-
-- **Never place blocks** — you produce a plan; `exec-worker` executes it.
-- **Static infrastructure only** — every redstone-driven mechanism is a
-  `system-redstone` seam you flag for the orchestrator.
-- **Compute portal pairs manually** — overworld ÷ 8 = nether coordinate; build
-  and light *both* ends deliberately, never rely on an auto-generated portal.
-- **Pre-tile fills** to ≤32,768 blocks; split long bridges and tunnels into
-  ≤64-block structure "sleeves"; keep routes within Y -64 to 320.
-- **Mob-proof every route** — adequate lighting, capped tunnel floors.
-- **Route around** existing builds and natural landmarks; flag grading for
-  `terrain-shape` rather than carving terrain into the plan yourself.
-- **Every player-facing powered rail needs a real redstone source** — a
-  `redstone_block` directly under the rail (`y = RAILY-1`). A source-less
-  `set_state powered=true` self-reverts the moment a player is online; see
-  `reference/surface-routes.md`.
-- **Verify 1-wide lines after placement** — `block_fill_batch` can silently drop
-  a few cells, and one missing rail stalls the cart. Scan-and-patch the layer
-  with `${CLAUDE_PLUGIN_ROOT}/tools/voxel/continuity.py`; see
-  `reference/blueprints.md`.
-
-## Return
-
-State the network back to the user — topology, the links and their modes, the
-major bridges and tunnels — and confirm `plan.toon` is written. Return to the
-orchestrator with the recommended sequence so it can route the next leaves:
-`terrain-shape` grades any flagged terrain first, then `design-building` builds
-stations and terminals, then `exec-blueprint` and `exec-worker` lay the network
-link by link with `exec-inspect` after each, and `system-redstone` adds the
-boost stations, switches, and elevator mechanisms last.
+1. No world write without the user's yes at the time; the design is approved
+   before emission and the build is approved separately.
+2. Never change a player's block until the user has seen what, where and why,
+   and said yes (`--approve-built`).
+3. Never route through a build without the player-block approval; route around it.
+4. Every powered rail sits on its own `redstone_block`; corners are single cells,
+   level with their neighbours; slopes never meet a corner.
+5. Never put a pier in flowing water or lava, or a tunnel or bore cell against
+   water or lava.
+6. Both ends of a portal pair are built and the pair check passes; never rely on
+   a game-generated portal.
+7. Light every spawnable cell to the corridor's minimum; in the Nether use
+   lanterns (soul lanterns give only 10).
+8. Never claim a ride you did not see: the verdict follows the evidence.
+9. Keep server-specific facts (addresses, hosts, player names, real coordinates,
+   a world list) out of the fork; they live only in the user's project.

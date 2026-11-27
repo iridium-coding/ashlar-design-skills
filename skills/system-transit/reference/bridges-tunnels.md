@@ -1,68 +1,41 @@
-# Bridges and tunnels — crossings
+# Bridges and tunnels
 
-How to get a route across a gap or through an obstacle.
+How a line crosses a gap or goes through an obstacle. The toolkit generates beam
+and arch bridges and bored tunnels; showpiece superstructures are
+`design-monument` work.
 
-## Bridges by span
+## Bridges
 
-Pick the bridge type by the span it must cross — each type has a credible
-range:
-
-- **Beam** — up to ~16 blocks. A simple deck on piers every ~8 blocks. The
-  default short crossing.
-- **Arch** — ~16–40 blocks. A semicircular or segmental arch carrying the
-  deck; the Roman aqueduct and the classic stone bridge. Build the arch with
-  the voxel-circle method, soften with stairs.
-- **Truss** — ~30–120 blocks. A criss-cross of iron (or wood) members above or
-  below the deck; the industrial railway bridge.
-- **Cantilever** — long spans built out from piers to meet in the middle; a
-  distinctive deep-structured profile.
-- **Suspension** — ~100–2000 blocks. Tall towers, a main cable in a catenary
-  curve (chains or fences) between them, vertical hangers down to the deck.
-  The iconic long crossing.
-- **Cable-stayed** — long spans with cables fanning straight from tall pylons
-  to the deck (a fan or harp pattern). The modern long bridge.
-- **Aqueduct** — a multi-tier arcade carrying a water channel (or a path)
-  across a valley.
-- **Drawbridge / bascule** — a lifting span; the static structure is yours,
-  the **lift mechanism is an `system-redstone` handoff**.
-
-### Block-stability note
-
-A real suspension or cable-stayed bridge hangs its deck from cables. Minecraft
-blocks do not hang — a "suspended" deck must actually rest on supports. Build
-**hidden piers or columns** under the deck (every ~16 blocks is plenty) and
-let the cables and hangers be *decorative*. The bridge reads as suspended; the
-deck is structurally held up.
-
-### Scale
-
-Real famous bridges are enormous — a 2 km span at 1:1 is thousands of blocks.
-Confirm real dimensions with `survey-research`, then scale down (0.25× or 0.5× is
-common) while keeping the proportions and the signature profile. Split a long
-bridge into ≤64-block structure "sleeves".
+- **Beam**: up to about 16 blocks; a deck on piers every 6 to 8 blocks.
+- **Arch**: 16 to 40 blocks per span; a segmental arch from the deck down to the
+  springing piers.
+- **Block stability**: blocks do not hang. Every deck column is held by a pier or
+  arch within the span its type allows (the `deck` check), and a bridge with
+  nothing under it is a failure. Truss, suspension and cable-stayed looks are
+  decoration over those hidden piers, added by `design-monument`.
+- **Piers** stand on solid ground. They may stand in still water only with
+  `piers_in_water: true`; the water cells they replace are counted and named in the
+  report and the approval covers them. Never in flowing water or lava.
+- The deck keeps `water_clearance` above the surface it crosses.
+- A drawbridge lift is `system-redstone`.
 
 ## Tunnels
 
-For routing through a mountain, under water, or below a build:
+- A rectangular or arched bore (rail 3x4, road lanes by 5, path or ice 3x3 or
+  more) inside a one-block lining shell, lights set into the lining, framed mouths.
+- A bore or lining cell that would meet water or lava is refused. The lining
+  replaces natural rock; an existing solid block that is not natural is kept as
+  lining and never overwritten; caves the tunnel crosses are sealed by the shell.
+- `roof` is the rock kept above the lining; a cut deeper than `max_cut` becomes a
+  tunnel only where the rock above keeps it.
+- Light by the corridor minimum and cap floors mobs cannot spawn on (see
+  [lines.md](lines.md)).
+- Underwater crossings are bridges, or a route over or around the water. A
+  tunnel that meets water is refused: re-route (add an `avoid` box) or pick another
+  level.
 
-- **Cross-section** — 3×3 for a footpath, ~4×4 per road lane, ~6×4 for double
-  rail, larger for a highway. Add headroom above a rail or road.
-- **Lining** — stone brick, deepslate when very deep, nether brick in the
-  Nether; line it so it reads as engineered.
-- **Lighting** — frequent enough that no stretch is dark; a light every ~8
-  blocks for a path, closer for a fast route. A capped or slabbed floor stops
-  spawns.
-- **Cut-and-cover vs bored** — cut an open trench and lid it (fast, but
-  disrupts the surface — flag `terrain-shape`), or bore from inside (slower,
-  preserves the landscape above).
-- **Underwater tunnels** — double-wall: an outer water-stop layer with a
-  1-block air gap before the inner walking tunnel, so one broken block does
-  not flood the whole tunnel.
-- A long tunnel splits into ≤64-block sleeves like a bridge.
+## Choosing
 
-## Choosing between them
-
-A bridge is seen and celebrated — use it where the crossing should be part of
-the view. A tunnel is invisible and preserves the landscape — use it where the
-terrain above matters or a bridge would be impractically tall. Either way,
-flag any approach grading for `terrain-shape`.
+A bridge is seen and celebrated; a tunnel is invisible and keeps the land above
+intact. Approach cuts at tunnel mouths and abutments at bridge ends are graded
+like any cut or fill; larger grading is a `terrain-shape` step.

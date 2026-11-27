@@ -1,58 +1,75 @@
-# The nether hub
+# The nether hub and portal pairs
 
-The single cheapest distance technique in Minecraft. Because 1 block in the
-Nether equals **8 blocks in the Overworld**, a short nether tunnel replaces a
-long overworld journey — a 1 km nether tunnel covers 8 km of overworld
-distance.
+One block in the Nether is eight in the Overworld, so a short Nether line
+replaces a long Overworld journey: 1 km of Nether line covers 8 km.
 
-## Portal-pair math
+## Portal math (Java)
 
-A nether portal links an Overworld location to a Nether location by
-coordinates:
+- Overworld to Nether: x and z become `floor(value / 8)`; Nether to Overworld:
+  `value * 8`. Y is unchanged. An Overworld portal at (3600, 70, 0) pairs to a
+  Nether portal at (450, 70, 0).
+- The game searches a square of 128 blocks radius (Overworld) or 16 (Nether),
+  full height, around the converted point and takes the nearest portal block by
+  3-D distance with Y included (ties go to the lower Y).
+- With no portal in range the game builds one within 16 blocks horizontally.
+  Building both ends and passing the pair check prevents that. Never rely on a
+  game-generated portal.
+- An entity can step through anywhere in the opening, so the arrival area is the
+  opening scaled to the other world: a 2-wide Nether opening spreads its arrivals
+  over 16 Overworld blocks. The pair passes when, for every arrival point, the
+  partner portal is nearer (3-D, Y included) than every other portal block in the
+  read, and inside the search radius. A portal shared by two Overworld sites needs
+  those sites far enough apart for the spread.
+- The server keeps the vanilla radius and scaling (`portal-search-radius: 128`).
 
-- **Nether coordinate** = Overworld X and Z **÷ 8** (Y stays roughly the
-  same). An overworld base at (3600, 70, 0) pairs to a nether portal at
-  (450, 70, 0).
-- The game pairs portals by **searching near the converted coordinate** — a
-  128-block radius in the Overworld, 16 in the Nether — and will link to or
-  create *any* portal it finds there. So an unmanaged pair drifts or
-  mis-links.
-- **Always build and light both ends manually**, at the exact converted
-  coordinates, and keep other portals well outside the search radius. Compute
-  every pair; never rely on an auto-generated exit portal.
+## The portal design
 
-## Designing the hub
+`terrain/<element>.portal.json` gives one end (new, or an existing portal the user
+names); the other is computed, its y chosen in a safe pocket (an enclosed landing
+above the lava sea and below the roof).
 
-1. Pick a **hub center** in the Nether — a clear spot, Y ≈ 70–110 (above the
-   lava sea, below the bedrock ceiling).
-2. Convert it to its overworld coordinate (× 8) — that is where the hub's
-   "home" portal lands on the surface.
-3. For each site, compute its nether coordinate (÷ 8); a spoke tunnel runs
-   from the hub to that point, where the site's portal stands.
-4. The hub chamber is a room — octagonal, hexagonal, or square — with one
-   portal per spoke, each clearly **labelled** (a sign with the destination
-   name and overworld coordinates, a distinct banner colour).
+```json
+{
+  "element": "east-gate",
+  "overworld": {"world": "world", "at": [3600, 70, 0], "axis": "x"},
+  "nether": {"world": "world_nether"},
+  "size": [4, 5],
+  "doorways": []
+}
+```
 
-## Tunnels
+`terrain.py portal` lists the boxes to read around both arrival areas, then with
+both reads writes per world an obsidian frame, `nether_portal` blocks with the axis
+(placed without physics, so no lighting step) and a landing: a platform in the
+Overworld, an enclosed, lit room in the Nether. The Nether landing gets a
+bottom-slab floor and lanterns, so nothing spawns on it.
 
-- **Cross-section** — 3×3 minimum for a footpath; 5×4 for a comfortable
-  highway-class tunnel; wider for rail.
-- **Floor** — full blocks or slabs so nothing spawns on the walking surface.
-- **Walls** — nether brick or any solid block; line it so it reads as built,
-  not bored rubble.
-- **Light it brightly** — a light source every ~4 blocks for light level
-  14–15; a dark nether tunnel fills with mobs.
-- **Mob-proofing** — slab or solid floor (no spawns), a roof that denies
-  ghasts (they need open space), and **gold blocks beside each portal** so
-  piglins stay neutral to a player arriving without gold armour.
-- Split a long tunnel into ≤64-block structure "sleeves" for the exec-blueprint.
+## Hubs
+
+A hub is a portal landing whose `doorways` the spoke lines end at (`stop: open`).
+Route the spokes first so the doorways are known before the landing is built.
+Spokes never overwrite built blocks. Pick the hub centre in clear Nether between
+the lava sea and the roof, convert it for its Overworld home, and give each site's
+spoke its own portal pair. Label each doorway with a sign naming the destination.
+
+## Nether lines
+
+A Nether line runs level between the lava sea and the roof on `straight` legs.
+There is no ground to grade: the line classes each cell from the section reads. A
+bore in rock is a tunnel, a bore through open air is a tube (an enclosed deck on
+piers or hung from the rock), and lava in the bore or its lining shell is a
+refusal naming the cell; choose another level or leg. See [lines.md](lines.md) for
+Nether spawning: lanterns, lamps in pairs at floor height, bottom-slab floors, and
+why hoglins, magma cubes and ghasts are not stopped by light.
+
+## Piglins
+
+Adult piglins are neutral only to a player wearing at least one piece of golden
+armour. Placed gold blocks do not calm them, and breaking a gold block angers
+piglins within about 16 blocks. Tell the user to wear gold when crossing.
 
 ## When a nether hub is right
 
-- 5+ sites scattered with no natural center.
-- Any pair of sites more than a few thousand blocks apart.
-- Speed-first projects.
-
-A nether hub is *not* right when the journey itself is the point — a scenic
-overworld rail or road wins there — or when sites are close enough that an
-overworld link is simpler than two portals and a tunnel.
+5 or more scattered sites, pairs more than a few thousand blocks apart, and
+speed-first projects. It is wrong when the journey is the point or the sites are
+close enough that an Overworld link is simpler than two portals and a line.

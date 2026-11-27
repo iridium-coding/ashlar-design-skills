@@ -37,7 +37,7 @@ orchestration model and the no-trivial routing rule are in
 | design-monument | design | 3 | opus / inline | Statues, sculpture, pixel art, logos |
 | design-grounds | design | 3 | opus / inline | Designed outdoor space (gardens/plazas/mazes) |
 | system-redstone | system | 3 | opus / inline | Redstone & mechanical contraptions (was engineer); the fork's version builds and tests through Ashlar |
-| system-transit | system | 3 | opus / inline | Rail/road/nether-hub/bridge networks |
+| system-transit | system | 3 | opus / inline | Rail/road/nether-hub/bridge networks; the fork's version routes, grades, builds and ride-tests lines through Ashlar |
 | exec-plan | exec | 3 | opus / inline | Requirements → plan.toon (was planner) |
 | exec-blueprint | exec | 3 | sonnet / fork | Reusable mcb:* structure templates (was blueprinter) |
 | exec-worker | exec | 3 | haiku / fork | Executes plan.toon via the harness (was worker) |
@@ -49,7 +49,8 @@ orchestration model and the no-trivial routing rule are in
 | setup-server | setup | — | inherit / inline | Configure & launch the MCP server (was setup-mcp-server) |
 | setup-connect | setup | — | inherit / inline | Register the server with Claude (was connect-claude) |
 
-The ashlar-design-skills fork adds `exec-ashlar`, ports `system-redstone`, and
+The ashlar-design-skills fork adds `exec-ashlar`, ports `system-redstone` and
+`system-transit`, and
 adapts the six `design-*` skills and `survey-research` to build through Ashlar.
 Its five inline terrain skills are `terrain-shape`, `terrain-landmark`,
 `terrain-ecology`, `terrain-integrate` and `terrain-cave`. See the fork's

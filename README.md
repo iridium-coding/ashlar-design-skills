@@ -4,9 +4,9 @@
 
 > **This fork** ([iridium-coding/ashlar-design-skills](https://github.com/iridium-coding/ashlar-design-skills))
 > uses the [Ashlar](https://github.com/rcwalter24/ashlar) MCP server on Paper.
-> Its fourteen Ashlar skills include the six `design-*` skills,
-> `survey-research`, `exec-ashlar`, `system-redstone`, `terrain-shape`,
-> `terrain-landmark`, `terrain-ecology`, `terrain-integrate`, and
+> Its fifteen Ashlar skills include the six `design-*` skills,
+> `survey-research`, `exec-ashlar`, `system-redstone`, `system-transit`,
+> `terrain-shape`, `terrain-landmark`, `terrain-ecology`, `terrain-integrate`, and
 > `terrain-cave`.
 > To use them with Claude Code and Codex, clone this repo into the workspace as
 > `ashlar-design-skills/`, then from the workspace root:
@@ -14,7 +14,7 @@
 > ```bash
 > mkdir -p .claude/skills .agents/skills
 > for s in design-building design-city design-grounds design-house design-monument design-village \
->          exec-ashlar survey-research system-redstone \
+>          exec-ashlar survey-research system-redstone system-transit \
 >          terrain-shape terrain-landmark terrain-ecology terrain-integrate terrain-cave; do
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".claude/skills/$s"
 >   ln -sfn "../../ashlar-design-skills/skills/$s" ".agents/skills/$s"
@@ -34,7 +34,8 @@
 > The design and rules are in the [foundation spec](docs/superpowers/specs/2026-11-17-ashlar-design-skills-design.md),
 > [terrain spec](docs/superpowers/specs/2026-11-19-ashlar-terrain-design.md),
 > [redstone spec](docs/superpowers/specs/2026-11-19-ashlar-redstone-design.md),
-> and [cave spec](docs/superpowers/specs/2026-11-25-ashlar-terrain-cave-design.md).
+> [cave spec](docs/superpowers/specs/2026-11-25-ashlar-terrain-cave-design.md),
+> and [transit spec](docs/superpowers/specs/2026-11-25-ashlar-system-transit-design.md).
 
 # Minecraft Java — Claude Plugin
 
@@ -185,7 +186,7 @@ The full list, tiers, and models live in
 | `design-monument` | Designs monuments and build-art — statues, creatures, sculpture, pixel art, logos. | Opus |
 | `design-grounds` | Designs intentional outdoor space — gardens, parks, plazas, courtyards, hedge mazes. | Opus |
 | `system-redstone` | Designs and verifies redstone and mechanical contraptions — Java-correct, with functional tests. | Opus |
-| `system-transit` | Designs the connective network between builds — rail, roads, nether hubs, bridges, tunnels. | Opus |
+| `system-transit` | Designs and builds checked rail, road, path and ice lines, bridges, tunnels and nether portal pairs between builds through Ashlar, with ride tests. | Opus |
 | `exec-plan` | Captures requirements, interviews the user, produces a fully-resolved `plan.toon`. | Opus |
 | `exec-blueprint` | Turns the plan into named, reusable `mcb:*` structure templates in the world. | Sonnet |
 | `exec-worker` | Executes the plan step by step via the harness — mechanical, no redesign. | Haiku |

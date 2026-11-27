@@ -10,11 +10,13 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 SKILLS = ["design-building", "design-city", "design-grounds", "design-house",
           "design-monument", "design-village", "exec-ashlar", "survey-research",
-          "system-redstone", "terrain-shape", "terrain-landmark", "terrain-ecology",
-          "terrain-integrate", "terrain-cave"]
+          "system-redstone", "system-transit", "terrain-shape", "terrain-landmark",
+          "terrain-ecology", "terrain-integrate", "terrain-cave"]
 IDS = [skill.replace("-", "_") for skill in SKILLS]
 TERRAIN_SKILLS = {"terrain-shape", "terrain-landmark", "terrain-ecology", "terrain-integrate",
                   "terrain-cave"}
+# Skills whose cited reference, script and tool paths must resolve in the repository.
+LINKED_SKILLS = TERRAIN_SKILLS | {"system-transit"}
 CLIENTS_FILE = "skills/exec-ashlar/reference/clients.md"
 VOXEL_TOOLKIT = "skills/design-monument/tools/voxel/"
 TERRAIN_TOOLKIT = "skills/terrain-shape/tools/terrain/"
@@ -148,7 +150,7 @@ def test_no_chapman_leftovers(skill: str) -> None:
     assert not problems, "Chapman pipeline references left:\n" + "\n".join(problems)
 
 
-TERRAIN_IDS = sorted(TERRAIN_SKILLS)
+TERRAIN_IDS = sorted(LINKED_SKILLS)
 
 
 @pytest.mark.parametrize("skill", TERRAIN_IDS, ids=[s.replace("-", "_") for s in TERRAIN_IDS])
@@ -186,6 +188,42 @@ def test_frontmatter(skill: str) -> None:
     description = data.get("description")
     assert isinstance(description, str) and description.strip()
     assert len(description) <= 1024, f"description is {len(description)} characters"
+
+
+def test_transit_skill_drives_the_toolkit_commands() -> None:
+    text = (REPO / "skills" / "system-transit" / "SKILL.md").read_text(encoding="utf-8")
+    for needed in ("ashlar_place.py heights", "terrain.py route", "terrain.py line",
+                   "terrain.py portal", "transit-check", "--approve-built", "--preview",
+                   "`boxes`", "exec-ashlar build", "ride test"):
+        assert needed in text, f"system-transit/SKILL.md does not mention {needed}"
+    assert re.search(r"^\s*(?:[-*]\s+)?Claude Code:", text, re.MULTILINE)
+    assert re.search(r"^\s*(?:[-*]\s+)?Otherwise:", text, re.MULTILINE)
+
+
+def test_transit_references_are_the_ashlar_set() -> None:
+    folder = REPO / "skills" / "system-transit" / "reference"
+    assert sorted(p.name for p in folder.glob("*.md")) == [
+        "bridges-tunnels.md", "interview.md", "lines.md", "nether-hub.md",
+        "previews-and-checks.md", "topology.md", "water-and-air.md"]
+
+
+def test_transit_lines_reference_pins_minecraft_facts() -> None:
+    text = (REPO / "skills" / "system-transit" / "reference" / "lines.md").read_text(
+        encoding="utf-8")
+    for fact in ("soul lanterns only 10", "packed ice and blue ice are", "plain ice melts",
+                 "hoglins", "default 1 in the Overworld, 12 in the Nether",
+                 "no boosters on its last 8 cells", "launch group of 3"):
+        assert fact in text, f"lines.md does not state {fact!r}"
+    assert "block spawns" not in text
+    bridges = (REPO / "skills" / "system-transit" / "reference" / "bridges-tunnels.md").read_text(
+        encoding="utf-8")
+    assert "water-stop" not in bridges and "is refused" in bridges
+
+
+def test_transit_text_has_no_unconfirmed_gold_block_claim() -> None:
+    for path in _markdown("system-transit"):
+        text = path.read_text(encoding="utf-8").lower()
+        assert "gold blocks beside" not in text, path.name
 
 
 def test_leftovers_detects_tools_but_not_minecraft_ids() -> None:

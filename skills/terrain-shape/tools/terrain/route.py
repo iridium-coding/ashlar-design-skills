@@ -12,10 +12,12 @@ tunnels into cuts.
 """
 from __future__ import annotations
 
+import hashlib
 import heapq
+import json
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from itertools import pairwise
 from pathlib import Path
 
@@ -605,3 +607,97 @@ def classify(design: LineDesign, levels: list[float], ground: list[float], surfa
     _merge_tunnels(design, out, -d)
     _merge_bridges(design, out)
     return out
+
+
+# ------------------------------------------------------------------ sections
+@dataclass
+class Section:
+    name: str
+    start: int
+    end: int
+    box: tuple[int, int, int, int, int, int]
+    world: str | None
+
+
+@dataclass
+class Route:
+    element: str
+    mode: str
+    world: str | None
+    dimension: str
+    design_hash: str
+    cells: list[tuple[int, int]]
+    levels: list[float]
+    kinds: list[str]
+    ground: list[float | None]
+    surface: list[float | None]
+    corners: list[int]
+    sections: list[Section]
+
+
+HASH_KEYS = ("element", "world", "mode", "route", "from", "to", "via", "avoid", "profile", "limits",
+             "width", "lanes")
+Y_MIN, Y_MAX = -64, 319
+
+
+def design_hash(design: LineDesign) -> str:
+    """sha256[:12] of the route-relevant keys of the design file."""
+    part = {k: design.source[k] for k in HASH_KEYS if k in design.source}
+    return hashlib.sha256(json.dumps(part, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:12]
+
+
+def make_sections(design: LineDesign, route: Route, grid: Grid | None) -> list[Section]:
+    """Split a route into sections of ``section_length`` cells, each with its read box."""
+    lim, tun = design.limits, design.tunnels
+    reach = math.ceil(formation_half(design) + max(lim.max_fill * lim.fill_ratio,
+                                                   lim.max_cut * lim.cut_ratio, tun.width) + 8)
+    n, length = len(route.cells), design.section_length
+    sections = []
+    for k in range((n + length - 1) // length):
+        a, b = k * length, min((k + 1) * length, n) - 1
+        xs = [c[0] for c in route.cells[a:b + 1]]
+        zs = [c[1] for c in route.cells[a:b + 1]]
+        x1, x2, z1, z2 = min(xs) - reach, max(xs) + reach, min(zs) - reach, max(zs) + reach
+        levels = route.levels[a:b + 1]
+        if grid is None:
+            y1, y2 = math.floor(min(levels)) - 6, math.ceil(max(levels)) + tun.height + 6
+        else:
+            ground = [g for g in route.ground[a:b + 1] if g is not None]
+            low = min([*ground, *(math.floor(v) - 1 for v in levels)])
+            y1 = math.floor(low) - 6
+            ia, ja = x1 - grid.origin[0], z1 - grid.origin[1]
+            nx, nz = grid.top.shape
+            window = grid.top[max(ia, 0):max(min(x2 - grid.origin[0] + 1, nx), 0),
+                              max(ja, 0):max(min(z2 - grid.origin[1] + 1, nz), 0)]
+            window = window[~np.isnan(window)]
+            top = float(window.max()) if window.size else -math.inf
+            y2 = math.ceil(max(top + 2, max(levels) + tun.height + tun.roof + 2))
+        sections.append(Section(f"s{k + 1:02d}", a, b,
+                                (x1, max(y1, Y_MIN), z1, x2, min(y2, Y_MAX), z2), design.world))
+    return sections
+
+
+def plan_route(design: LineDesign, grid: Grid | None) -> Route:
+    """Cells, profile, stretch kinds, ground and surface, corners and sections of a line."""
+    cells, corners = straight_cells(design) if design.route == "straight" else search_cells(design, grid)
+    levels, kinds = fit_profile(design, cells, corners, grid)
+    ground: list[float | None] = [None] * len(cells)
+    surface: list[float | None] = [None] * len(cells)
+    if grid is not None:
+        g, s = _route_heights(cells, grid)
+        ground, surface = [float(v) for v in g], [float(v) for v in s]
+    out = Route(design.element, design.mode, design.world, design.dimension, design_hash(design),
+                list(cells), [float(v) for v in levels], list(kinds), ground, surface, list(corners), [])
+    out.sections = make_sections(design, out, grid)
+    return out
+
+
+def write_route(route: Route, path: Path) -> None:
+    Path(path).write_text(json.dumps(asdict(route), indent=1) + "\n", encoding="utf-8")
+
+
+def load_route(path: Path) -> Route:
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data["cells"] = [tuple(c) for c in data["cells"]]
+    data["sections"] = [Section(**{**s, "box": tuple(s["box"])}) for s in data["sections"]]
+    return Route(**data)

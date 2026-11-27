@@ -307,7 +307,7 @@ def search_cells(design: LineDesign, grid: Grid) -> tuple[list[tuple[int, int]],
 
 
 # ------------------------------------------------------------------- profile
-BRIDGE_COST = 40.0
+BRIDGE_COST = 56.0  # flat per bridge cell so a deck stays level; under a rail fill at max_fill (72)
 TUNNEL_COST = 60.0
 SMOOTHING = 0.2
 RAIL_CLIMB_COST = 5.0  # per block of rail rise or fall: climbs carry a booster every 2nd cell
@@ -392,12 +392,11 @@ def _cell_costs(design: LineDesign, levels: np.ndarray, ground: np.ndarray, surf
     d = levels[None, :] - (ground[:, None] + 1)
     fill, cut = np.maximum(d, 0), np.maximum(-d, 0)
     cost = fill * (width + fill * lim.fill_ratio) + cut * (width + cut * lim.cut_ratio)
-    bridge = BRIDGE_COST + 2 * d
-    cost = np.where(d > lim.max_fill, bridge, cost)
+    cost = np.where(d > lim.max_fill, BRIDGE_COST, cost)
     cost = np.where((d < -lim.max_cut) & (-d >= _cover(design)), TUNNEL_COST, cost)
     water = (surface > ground)[:, None]
     clear = levels[None, :] >= (surface + 1 + lim.water_clearance)[:, None]
-    return np.where(water, np.where(clear, bridge, np.inf), cost)
+    return np.where(water, np.where(clear, BRIDGE_COST, np.inf), cost)
 
 
 def _unreachable(design: LineDesign, cells: list[tuple[int, int]], i: int, fixed: dict[int, float],

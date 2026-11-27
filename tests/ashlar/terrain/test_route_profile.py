@@ -119,6 +119,13 @@ def test_endpoint_and_profile_levels_are_hard_constraints(tmp_path):
     assert max(abs(a - b) for a, b in pairwise(levels)) <= 1
 
 
+@pytest.mark.parametrize("mode", ["rail", "road"])
+def test_valley_bridge_deck_stays_level_at_the_approach_level(tmp_path, mode):
+    levels, kinds = _along_x(tmp_path, [64] * 30 + [50] * 10 + [64] * 30, mode=mode)
+    deck = {level for level, kind in zip(levels, kinds, strict=True) if kind == "bridge"}
+    assert levels[0] == 65 and deck == {levels[0]}
+
+
 def test_free_ends_fit_the_ground_at_grade(tmp_path):
     levels, kinds = _along_x(tmp_path, [70] * 20)
     assert set(levels) == {71} and set(kinds) == {"grade"}

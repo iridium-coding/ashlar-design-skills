@@ -18,7 +18,7 @@ def test_defaults_follow_the_spec(tmp_path):
     d = td.parse_line(_base(), tmp_path)
     assert (d.limits.max_fill, d.limits.max_cut, d.limits.min_bridge, d.limits.min_tunnel, d.limits.water_clearance) == (6, 8, 4, 6, 3)
     assert (d.limits.fill_ratio, d.limits.cut_ratio, d.limits.rock_cut_ratio, d.section_length, d.version) == (1.5, 1.0, 0.5, 96, "26.3")
-    assert (d.dimension, d.route, d.lights.minimum, d.boosters.flat, d.boosters.slope) == ("overworld", "search", 1, 24, 2)
+    assert (d.dimension, d.route, d.lights.minimum, d.boosters.flat, d.boosters.slope) == ("overworld", "search", 1, 8, 2)
     assert (d.tunnels.width, d.tunnels.height, d.tunnels.roof) == (3, 4, 3)
     assert d.end.stop == "terminus" and d.start.stop is None
 

@@ -223,10 +223,60 @@ def _span(width: int) -> tuple[int, int]:
 
 
 # ------------------------------------------------------------------ the checks
+_STEPS = {"east": (1, 0), "west": (-1, 0), "south": (0, 1), "north": (0, -1)}
+
+
+def _rail_ends(shape: str | None) -> dict[tuple[int, int], int]:
+    """The two directions a rail shape runs toward, each with how far above the rail's own y its end is.
+
+    A flat or corner rail ends level both ways; an ascending rail's end toward its named side is
+    one block up. An unknown shape has no ends.
+    """
+    if shape is None:
+        return {}
+    if shape.startswith("ascending_"):
+        up = shape.removeprefix("ascending_")
+        if up not in _STEPS:
+            return {}
+        dx, dz = _STEPS[up]
+        return {(dx, dz): 1, (-dx, -dz): 0}
+    names = shape.split("_")
+    if len(names) != 2 or not all(n in _STEPS for n in names):
+        return {}
+    return {_STEPS[n]: 0 for n in names}
+
+
+def _joins(a: RailCell, shape_a: str | None, b: RailCell, shape_b: str | None) -> bool:
+    """Whether neighbouring rails a and b meet: each runs toward the other, their ends at one height.
+
+    An ascending rail's upper end meets a rail one block higher, never a slope rising the other
+    way (two slopes rising to a peak do not join).
+    """
+    step = (b.x - a.x, b.z - a.z)
+    ends_a, ends_b = _rail_ends(shape_a), _rail_ends(shape_b)
+    back = (-step[0], -step[1])
+    if step not in ends_a or back not in ends_b:
+        return False
+    up_a, up_b = ends_a[step], ends_b[back]
+    return a.y + up_a == b.y + up_b and not (up_a and up_b)
+
+
 def _continuity(line: _Line) -> _Outcome | None:
+    """Every rail is there with its planned shape, and every rail meets its neighbours on the line."""
     if line.design.mode != "rail":
         return None
-    out = _Outcome([], 0, "rail cells missing or with the wrong shape")
+    out = _Outcome([], 0, "rail cells missing, with the wrong shape or not meeting a neighbour")
+    shapes: dict[int, str | None] = {}
+
+    def shape(i: int) -> str | None:
+        """The shape of the rail read at index i's planned cell, None when there is none."""
+        if i not in shapes:
+            rc = line.rails[i]
+            state = line.state(i, rc.x, rc.y, rc.z, need=line.keep(i))
+            block, props = parse_state(state) if state is not None else ("", {})
+            shapes[i] = props.get("shape") if block in _RAILS else None
+        return shapes[i]
+
     for i, rc in enumerate(line.rails):
         if not line.keep(i):
             continue
@@ -237,6 +287,16 @@ def _continuity(line: _Line) -> _Outcome | None:
         block, props = parse_state(state)
         if block not in _RAILS or props.get("shape") != rc.shape:
             out.add((rc.x, rc.y, rc.z))
+    for i in range(line.n - 1):
+        if not (line.keep(i) or line.keep(i + 1)):
+            continue
+        a, b = line.rails[i], line.rails[i + 1]
+        if shape(i) is None or shape(i + 1) is None:
+            continue                     # a missing rail is reported above
+        if not _joins(a, shape(i), b, shape(i + 1)):
+            for j, rc in ((i, a), (i + 1, b)):
+                if line.keep(j):
+                    out.add((rc.x, rc.y, rc.z))
     return out
 
 

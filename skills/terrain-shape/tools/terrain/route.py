@@ -313,8 +313,10 @@ BRIDGE_COST = 56.0  # flat per bridge cell so a deck stays level; under a rail f
 TUNNEL_COST = 60.0
 SMOOTHING = 0.2
 RAIL_CLIMB_COST = 5.0  # per block of rail rise or fall: climbs carry a booster every 2nd cell
+TERMINUS_CELLS = 11    # a rail terminus's 8 quiet cells and its 3-cell launch group run level
 LEVEL_RANGE = (-60, 315)
-_GRADE_RULE = {"rail": "a rail moves at most 1 block per cell and runs level through a corner",
+_GRADE_RULE = {"rail": "a rail moves at most 1 block per cell, runs level through a corner and over the "
+                       f"{TERMINUS_CELLS} cells at a terminus, and a dip bottoms out over at least 2 level cells",
                "road": "a road moves at most half a block per cell",
                "path": "a path moves at most 1 block per cell",
                "ice": "an ice line stays level"}
@@ -418,39 +420,76 @@ def _unreachable(design: LineDesign, cells: list[tuple[int, int]], i: int, fixed
     return RouteError(f"cannot reach any level at {where}: {rule}")
 
 
-def _solve(design: LineDesign, cells: list[tuple[int, int]], corners: list[int], costs: np.ndarray,
-           levels: np.ndarray, fixed: dict[int, float], ground: np.ndarray, surface: np.ndarray,
-           unit: float) -> np.ndarray:
-    """Least-cost level path through `costs` with steps of at most one candidate (none where level)."""
-    n, k_count = costs.shape
-    level_only = np.full(n, design.mode == "ice")  # level_only[i]: no change from cell i - 1 to i
+def _level_only(design: LineDesign, n: int, corners: list[int]) -> np.ndarray:
+    """``level_only[i]``: no change of level from cell i - 1 to cell i.
+
+    Ice runs level end to end. A rail corner and its two neighbours share a level, and so do
+    the ``TERMINUS_CELLS`` cells at a rail terminus, so its platform is level and a rider can
+    leave a terminus at the bottom of a climb.
+    """
+    level_only = np.full(n, design.mode == "ice")
     if design.mode == "rail":
         for c in corners:
             level_only[c:c + 2] = True
-    move = (SMOOTHING + (RAIL_CLIMB_COST if design.mode == "rail" else 0.0)) * unit
-    back = np.zeros((n, k_count), dtype=np.int8)  # back[i, k]: candidate step taken into (i, k)
-    best = np.zeros(k_count)
-    for i in range(n):
-        if i == 0 or level_only[i]:
-            total = best
-        else:
-            total = best.copy()  # staying level wins ties
-            rise = np.full(k_count, np.inf)
-            rise[1:] = best[:-1] + move
-            fall = np.full(k_count, np.inf)
-            fall[:-1] = best[1:] + move
-            for step, cand in ((1, rise), (-1, fall)):
-                better = cand < total
-                total[better] = cand[better]
-                back[i][better] = step
-        best = total + costs[i]
+        if design.start.stop == "terminus":
+            level_only[1:TERMINUS_CELLS] = True
+        if design.end.stop == "terminus":
+            level_only[max(n - TERMINUS_CELLS + 1, 0):] = True
+    return level_only
+
+
+_FALL, _LEVEL, _RISE = 0, 1, 2   # the step into a cell; a candidate index moves by state - 1
+_PREFER = (_LEVEL, _RISE, _FALL)  # on equal cost: staying level, then a rise, then a fall
+
+
+def _cheapest(best: np.ndarray, states: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
+    """Per candidate, the least cost over `states` of `best` and the state it came from (ties: ``_PREFER``)."""
+    cost = np.full(best.shape[1], np.inf)
+    came = np.full(best.shape[1], _LEVEL, dtype=np.int8)
+    for s in (s for s in _PREFER if s in states):
+        better = best[s] < cost
+        cost[better] = best[s][better]
+        came[better] = s
+    return cost, came
+
+
+def _solve(design: LineDesign, cells: list[tuple[int, int]], corners: list[int], costs: np.ndarray,
+           levels: np.ndarray, fixed: dict[int, float], ground: np.ndarray, surface: np.ndarray,
+           unit: float) -> np.ndarray:
+    """Least-cost level path through `costs` with steps of at most one candidate (none where level).
+
+    The program keeps, for every candidate level, the best path arriving by a fall, level or by
+    a rise. A rail never rises straight out of a fall: one rail cannot ascend toward both its
+    neighbours, so a dip bottoms out over at least two level cells (a one-cell crest is fine).
+    """
+    n, k_count = costs.shape
+    level_only = _level_only(design, n, corners)
+    rail = design.mode == "rail"
+    move = (SMOOTHING + (RAIL_CLIMB_COST if rail else 0.0)) * unit
+    every = (_FALL, _LEVEL, _RISE)
+    best = np.full((3, k_count), np.inf)  # best[s, k]: least cost to (i, k), arriving by step state s
+    best[_LEVEL] = costs[0]
+    back = np.zeros((n, 3, k_count), dtype=np.int8)  # back[i, s, k]: the step state at cell i - 1
+    if not np.isfinite(best).any():
+        raise _unreachable(design, cells, 0, fixed, ground, surface)
+    for i in range(1, n):
+        new = np.full((3, k_count), np.inf)
+        stay, came = _cheapest(best, every)
+        new[_LEVEL], back[i, _LEVEL] = stay + costs[i], came
+        if not level_only[i]:
+            up, up_came = _cheapest(best, (_LEVEL, _RISE) if rail else every)
+            new[_RISE, 1:], back[i, _RISE, 1:] = up[:-1] + move + costs[i, 1:], up_came[:-1]
+            new[_FALL, :-1], back[i, _FALL, :-1] = stay[1:] + move + costs[i, :-1], came[1:]
+        best = new
         if not np.isfinite(best).any():
             raise _unreachable(design, cells, i, fixed, ground, surface)
-    k = int(np.argmin(best))
+    low = best.min(axis=0)
+    k = int(np.argmin(low))
+    s = next(s for s in _PREFER if best[s, k] == low[k])
     path = np.empty(n, dtype=int)
     path[-1] = k
     for i in range(n - 1, 0, -1):
-        k -= int(back[i, k])
+        s, k = int(back[i, s, k]), k - (s - 1)
         path[i - 1] = k
     return levels[path]
 
@@ -475,7 +514,9 @@ def fit_profile(design: LineDesign, cells: list[tuple[int, int]], corners: list[
     cut and fill (weighted by the formation width and slope ratios), bridge and tunnel costs,
     a small cost per level change (plus boosters on rail climbs, ``RAIL_CLIMB_COST``),
     under the mode's grade rules: rail and path move at most a block per cell, a rail
-    corner and its neighbours share a level, a road moves in half blocks, ice stays level.
+    corner and its neighbours share a level, so do the ``TERMINUS_CELLS`` cells at a rail
+    terminus, a rail dip bottoms out over at least two level cells, a road moves in half
+    blocks, ice stays level.
     Endpoints with a y and the design's profile points are hard constraints; a null endpoint
     y is fitted. With no grid (a straight underground or Nether line) every cell runs at the
     endpoints' shared level and is a tunnel until the section reads class it.

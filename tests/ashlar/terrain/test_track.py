@@ -102,7 +102,7 @@ def test_booster_spacing_on_the_level_and_on_slopes(tmp_path):
     cells = track.rail_cells(*_rail_line(tmp_path, levels=[65] * 50 + [65 + i for i in range(1, 11)] + [75] * 40)[:2])
     flat = [i for i, c in enumerate(cells) if c.booster and i < 50]
     slope = [i for i, c in enumerate(cells) if c.booster and 50 <= i < 60]
-    assert flat == [0, 24, 48]
+    assert flat == [0, 8, 16, 24, 32, 40, 48]
     assert slope == [50, 52, 54, 56, 58]
 
 
@@ -167,7 +167,7 @@ def test_a_section_writes_only_its_own_cells(tmp_path):
     half = Section("s02", 30, 59, r.sections[0].box, "world")
     after = blocks.apply_writes(site, track.track_layers(design, r, half, site))
     assert after.block(10, 65, 20) == "minecraft:air"
-    assert after.block(40, 65, 20) == "minecraft:rail[shape=east_west]"
+    assert after.block(41, 65, 20) == "minecraft:rail[shape=east_west]"     # 40 carries a booster
 
 
 def test_rail_lamp_posts_alternate_sides_on_grade(tmp_path):

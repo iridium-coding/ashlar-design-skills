@@ -196,6 +196,22 @@ def test_the_failing_cell_is_the_mutated_one(tmp_path):
     assert _failed(report)["continuity"]["cells"] == [[plain.x, plain.y, plain.z]]
 
 
+def test_a_rail_dip_without_a_level_bottom_fails_continuity(tmp_path):
+    levels = [65] * 10 + [64] + [65] * 10           # a hand-made V: the 64 rail ascends east only
+    design, r, section, site = _line(tmp_path, "rail", ["grade"] * 21, levels=levels)
+    rails = track.rail_cells(design, r)
+    assert [c.shape for c in rails[9:12]] == ["east_west", "ascending_east", "east_west"]
+    failed = _failed(transit_checks.check_line(design, r, _compose(design, r, section, site)))
+    assert [rails[10].x, rails[10].y, rails[10].z] in failed["continuity"]["cells"]
+
+
+def test_a_two_cell_dip_bottom_passes_continuity(tmp_path):
+    levels = [65] * 10 + [64, 64] + [65] * 10
+    design, r, section, site = _line(tmp_path, "rail", ["grade"] * 22, levels=levels)
+    report = transit_checks.check_line(design, r, _compose(design, r, section, site))
+    assert "continuity" not in _failed(report), report
+
+
 def test_walk_fails_on_a_two_block_step(tmp_path):
     design, r, sites = _built(tmp_path, kind="road")
     report = transit_checks.check_line(design, r, _mutate(sites, r, design, "two_block_step"))

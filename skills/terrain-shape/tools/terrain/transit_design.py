@@ -57,7 +57,7 @@ class Limits:
 
 @dataclass(frozen=True)
 class Boosters:
-    flat: int = 24
+    flat: int = 8    # an empty cart coasts about 10 blocks after a boost (drag 0.96 per tick)
     slope: int = 2
 
 

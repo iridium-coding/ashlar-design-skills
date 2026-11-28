@@ -20,7 +20,7 @@ import numpy as np
 
 from .blocks import cells_write
 from .live import LiveWrite
-from .route import Route, Section
+from .route import TERMINUS_CELLS, Route, Section
 from .site import _AIR, _LAVA, NATURAL, Site, base_id, is_water_state, natural_for
 from .transit_design import LineDesign
 
@@ -30,7 +30,7 @@ REDSTONE_BLOCK = "minecraft:redstone_block"
 BED_KINDS = ("grade", "cut", "fill", "tunnel")
 LIT_KINDS = ("grade", "cut", "fill")
 TERMINUS_QUIET = 8      # cells next to a terminus end without boosters
-LAUNCH = (8, 11)        # launch group: the 9th to 11th cells from a terminus end
+LAUNCH = (TERMINUS_QUIET, TERMINUS_CELLS)   # launch group: the 9th to 11th cells from a terminus end
 CLEARANCE = 3
 _SALT = {"ballast": 1, "surface": 2, "edge": 3, "guard": 4, "lamp_post": 5, "lamp": 6, "end_block": 7,
          "ice": 8, "width": 9, "deck": 10, "pier": 11, "lining": 12, "railing": 13, "platform": 14}

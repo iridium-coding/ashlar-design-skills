@@ -4,7 +4,7 @@ from itertools import pairwise
 import numpy as np
 import pytest
 from sitegen import make_heights
-from terrain import route
+from terrain import route, track
 from terrain import transit_design as td
 
 
@@ -67,6 +67,58 @@ def test_ridge_higher_than_max_cut_with_cover_is_a_tunnel(tmp_path):
     ramp = [64 + 4 * i for i in range(1, 6)]
     _, kinds = _along_x(tmp_path, [64] * 25 + ramp + [84] * 15 + ramp[::-1] + [64] * 25)
     assert "tunnel" in kinds[32:42] and "cut" in kinds[24:30]
+
+
+def _broken_joints(levels):
+    """Joints between neighbouring rails of a line along +x whose heights do not meet.
+
+    Each rail's ends sit at its level, one higher on the side it ascends toward; two neighbours
+    meet when their facing ends are at one height and they are not two slopes rising to a peak.
+    """
+    cells = [(x, 4, v) for x, v in enumerate(levels)]
+    ends = []
+    for i, cell in enumerate(cells):
+        shape = track.rail_shape(cells[i - 1] if i else None, cell, cells[i + 1] if i + 1 < len(cells) else None)
+        y = int(cell[2])
+        ends.append((y + (shape == "ascending_west"), y + (shape == "ascending_east"), shape))
+    return [i for i, (a, b) in enumerate(pairwise(ends))
+            if a[1] != b[0] or (a[2] == "ascending_east" and b[2] == "ascending_west")]
+
+
+def _vees(levels):
+    return [i for i in range(1, len(levels) - 1) if levels[i - 1] > levels[i] < levels[i + 1]]
+
+
+@pytest.mark.parametrize("ground", [
+    pytest.param([64] * 10 + [61] + [64] * 10, id="one-wide-ditch"),
+    pytest.param([64] * 10 + [62, 60, 58, 56, 58, 60, 62] + [64] * 10, id="symmetric-valley"),
+])
+def test_a_rail_dip_bottoms_out_over_two_level_cells_so_every_joint_meets(tmp_path, ground):
+    levels, _ = _along_x(tmp_path, ground)
+    assert _vees(levels) == []
+    assert _broken_joints(levels) == []
+
+
+def test_a_fixed_rail_low_point_gets_a_two_cell_bottom(tmp_path):
+    levels, _ = _along_x(tmp_path, [64] * 21, profile=[[10, 64]])
+    assert levels[10] == 64 and _vees(levels) == [] and _broken_joints(levels) == []
+
+
+def test_a_one_cell_rail_crest_is_allowed(tmp_path):
+    levels, _ = _along_x(tmp_path, [64] * 21, profile=[[10, 66]])
+    assert levels[8:13] == [65, 65, 66, 65, 65] and _broken_joints(levels) == []
+
+
+def test_rail_termini_run_level_over_their_quiet_and_launch_cells(tmp_path):
+    ground = [64 + i // 2 for i in range(40)]           # a steady 1-in-2 climb from end to end
+    grid = route.grid_from_heights(make_heights(None, (0, 0), _rows(ground)))
+    design = td.parse_line({"element": "test-line", "seed": 1, "world": "world", "mode": "rail",
+                            "route": "straight", "from": {"at": [0, None, 4], "stop": "terminus"},
+                            "to": {"at": [39, None, 4], "stop": "terminus"}}, tmp_path)
+    cells, corners = route.straight_cells(design)
+    levels, _ = route.fit_profile(design, cells, corners, grid)
+    assert len(set(levels[:11])) == 1 and len(set(levels[-11:])) == 1
+    assert max(abs(a - b) for a, b in pairwise(levels)) == 1 and _broken_joints(levels) == []
 
 
 def test_short_bridge_grows_to_min_bridge(tmp_path):

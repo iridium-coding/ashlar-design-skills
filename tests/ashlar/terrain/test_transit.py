@@ -279,7 +279,12 @@ def test_plan_rows_carry_transit_surface_match_and_outer_seams(tmp_path):
     assert seams and {row["outward"] for row in seams} == {"z", "-z"}     # along the line, never across it
     assert not any((row["from"][1] - Z0) * (row["to"][1] - Z0) < 0 for row in seams)
     report = json.loads((project / "terrain/north-line.line-report.json").read_text(encoding="utf-8"))
-    assert report["boxes"] == [list(s.box) for s in _route(project).sections]
+    sections = _route(project).sections
+    assert [r["box"] for r in report["reads"]] == [list(s.box) for s in sections]
+    assert [r["out"] for r in report["reads"]] == ["site/north-line-s01", "site/north-line-s02"]
+    written = [list(transit._union([(*r["from"], *r["to"]) for r in result.rows if f"-{s.name}-" in r["name"]]))
+               for s in sections]
+    assert report["boxes"] == written and written != [list(s.box) for s in sections]
     assert [s["name"] for s in report["sections"]] == ["s01", "s02"]
     assert {"check", "built", "displaced_water", "unsupported_tube"} <= set(report)
 
@@ -682,3 +687,47 @@ def test_a_cliff_past_the_outside_of_a_corner_on_a_valley_floor_is_left_alone(tm
     built = _built_sections(project, "pit", r)
     for z in (-1, 0, 1):
         assert built["s02"].block(115, 64, z) == "minecraft:grass_block[snowy=false]", z
+
+
+
+# ------------------------------------------------------------------ player blocks the line affects in place
+def test_a_player_block_buried_under_the_line_is_listed_for_the_token(tmp_path):
+    slab = "minecraft:oak_slab[type=bottom,waterlogged=false]"
+    design, project = _project(tmp_path, ground=lambda x, z: 64, built={(186, 64, Z0 - 2): slab},
+                               to={"at": [190, 65, Z0], "stop": "terminus"})
+    built = transit.emit_line(design, project, first_phase=1, preview=True).report["built"]
+    assert [(i["cell"], i["block"], i["action"]) for i in built["items"]] == [([186, 64, Z0 - 2], slab, "buried")]
+    assert "platform" in built["items"][0]["why"] or "bed" in built["items"][0]["why"]
+
+
+def _pit_floor(x, z):
+    return 50 if 20 <= x <= 32 else 64
+
+
+def test_a_player_block_a_pier_stands_on_is_listed_for_the_token(tmp_path):
+    data = {"element": "span", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 65, Z0]}, "to": {"at": [52, 65, Z0]}, "heights": "heights.json"}
+    floor = {(x, 50, z): "minecraft:stone_bricks" for x in range(20, 33) for z in range(Z0 - 6, Z0 + 7)}
+    design, project, r = _line_project(tmp_path, data, _pit_floor, cells=floor)
+    assert "bridge" in r.kinds
+    built = transit.emit_line(design, project, first_phase=1, preview=True).report["built"]
+    carried = [i for i in built["items"] if i["action"] == "carries"]
+    assert carried and all(i["block"] == "minecraft:stone_bricks" and i["cell"][1] == 50 for i in carried)
+    assert all("pier" in i["why"] for i in carried) and built["token"]
+
+
+def test_a_player_block_left_in_a_bore_is_named_by_the_clearance_refusal(tmp_path):
+    design, project = _nether(tmp_path, cells={(20, 71, Z0): "minecraft:oak_planks"})
+    report = transit.emit_line(design, project, first_phase=1, preview=True).report
+    clearance = next(c for c in report["check"]["checks"] if c["name"] == "clearance")
+    assert not clearance["ok"] and "player block minecraft:oak_planks at (20, 71, 20)" in clearance["detail"]
+    with pytest.raises(VerifyError, match=r"player block minecraft:oak_planks at \(20, 71, 20\)"):
+        transit.emit_line(design, project, first_phase=1)
+
+
+def test_a_player_block_a_lamp_post_stands_on_is_listed_for_the_token(tmp_path):
+    design, project = _project(tmp_path, ground=lambda x, z: 64, built={(10, 64, Z0 + 2): "minecraft:oak_planks"})
+    built = transit.emit_line(design, project, first_phase=1, preview=True).report["built"]
+    assert [(i["cell"], i["block"], i["action"]) for i in built["items"]] == [
+        ([10, 64, Z0 + 2], "minecraft:oak_planks", "carries")]
+    assert "lamp post" in built["items"][0]["why"] and built["token"]

@@ -35,9 +35,11 @@ The emitter's own checks run too: liquids, spills, gravity, the site boundary.
 ## After the build
 
 `transit-check` runs the same checks on fresh reads; the plan's `transit{file}`
-row does it for the line. Reads go to `verify/<element>-<section>` (portal:
-`verify/<element>-overworld` and `-nether`), never into `site/`. The report names
-each failing check and the first failing cell.
+row does it for the line. The reads are exact reads of the report's `reads` boxes and go
+to `verify/<element>-<section>` (portal: `verify/<element>-overworld` and `-nether`),
+never into `site/`; pass exactly those folders to `--sites`. The report names each
+failing check and the first failing cell; a player block left in a bore is named with
+its id and cell.
 
 ## The ride test
 

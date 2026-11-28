@@ -40,7 +40,7 @@ from .route import (
     plan_route,
     write_route,
 )
-from .site import Site, base_id, integer_level, load_site, natural_for
+from .site import _AIR, Site, base_id, integer_level, load_site, natural_for
 from .transit_design import KINDS, LineDesign, load_line
 from .transit_preview import cross_sections, profile_view, route_map
 
@@ -212,6 +212,39 @@ def _project(route: Route, reads: dict[str, Site], writes: dict[str, list[tuple[
         read = reads[s.name]
         parts = [(mode, part) for mode, w in order if (part := _clip(w, read.box)) is not None]
         out[s.name] = blocks.apply_writes(read, parts)
+    return out
+
+
+def _affected(design: LineDesign, site: Site, changes: Sequence[tuple[str, LiveWrite]], piers: set[Cell],
+              why: Callable[[str, Cell], str], natural: frozenset[str]) -> list[dict]:
+    """Player blocks a section affects without writing their cell, for the approval token.
+
+    A player block is ``buried`` when the section lays a full block directly on it where the read
+    had air above it, and ``carries`` a pier or a lamp post that stands on it. Cells the section
+    writes itself are listed by `blocks.touched_blocks` instead.
+    """
+    written: dict[Cell, tuple[str, str]] = {}
+    for mode, write in changes:
+        written.update({cell: (mode, state) for cell, state in _cells(write).items()})
+    posts = frozenset(design.palette["lamp_post"])
+    out = []
+    for cell, (mode, state) in sorted(written.items()):
+        x, y, z = cell
+        below = (x, y - 1, z)
+        if below in written or not track.inside(site, *below):
+            continue
+        old = site.block(*below)
+        if base_id(old) in natural:
+            continue
+        if cell in piers:
+            action, text = "carries", f"a pier stands on it {why(mode, cell)}"
+        elif mode == "light" and base_id(state) in posts:
+            action, text = "carries", f"a lamp post stands on it {why(mode, cell)}"
+        elif blocks.full_cube(state) and base_id(site.block(*cell)) in _AIR:
+            action, text = "buried", f"buried {why(mode, cell)}"
+        else:
+            continue
+        out.append({"cell": list(below), "block": old, "action": action, "why": text})
     return out
 
 
@@ -404,7 +437,8 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
             tiles = []
         changes = [("grade", mass), *layers] if mass is not None else layers
         touched = []
-        for item in blocks.touched_blocks(site, changes, why, natural=natural):
+        for item in [*blocks.touched_blocks(site, changes, why, natural=natural),
+                     *_affected(design, site, changes, stats["pier_cells"], why, natural)]:
             # Once per cell, under the first layer (and section) that changes it: a later entry for
             # the cell would name the block an earlier layer of this line put there.
             if tuple(item["cell"]) not in seen:
@@ -450,8 +484,13 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
                          "touched": len(p.touched)})
     # `route` and `kinds` record the classes the build used (Nether lines class them from the
     # reads), so transit-check checks the built line against the same ones.
-    report = {"sections": sections, "check": check, "built": built_blocks,
-              "boxes": [list(s.box) for s in route.sections], "displaced_water": displaced,
+    # `boxes`: what each section writes (its phases' union), for the registry's overlap check;
+    # `reads`: the section boxes, each read before the build into `out` and after it into verify/.
+    written = [list(_union([(*r["from"], *r["to"]) for r in rows if r["id"] in p.ids])) for p in planned if p.ids]
+    reads_out = [{"section": s.name, "box": list(s.box), "out": f"site/{element}-{s.name}", "world": s.world}
+                 for s in route.sections]
+    report = {"sections": sections, "check": check, "built": built_blocks, "boxes": written, "reads": reads_out,
+              "displaced_water": displaced,
               "unsupported_tube": unsupported, "skipped_lamps": [list(c) for c in skipped], "refused": refused,
               "route": route.design_hash, "kinds": list(route.kinds)}
     report_path = terrain / f"{element}.line-report.json"

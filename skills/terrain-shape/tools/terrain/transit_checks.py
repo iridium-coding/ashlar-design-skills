@@ -210,6 +210,10 @@ class _Outcome:
     problem: str
     failures: int = 0
     _seen: set[Cell] | None = None
+    named: list[str] | None = None      # failing cells worth naming in the detail (player blocks)
+
+    def name(self, text: str) -> None:
+        self.named = [*(self.named or []), text]
 
     def add(self, cell: Cell) -> None:
         if self._seen is None:
@@ -428,6 +432,8 @@ def _clearance(line: _Line) -> _Outcome:
                 continue
             if not _passable(state):
                 out.add((x, y, z))
+                if block not in line.natural and len(out.named or []) < MAX_CELLS:
+                    out.name(f"player block {block} at ({x}, {y}, {z})")
     return out
 
 
@@ -719,7 +725,8 @@ def check_line(design: LineDesign, route: Route, sites: Mapping[str, Site], *,
         gaps = list(line.uncovered)
         parts = []
         if outcome.failures:
-            parts.append(f"{outcome.failures} of {outcome.checked}: {outcome.problem}")
+            named = f", among them {'; '.join(outcome.named)}" if outcome.named else ""
+            parts.append(f"{outcome.failures} of {outcome.checked}: {outcome.problem}{named}")
         if gaps:
             parts.append(f"{len(gaps)} cells not covered by any site")
         cells = [*outcome.bad, *gaps][:MAX_CELLS]

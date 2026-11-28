@@ -67,7 +67,9 @@ so there is one history.
   expected-surface file and placements file. Preserve unknown keys.
 - A project whose shape is not one box (a transit line) records `boxes`: a
   list of inclusive `[x1, y1, z1, x2, y2, z2]` boxes copied from its line
-  report. `bbox` still bounds them all. Preserve the key.
+  report's `boxes`, the box each section writes (not its `reads`, the larger
+  boxes read for the design and for verification). `bbox` still bounds them all.
+  Preserve the key.
 - A portal pair spans two worlds, so it is recorded as two entries, `<element>-overworld`
   and `<element>-nether`, each with its own `world` and the `boxes` of that world's
   phases (`terrain/<element>-<world>.plan-rows.toon` and the report's `boxes`). Each is

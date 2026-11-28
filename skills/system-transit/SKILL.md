@@ -162,8 +162,9 @@ column backup. Number the phases so the line's come before the stations and
 halls that meet it. For rail, also put the ride test in the plan now (see After the
 build), so the build approval covers it.
 
-Record the line report's `boxes` in the project's registry entry (the section
-boxes, as inclusive `[x1, y1, z1, x2, y2, z2]` lists), beside the usual overall
+Record the line report's `boxes` in the project's registry entry (the box each
+section writes, as inclusive `[x1, y1, z1, x2, y2, z2]` lists; the report's `reads`
+are the larger read boxes), beside the usual overall
 `bbox`, so `exec-ashlar`'s overlap check uses them and a long diagonal line does
 not collide with every build inside its bounding box. Read the file, change only
 this project's entry and write the whole file back.
@@ -176,8 +177,8 @@ declines it at approval. Hand off to `exec-ashlar build <project>` for its own
 ## After the build
 
 1. **`transit` row.** The row comes from `terrain/<element>.plan-rows.toon`. `exec-ashlar verify` takes fresh exact reads of every
-   `boxes` entry into `verify/<element>-<section>` (for a portal, `verify/<element>-overworld`
-   and `-nether`) and runs `terrain.py transit-check`. Never write these reads
+   `reads` entry's box into `verify/<element>-<section>` (for a portal, `verify/<element>-overworld`
+   and `-nether`) and runs `terrain.py transit-check` on exactly those folders. Never write these reads
    into `site/`: a re-run of `line` would class the built bores as tubes.
 2. **Ride test (rail).** For a line whose chunks fit one force-load set, the plan's
    agent test is a `summon` of a tagged empty minecart on the rail with

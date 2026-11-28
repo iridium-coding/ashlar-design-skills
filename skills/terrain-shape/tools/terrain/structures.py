@@ -173,15 +173,17 @@ def bridge_layers(design: LineDesign, route: Route, section: Section, site: Site
 
     Returns ``(layers, stats)`` with stats ``piers`` (walls stood), ``displaced_water`` (still
     water cells a pier replaced), ``unsupported_tube`` (tube piers with no ground within
-    ``TUBE_REACH`` cells below, left out) and ``tube_read_floor`` (the read's floor y, when it
-    ended the search for such a pier short of ``TUBE_REACH``; else None). Railings and lamps
+    ``TUBE_REACH`` cells below, left out), ``tube_read_floor`` (the read's floor y, when it
+    ended the search for such a pier short of ``TUBE_REACH``; else None) and ``pier_cells``
+    (every pier cell written). Railings and lamps
     keep off the running width of every route cell within the deck's reach, this section's or a
     neighbour's (a deck corner reaches two cells along both legs), and off every rail cell.
     Raises `RouteError` when a pier would stand in flowing water or lava, or in still water
     without ``bridges.piers_in_water``.
     """
     spacing = design.lights.spacing if light_spacing is None else light_spacing
-    stats: dict = {"piers": 0, "displaced_water": 0, "unsupported_tube": 0, "tube_read_floor": None}
+    stats: dict = {"piers": 0, "displaced_water": 0, "unsupported_tube": 0, "tube_read_floor": None,
+                   "pier_cells": set()}
     first, last = section.start, section.end
     width = round(2 * formation_half(design)) + 2
     lo, hi = _span(width)
@@ -229,6 +231,7 @@ def bridge_layers(design: LineDesign, route: Route, section: Section, site: Site
         if arch:
             _arch(design, route, site, indices, (lo, hi), (first, last), piers, stats)
     _tube_piers(design, route, section, site, piers, stats)
+    stats["pier_cells"] = set(piers)
     return live_layers(site, build={**piers, **build}, light=light), stats
 
 

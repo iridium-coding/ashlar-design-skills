@@ -62,3 +62,16 @@ def test_portal_pairs_are_two_builds_with_two_plans_and_entries():
         assert "shroomlight" in text
     assert "standing level" in hub and "lanterns" not in hub.split("## Hubs")[0]
     assert "bottom-slab floor and lanterns" not in skill
+
+
+def test_verification_reads_the_reports_read_boxes_into_exact_folders():
+    row = next(line for line in read("skills/exec-ashlar/reference/verification.md").splitlines()
+               if line.startswith("| `transit{file}`"))
+    assert "line report's `reads`" in row and "--sites <each read folder>" in row
+    assert "never a glob such as `verify/<element>-*`" in row
+    assert "`--sites verify/<element>-*`" not in row
+    assert "the box each section writes" in read("skills/exec-ashlar/reference/registry.md")
+    skill = read("skills/system-transit/SKILL.md")
+    assert "the box each\nsection writes" in skill and "`reads` entry's box" in skill
+    api = read("skills/terrain-shape/reference/terrain/toolkit-api.md")
+    assert "`reads` (each section's read box" in api and "(`buried`" in api and "(`carries`)" in api

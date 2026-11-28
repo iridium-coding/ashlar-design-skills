@@ -214,6 +214,69 @@ def _pair(value, key: str) -> tuple[int, int]:
     return integer_level(value[0], key), integer_level(value[1], key)
 
 
+# ------------------------------------------------------------------ slab and stairs variants
+# The repo bundles no block id list, so this table names the blocks whose slab and stairs exist in
+# Minecraft 26.3, by the variants' stem ("<stem>_slab", "<stem>_stairs"). A wall or fence of a
+# listed stem ("<stem>_wall", "<stem>_fence") takes the stem's slab. Blocks not listed have none.
+_WOODS = ("oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry", "pale_oak", "bamboo",
+          "crimson", "warped")
+_COPPER = tuple(f"{wax}{age}cut_copper" for wax in ("", "waxed_")
+                for age in ("", "exposed_", "weathered_", "oxidized_"))
+_STAIRS_AND_SLAB = {
+    **{b: b for b in (
+        "stone", "cobblestone", "mossy_cobblestone", "granite", "polished_granite", "diorite", "polished_diorite",
+        "andesite", "polished_andesite", "cobbled_deepslate", "polished_deepslate", "tuff", "polished_tuff",
+        "sandstone", "smooth_sandstone", "red_sandstone", "smooth_red_sandstone", "prismarine", "dark_prismarine",
+        "blackstone", "polished_blackstone", "smooth_quartz", "bamboo_mosaic", *_COPPER)},
+    **{f"{b}s": b for b in (
+        "stone_brick", "mossy_stone_brick", "deepslate_brick", "deepslate_tile", "tuff_brick", "brick",
+        "mud_brick", "prismarine_brick", "nether_brick", "red_nether_brick", "polished_blackstone_brick",
+        "end_stone_brick", "resin_brick")},
+    **{f"{w}_planks": w for w in _WOODS},
+    "purpur_block": "purpur", "quartz_block": "quartz",
+}
+_SLAB_ONLY = {b: b for b in ("smooth_stone", "cut_sandstone", "cut_red_sandstone")}
+_STEMS = {**{v: True for v in _STAIRS_AND_SLAB.values()}, **{v: False for v in _SLAB_ONLY.values()}}
+
+
+def _stem(block: str) -> tuple[str, bool] | None:
+    """The variants' stem of a block and whether it has stairs; None when it has no slab."""
+    name = block.removeprefix("minecraft:")
+    if name in _STAIRS_AND_SLAB:
+        return _STAIRS_AND_SLAB[name], True
+    if name in _SLAB_ONLY:
+        return _SLAB_ONLY[name], False
+    for suffix in ("_wall", "_fence"):
+        stem = name.removesuffix(suffix)
+        if stem != name and stem in _STEMS:
+            return stem, _STEMS[stem]
+    return None
+
+
+def slab_of(block: str) -> str | None:
+    """The real slab id of a full block, a wall or a fence (``stone_bricks`` -> ``stone_brick_slab``); None if none."""
+    found = _stem(block)
+    return None if found is None else f"minecraft:{found[0]}_slab"
+
+
+def stairs_of(block: str) -> str | None:
+    """The real stairs id of a full block (``stone`` -> ``stone_stairs``); None if it has none."""
+    found = _stem(block)
+    return f"minecraft:{found[0]}_stairs" if found is not None and found[1] else None
+
+
+_SLAB_ROLES = {"road": {"surface": "a road's half steps need one", "deck": "a road's half-level deck needs one"},
+               "ice": {"guard": "the ice lane's guards are bottom slabs"}}
+
+
+def _check_variants(mode: str, palette: dict[str, dict[str, int]]) -> None:
+    """Refuse a palette block whose role needs a slab that does not exist (a path steps on full blocks)."""
+    for role, why in _SLAB_ROLES.get(mode, {}).items():
+        for block in palette[role]:
+            if slab_of(block) is None:
+                raise ValueError(f"palette.{role} block {block} has no slab: {why}")
+
+
 def palette_for(style: str, given) -> dict[str, dict[str, int]]:
     palette = {role: dict(blocks) for role, blocks in STYLES[style].items()}
     for role, blocks in _mapping(given, "palette").items():
@@ -306,6 +369,7 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
         raise ValueError(f"lanes must be 1 or 2, got {lanes}")
     style = _choice(data.get("style", "nether" if dimension == "nether" else "stone"), "style", tuple(STYLES))
     palette = palette_for(style, data.get("palette", {}))
+    _check_variants(mode, palette)
 
     raw_profile = data.get("profile", [])
     if not isinstance(raw_profile, (list, tuple)):

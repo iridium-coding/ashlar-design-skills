@@ -79,7 +79,7 @@ _PARTIAL_SUFFIXES = (
     "enchanting_table", "grindstone", "stonecutter", "chest", "campfire", "decorated_pot", "cake",
     "_cluster", "_bud", "repeater", "comparator", "redstone_wire", "tripwire", "tripwire_hook",
     "daylight_detector", "conduit", "sea_pickle", "turtle_egg", "dragon_egg", "pointed_dripstone",
-    "heavy_core", "_shelf", "item_frame", "_vines", "vine", "_roots", "glow_lichen", "snow",
+    "heavy_core", "_shelf", "item_frame", "_vines", "vine", "_roots", "glow_lichen", "snow", "nether_portal",
 )
 _LIGHT_THROUGH = frozenset(f"minecraft:{n}" for n in (
     "glass", "ice", "frosted_ice", "beacon", "slime_block", "honey_block"))

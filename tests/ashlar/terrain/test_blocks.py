@@ -46,3 +46,8 @@ def test_natural_for_dimension():
 
 def test_portal_blocks_emit_light_eleven():
     assert blocks.light_of("minecraft:nether_portal[axis=x]") == 11
+
+
+def test_a_portal_block_is_no_full_cube_and_lets_light_through():
+    assert not blocks.full_cube("minecraft:nether_portal[axis=x]")
+    assert blocks.lets_light("minecraft:nether_portal[axis=z]")

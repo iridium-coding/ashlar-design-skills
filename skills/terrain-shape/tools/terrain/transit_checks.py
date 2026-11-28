@@ -23,11 +23,9 @@ import numpy as np
 from .blocks import cell_classes, flood, full_cube, light_of, site_light
 from .route import Route
 from .site import (
-    ATTACHED,
-    LEAVES,
+    GROWTH,
     NATURAL,
     NETHER_NATURAL,
-    PLANTS,
     Site,
     base_id,
     liquid_kind,
@@ -54,9 +52,7 @@ _RAILS = frozenset({"minecraft:rail", "minecraft:powered_rail"})
 _CORNERS = frozenset({"north_east", "north_west", "south_east", "south_west"})
 _ALL_NATURAL = NATURAL | NETHER_NATURAL
 _AIR = frozenset({"minecraft:air", "minecraft:cave_air", "minecraft:void_air"})
-_SOFT = PLANTS | LEAVES | ATTACHED | frozenset(f"minecraft:{b}" for b in (
-    "cobweb", "glow_lichen", "sculk_vein", "pointed_dripstone", "powder_snow", "amethyst_cluster",
-    "small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud"))     # growth that carries nothing
+_SOFT = GROWTH     # growth that carries nothing
 _NOT_LANTERN = frozenset({"minecraft:sea_lantern", "minecraft:jack_o_lantern"})
 _PARTIAL_LAYERS = frozenset({"minecraft:snow"})
 _FULL_EXTRA = frozenset({"minecraft:jack_o_lantern"})

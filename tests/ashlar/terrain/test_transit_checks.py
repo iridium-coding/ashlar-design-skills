@@ -279,6 +279,14 @@ def test_a_lamp_post_over_air_fails_support(tmp_path):
     assert [x, 66, z] in _failed(transit_checks.check_line(design, r, floating))["support"]["cells"]
 
 
+def test_growth_carries_nothing_in_the_checks_and_for_piers_alike():
+    from terrain.site import GROWTH
+    for block in ("minecraft:crimson_roots", "minecraft:warped_fungus", "minecraft:weeping_vines", "minecraft:cobweb"):
+        assert block in GROWTH
+    for block in GROWTH:
+        assert not transit_checks._solid(block) and not track.pier_ground(block, "nether"), block
+
+
 def test_a_hanging_lantern_needs_a_block_above(tmp_path):
     design, r, sites = _built(tmp_path, kind="path")
     x, z = r.cells[10][0], Z0 + 4

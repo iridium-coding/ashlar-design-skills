@@ -651,8 +651,6 @@ def _landing_light(design: PortalDesign, site: Site) -> tuple[list[Cell], int, i
     posts = set(frame_cells(design, "nether"))
     x1, y1, z1 = site.box[:3]
     clear = blocks.cell_classes(site)[1]
-    for px, py, pz in _portal_cells(site):      # portal blocks pass light, though they are no partial block by name
-        clear[px - x1, py - y1, pz - z1] = True
     level = blocks.flood(clear, blocks.site_light(site))
     bad, checked, dim = [], 0, 0
     for cell in room.standing:

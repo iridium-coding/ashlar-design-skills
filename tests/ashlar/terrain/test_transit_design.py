@@ -32,6 +32,24 @@ def test_a_nether_tunnel_wider_than_six_is_refused(tmp_path):
         td.parse_line(_base(**nether, mode="road", lanes=2), tmp_path)      # its default bore is 10 wide
 
 
+@pytest.mark.parametrize(("extra", "role", "block"), [
+    pytest.param({"mode": "road", "palette": {"surface": "minecraft:gravel"}}, "surface", "minecraft:gravel",
+                 id="road-surface-without-a-slab"),
+    pytest.param({"mode": "road", "palette": {"deck": "minecraft:packed_ice"}}, "deck", "minecraft:packed_ice",
+                 id="road-deck-without-a-slab"),
+    pytest.param({"mode": "ice", "to": {"at": [200, 65, 0]}, "palette": {"guard": "minecraft:glass"}}, "guard",
+                 "minecraft:glass", id="ice-guard-without-a-slab"),
+])
+def test_a_palette_block_without_the_variant_its_role_needs_is_refused(tmp_path, extra, role, block):
+    with pytest.raises(ValueError, match=rf"palette.{role}.*{block}.*slab"):
+        td.parse_line(_base(**extra), tmp_path)
+
+
+def test_a_path_may_use_blocks_without_stairs(tmp_path):
+    for block in ("minecraft:dirt_path", "minecraft:coarse_dirt", "minecraft:gravel"):
+        assert td.parse_line(_base(mode="path", palette={"surface": block}), tmp_path).palette["surface"] == {block: 1}
+
+
 def test_nether_world_needs_a_straight_level_line(tmp_path):
     with pytest.raises(ValueError, match="straight"):
         td.parse_line(_base(world="world_nether"), tmp_path)

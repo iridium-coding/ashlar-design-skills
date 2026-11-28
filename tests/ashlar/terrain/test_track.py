@@ -345,3 +345,26 @@ def test_a_line_lamp_never_replaces_a_terminus_platform_block(tmp_path):
     platform = {(x, z) for x in range(32, 40) for z in (Z0 - 2, Z0 - 1)}
     ox, _, oz = light.origin
     assert not {(ox + int(i), oz + int(k)) for i, _, k in np.argwhere(light.codes)} & platform
+
+
+@pytest.mark.parametrize(("surface", "step"), [
+    pytest.param("minecraft:dirt_path", "minecraft:dirt_path", id="dirt-path"),
+    pytest.param("minecraft:coarse_dirt", "minecraft:coarse_dirt", id="coarse-dirt"),
+    pytest.param("minecraft:gravel", "minecraft:gravel", id="gravel"),
+    pytest.param("minecraft:stone", "minecraft:stone_stairs", id="stone"),
+])
+def test_a_path_step_uses_real_stairs_or_the_full_block(tmp_path, surface, step):
+    design, r, section, site = _path_line(tmp_path, [65] * 5 + [66] * 5, extra={"palette": {"surface": surface}})
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
+    assert base_id(after.block(5, 65, 20)) == step
+
+
+@pytest.mark.parametrize(("block", "variant"), [
+    ("minecraft:stone_bricks", "minecraft:stone_brick_slab"), ("minecraft:spruce_planks", "minecraft:spruce_slab"),
+    ("minecraft:bricks", "minecraft:brick_slab"), ("minecraft:spruce_fence", "minecraft:spruce_slab"),
+    ("minecraft:nether_brick_fence", "minecraft:nether_brick_slab"), ("minecraft:quartz_block", "minecraft:quartz_slab"),
+    ("minecraft:smooth_stone", "minecraft:smooth_stone_slab"), ("minecraft:polished_blackstone_bricks",
+                                                                "minecraft:polished_blackstone_brick_slab"),
+])
+def test_slabs_are_real_block_ids(block, variant):
+    assert base_id(track.slab(block)) == variant

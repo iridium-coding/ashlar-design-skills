@@ -34,7 +34,7 @@ from .site import (
     liquid_kind,
     natural_for,
 )
-from .transit_design import LineDesign, formation_half
+from .transit_design import LineDesign, formation_half, slab_of, stairs_of
 
 Cell = tuple[int, int, int]
 
@@ -237,22 +237,24 @@ def pick(design: LineDesign, role: str, *key: int) -> str:
     return names[int(rng.choice(len(names), p=p / p.sum()))]
 
 
-def _variant(block: str, suffix: str) -> str:
-    """The slab or stairs of a full block, a wall or a fence: stone_bricks -> stone_brick_slab."""
-    name = base_id(block).removeprefix("minecraft:").removesuffix("_wall").removesuffix("_fence")
-    if name.endswith("_planks"):
-        name = name.removesuffix("_planks")
-    elif name.endswith("bricks"):
-        name = name.removesuffix("s")
-    return f"minecraft:{name}{suffix}"
-
-
 def slab(block: str) -> str:
-    return f"{_variant(block, '_slab')}[type=bottom,waterlogged=false]"
+    """The bottom slab of a full block, a wall or a fence (``stone_bricks`` -> ``stone_brick_slab``).
+
+    Raises:
+        ValueError: when the block has no slab (the design refuses such a palette at parse).
+    """
+    variant = slab_of(base_id(block))
+    if variant is None:
+        raise ValueError(f"{base_id(block)} has no slab")
+    return f"{variant}[type=bottom,waterlogged=false]"
 
 
 def _stairs(block: str, facing: str) -> str:
-    return f"{_variant(block, '_stairs')}[facing={facing},half=bottom,shape=straight,waterlogged=false]"
+    """The stairs of a full block facing up the step, or the block itself when it has none (a path may step a block)."""
+    variant = stairs_of(base_id(block))
+    if variant is None:
+        return block
+    return f"{variant}[facing={facing},half=bottom,shape=straight,waterlogged=false]"
 
 
 def inside(site: Site, x: int, y: int, z: int) -> bool:

@@ -99,7 +99,7 @@ Each link is its own line and its own element. Order the links with the user
 3. **Section reads.** The route report lists one read per section: `box`, `out`
    and `world`. Take each exact read with
    `ashlar_place.py backup --box X1 Y1 Z1 X2 Y2 Z2 --out .minecraft-builder/<project>/site/<element>-sNN`
-   (add `--world` for the Nether). Run `terrain.py survey --site DIR --box …` on a
+   and `--world` set to the design's `world` for every section, Overworld included. Run `terrain.py survey --site DIR --box …` on a
    section only to see its non-natural blocks. A section that holds someone's
    build is not yours to cross: add an `avoid` box and run `route` again, and ask
    about touching it only when no other route exists.
@@ -109,11 +109,15 @@ Each link is its own line and its own element. Order the links with the user
    projected checks. Read the notes, the stretch kinds, the displaced-water count,
    `unsupported_tube` and the `built` list. Iterate on the design and preview
    again until the checks pass; emission refuses a design whose projected checks
-   fail, naming each. Raise `limits` only with the user's OK.
+   fail, naming each. Raise `limits` only with the user's OK. Defaults worth
+   knowing: a booster every 8 cells on the level (an empty cart coasts about 10
+   blocks after a boost), ice bores 4 wide, Nether bores at most 6 wide, and a
+   Nether room floored with bottom slabs.
 
 ## Player blocks and approval
 
-The report's `built` list names every player block the line would change: where
+The report's `built` list names every player block the line would change, bury
+under a full block (`buried`) or stand a pier or lamp post on (`carries`): where
 it is, what it is and why, with `loses_data` for a chest, sign or other block
 whose contents or text would be lost. Show the user that whole list in plain
 words, group it by block with positions and reasons, and ask whether to go
@@ -142,7 +146,7 @@ reads are missing it lists the boxes to read around both arrival areas, into
 spread, and any other portal that would steal the link, then writes the frame
 and landing phases for both worlds. Player blocks and the token work as for a
 line. The Nether landing gets a bottom-slab floor and shroomlight in its walls; a
-doorway's y is the standing level. The pair is two `exec-ashlar build` runs, one per
+doorway's y is the standing level and it opens 3 high. The pair is two `exec-ashlar build` runs, one per
 world, from `terrain/<element>-overworld.plan-rows.toon` and
 `terrain/<element>-nether.plan-rows.toon`, and two registry entries
 (`<element>-overworld`, `<element>-nether`) with each world's `boxes`. A piglin stays
@@ -188,9 +192,10 @@ declines it at approval. Hand off to `exec-ashlar build <project>` for its own
    ride verdict. See [previews-and-checks.md](reference/previews-and-checks.md).
 3. **The user's ride.** Ask the user to ride the line end to end, with a boat on
    ice lines. Report a verdict as `built`, `checked`, `agent_tested` or
-   `ridden` and no higher than the evidence. Booster spacing is calibrated live;
-   if the cart stalls, say where, adjust `boosters` and emit an iteration with
-   fresh backups.
+   `ridden` and no higher than the evidence. The default spacing (every 8 cells
+   on the level) is set for an empty cart; booster spacing is still calibrated
+   live: if the cart stalls, say where, adjust `boosters` and emit an iteration
+   with fresh backups.
 4. Post-build reads never go into `site/`; to change the line, edit the design
    and emit an iteration. A full rollback restores phases newest first.
 

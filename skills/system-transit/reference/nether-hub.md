@@ -45,7 +45,14 @@ Overworld, an enclosed, lit room in the Nether. The Nether landing gets a
 bottom-slab floor and shroomlight in the walls (and as the floor in front of each
 portal face), so nothing spawns on it and every spawnable cell is lit to 12. A
 doorway's `y` is the first open cell, the standing level (frame `at.y + 1` or
-higher): a lower one would cut through the floor and is refused.
+higher): a lower one would cut through the floor and is refused. A doorway opens
+3 high under a lintel (the room is 4 high inside), so one whose opening would reach
+the roof is refused too.
+
+The Overworld platform stands on dry ground unless the design sets
+`platform_in_water: true`: then it may stand in still water (never flowing water
+or lava), the water cells it replaces are counted in the report's
+`displaced_water`, and the approval covers them.
 
 A pair is two builds, one per world: `portal` writes
 `terrain/<element>-overworld.plan-rows.toon` and `terrain/<element>-nether.plan-rows.toon`,

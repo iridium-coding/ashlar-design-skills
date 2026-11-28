@@ -20,7 +20,7 @@ force-load (below), unless a player is near the site.
 
 | Purpose | Form |
 | --- | --- |
-| Summon an entity (villagers, golems, animals, armor stands, item frames, display entities) | `summon <entity> <x> <y> <z> {…,Tags:["ashlar","ashlar.<project>"]}` |
+| Summon an entity (villagers, golems, animals, minecarts, armor stands, item frames, display entities) | `summon <entity> <x> <y> <z> {…,Tags:["ashlar","ashlar.<project>"]}` |
 | Set block-entity NBT (styled sign text, banner patterns, lectern books, decorated pots, heads, loot tables) | `data merge block <x> <y> <z> {…}` |
 | Change one of the build's entities | `data merge entity @e[tag=ashlar.<project>,…,limit=1] {…}` |
 | Put an item in a container slot | `item replace block <x> <y> <z> container.<n> with <item>[<components>] [count]` |

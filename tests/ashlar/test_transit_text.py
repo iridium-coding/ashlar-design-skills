@@ -75,3 +75,32 @@ def test_verification_reads_the_reports_read_boxes_into_exact_folders():
     assert "the box each\nsection writes" in skill and "`reads` entry's box" in skill
     api = read("skills/terrain-shape/reference/terrain/toolkit-api.md")
     assert "`reads` (each section's read box" in api and "(`buried`" in api and "(`carries`)" in api
+
+
+def test_the_transit_skill_text_matches_the_toolkit():
+    lines = read("skills/system-transit/reference/lines.md")
+    flat = " ".join(lines.split())
+    for fact in ("every 8 cells on the level", "coasts only about 10 blocks", "Rail and ice move along x and z only",
+                 "a dip bottoming out over at least 2 level cells", "11 cells at a terminus level",
+                 "Those 11 cells run level", "stays short where it cannot", "at most 2 x `max_cut`",
+                 "catch point", "ice 4 x 3", "at most 6 wide in the Nether", "A Nether bore wider than 6 is refused",
+                 "a Nether room gets a bottom-slab floor", "in the Nether its floor is bottom slabs",
+                 "refused, naming the role and block", "reaches down to the ground, at most 6 blocks",
+                 "no bed, surface or shell goes over a block that is not natural", "(any level from -60 to 315)"):
+        assert fact in flat, f"lines.md does not state {fact!r}"
+    assert "every 24 cells" not in flat and "road, path and ice move in eight directions" not in flat
+    skill = " ".join(read("skills/system-transit/SKILL.md").split())
+    for fact in ("`--world` set to the design's `world` for every section, Overworld included", "opens 3 high",
+                 "a booster every 8 cells on the level", "ice bores 4 wide", "Nether bores at most 6 wide",
+                 "Nether room floored with bottom slabs", "(`buried`)", "(`carries`)", "set for an empty cart"):
+        assert fact in skill, f"SKILL.md does not state {fact!r}"
+    assert "(add `--world` for the Nether)" not in skill
+    hub = " ".join(read("skills/system-transit/reference/nether-hub.md").split())
+    assert "`platform_in_water: true`" in hub and "`displaced_water`" in hub and "3 high" in hub
+    portal_row = next(line for line in read("skills/terrain-shape/reference/terrain/toolkit-api.md").splitlines()
+                      if line.startswith("| `portal DESIGN"))
+    assert "`platform_in_water: true`" in portal_row and "`displaced_water`" in portal_row
+    assert "(no grading)" not in read("skills/system-transit/reference/interview.md")
+    summon = next(line for line in read("skills/exec-ashlar/reference/commands.md").splitlines()
+                  if line.startswith("| Summon an entity"))
+    assert "minecarts" in summon

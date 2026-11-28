@@ -19,7 +19,7 @@ question tool as `SKILL.md` describes, and in plain text otherwise.
 5. **Era / aesthetic** — Roman, medieval, industrial, modern, fantasy, or
    sci-fi? This sets the materials and the bridge and station styles.
 6. **Terrain-disruption tolerance** — should the network bridge and tunnel
-   around the landscape (no grading), allow minor cuts, or may the corridor be graded
+   around the landscape, allow minor cuts, or may the corridor be graded
    (cuttings and embankments, within the line's limits)? Larger reshaping is a
    `terrain-shape` step.
 7. **Preserve list** — existing builds, monuments, or natural landmarks the

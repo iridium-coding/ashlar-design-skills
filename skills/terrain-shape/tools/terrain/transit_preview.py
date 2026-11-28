@@ -24,14 +24,22 @@ def _colour(kind: str) -> tuple[int, int, int]:
     return KIND_COLOURS.get(kind, (255, 255, 255))
 
 
+def _factor(img: Image.Image, longest: int = _MAX_SIDE, max_up: int = 8) -> float:
+    return min(max_up, longest / max(img.size))
+
+
 def _fit(img: Image.Image, longest: int = _MAX_SIDE, max_up: int = 8) -> Image.Image:
-    factor = min(max_up, longest / max(img.size))
+    factor = _factor(img, longest, max_up)
     size = (max(1, round(img.width * factor)), max(1, round(img.height * factor)))
     return img.resize(size, Image.NEAREST)
 
 
 def route_map(design: LineDesign, grid: Grid | None, route: Route, path: Path) -> Path:
-    """Top view: shaded ground where there is a grid, the route coloured by stretch class."""
+    """Top view: shaded ground where there is a grid, the route coloured by stretch class.
+
+    The route is drawn after the ground is scaled, each cell at least one pixel, so a line one
+    cell wide never drops out of a large grid's shrunken map.
+    """
     xs, zs = [c[0] for c in route.cells], [c[1] for c in route.cells]
     if grid is not None:
         nx, nz = grid.ground.shape
@@ -52,11 +60,17 @@ def route_map(design: LineDesign, grid: Grid | None, route: Route, path: Path) -
             img[:, :, 2] = shade.T // 3
         wet = ok & (grid.surface > g)
         img[wet.T] = (40, 70, 140)
+    ground = Image.fromarray(img)
+    factor = _factor(ground)
+    out = _fit(ground)
+    draw = ImageDraw.Draw(out)
     for (x, z), kind in zip(route.cells, route.kinds, strict=True):
         i, j = x - ox, z - oz
         if 0 <= i < nx and 0 <= j < nz:
-            img[j, i] = _colour(kind)
-    out = _fit(Image.fromarray(img))
+            left, top = math.floor(i * factor), math.floor(j * factor)
+            right = min(max(left, math.ceil((i + 1) * factor) - 1), out.width - 1)
+            bottom = min(max(top, math.ceil((j + 1) * factor) - 1), out.height - 1)
+            draw.rectangle([min(left, out.width - 1), min(top, out.height - 1), right, bottom], fill=_colour(kind))
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     out.save(path)
     return Path(path)
@@ -120,10 +134,13 @@ def cross_sections(route: Route, folder: Path, *, element: str,
     """Sections across the line where the stretch class changes (and at both ends).
 
     Without `site_of` the ground and the running level come from the route's data; with it
-    the blocks of the site read for that cell are drawn.
+    the blocks of the site read for that cell are drawn. The element's earlier sections in the
+    folder (``<element>-xs-*.png``) are removed first, so none is left from a longer run.
     """
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
+    for stale in folder.glob(f"{element}-xs-*.png"):
+        stale.unlink()
     half = 12
     paths = []
     for n, i in enumerate(_picks(route, limit), start=1):

@@ -26,6 +26,7 @@ DIMENSIONS = ("overworld", "nether")
 ROLES = ("ballast", "surface", "edge", "deck", "pier", "lining", "railing", "guard",
          "lamp_post", "lamp", "end_block", "platform", "ice")
 VERSION = "26.3"
+LEVEL_RANGE = (-60, 315)    # the running levels a line may use, the bore and its roof inside the world
 TOP_KEYS = frozenset({
     "element", "seed", "world", "dimension", "mode", "route", "from", "to", "via", "heights", "avoid",
     "width", "lanes", "style", "palette", "profile", "limits", "bridges", "tunnels", "lights", "boosters",
@@ -163,6 +164,15 @@ def _int(value, key: str, *, minimum: int | None = None) -> int:
 def _ratio(value, key: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
         raise ValueError(f"{key} must be a non-negative number, got {value!r}")
+    return float(value)
+
+
+def _level(value, key: str) -> float:
+    """A finite running level within ``LEVEL_RANGE`` (a level may be negative)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{key} must be a number, got {value!r}")
+    if not LEVEL_RANGE[0] <= value <= LEVEL_RANGE[1]:
+        raise ValueError(f"{key} must be within {LEVEL_RANGE[0]}..{LEVEL_RANGE[1]}, got {value!r}")
     return float(value)
 
 
@@ -334,8 +344,8 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
     if dimension == "nether" and route != "straight":
         raise ValueError("route must be straight in the Nether")
     if (dimension == "nether" or mode == "ice") and (start.y is None or start.y != end.y):
-        raise ValueError(f"endpoints of a {'Nether' if dimension == 'nether' else 'ice'} line "
-                             "need the same level (from.at and to.at y)")
+        kind = "a Nether line" if dimension == "nether" else "an ice line (mode ice)"
+        raise ValueError(f"the endpoints of {kind} need the same level: set from.at and to.at to one y")
 
     raw_via = data.get("via", [])
     if not isinstance(raw_via, (list, tuple)):
@@ -378,7 +388,7 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
     for item in raw_profile:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
             raise ValueError(f"profile must hold [index, level] pairs, got {item!r}")
-        profile.append((_int(item[0], "profile index", minimum=0), _ratio(item[1], "profile level")))
+        profile.append((_int(item[0], "profile index", minimum=0), _level(item[1], "profile level")))
 
     convert = {k: (lambda v, key: _int(v, key, minimum=0))
                for k in ("max_fill", "max_cut", "min_bridge", "min_tunnel", "water_clearance")}

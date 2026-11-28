@@ -75,6 +75,16 @@ def test_design_hash_ignores_style_but_not_limits(tmp_path):
     assert route.design_hash(a) == route.design_hash(b) != route.design_hash(c)
 
 
+def test_design_hash_covers_heights_tunnels_sections_and_dimension(tmp_path):
+    _write_heights(tmp_path, 100)
+    base = route.design_hash(td.parse_line(_design_data(100), tmp_path))
+    for extra in ({"tunnels": {"width": 4}}, {"sections": {"length": 50}}, {"heights": "other.json"},
+                  {"dimension": "nether", "from": {"at": [0, 65, 10]}, "to": {"at": [99, 65, 10]}}):
+        assert route.design_hash(td.parse_line(_design_data(100, **extra), tmp_path)) != base, extra
+    _write_heights(tmp_path, 100, top_bump=(10, 0, 90))           # the same file, new content
+    assert route.design_hash(td.parse_line(_design_data(100), tmp_path)) != base
+
+
 def test_route_command_writes_route_report_previews_and_reads(tmp_path):
     project = _project_with_heights(tmp_path)
     out = subprocess.run([sys.executable, str(LAUNCHER), "route", str(project / "terrain/north-line.line.json"),
@@ -118,3 +128,35 @@ def test_a_line_classed_from_its_reads_reads_deep_enough_for_tube_piers(tmp_path
         design = td.parse_line(data, tmp_path)
         r = route.plan_route(design, None)
         assert r.sections[0].box[1] == max(20 - 1 - (route.TUBE_REACH + 2), floor), world
+
+
+def _straight_route(length, z):
+    cells = [(100 + i, z) for i in range(length)]
+    return route.Route("north-line", "rail", "world", "overworld", "h", cells, [65.0] * length, ["grade"] * length,
+                       [64.0] * length, [64.0] * length, [], [])
+
+
+def test_the_route_map_keeps_a_thin_route_visible_when_it_shrinks_a_large_grid(tmp_path):
+    from PIL import Image
+    from terrain import transit_preview
+
+    grid = route.grid_from_heights(make_heights(None, (0, 0), np.full((2400, 300), 64.0)))
+    design = td.parse_line(_design_data(2000), tmp_path)
+    grey = transit_preview.KIND_COLOURS["grade"]
+    for z in range(150, 154):
+        path = transit_preview.route_map(design, grid, _straight_route(2000, z), tmp_path / f"map-{z}.png")
+        pixels = np.asarray(Image.open(path).convert("RGB"))
+        assert (pixels == grey).all(axis=2).sum() > 100, z
+
+
+def test_cross_sections_replace_the_stale_ones(tmp_path):
+    from terrain import transit_preview
+
+    folder = tmp_path / "previews"
+    folder.mkdir()
+    for name in ("north-line-xs-09.png", "north-line-line-xs-01.png", "other-xs-01.png"):
+        (folder / name).write_bytes(b"old")
+    written = transit_preview.cross_sections(_straight_route(30, 10), folder, element="north-line")
+    names = sorted(p.name for p in folder.iterdir())
+    assert "north-line-xs-09.png" not in names and {p.name for p in written} <= set(names)
+    assert "north-line-line-xs-01.png" in names and "other-xs-01.png" in names

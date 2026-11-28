@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from .site import load_heights
-from .transit_design import LineDesign, formation_half
+from .transit_design import LEVEL_RANGE, LineDesign, formation_half
 
 COARSE_LIMIT = 250_000
 CORNER_PENALTY = 12.0
@@ -211,16 +211,13 @@ def _coarsen(grid: Grid, blocked: np.ndarray, f: int) -> tuple[np.ndarray, np.nd
 
     g = pad(grid.ground, np.nan)
     s = pad(grid.surface, np.nan)
-    pad_null = pad(np.zeros((nx, nz), dtype=bool), True)  # padded cells are not real columns
-    any_null = blocks(np.isnan(g) & ~pad_null).any(axis=(1, 3))
-    real = blocks(~pad_null).any(axis=(1, 3))
+    # A coarse block is open while any of its real columns is: padding is null, so it never counts.
+    free = blocks(~np.isnan(g) & ~pad(blocked, True)).any(axis=(1, 3))
     with np.errstate(invalid="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)  # all-null blocks have no mean
         gm = np.nanmean(blocks(g), axis=(1, 3))
         sm = np.nanmean(blocks(s), axis=(1, 3))
-    gm = np.where(any_null | ~real, np.nan, gm)
-    cblocked = blocks(pad(blocked, False)).any(axis=(1, 3)) | any_null | ~real
-    return gm, np.where(np.isnan(sm), gm, sm), ~cblocked
+    return gm, np.where(np.isnan(sm), gm, sm), free
 
 
 def _leg_path(a: tuple[int, int], b: tuple[int, int], grid: Grid, blocked: np.ndarray, water: np.ndarray,
@@ -241,12 +238,17 @@ def _leg_path(a: tuple[int, int], b: tuple[int, int], grid: Grid, blocked: np.nd
         if coarse is None:
             raise RouteError(f"no route {what}: null columns, avoid boxes or the grid edge block every path")
         half = 2 * f + 16
-        band = np.zeros((nx, nz), dtype=bool)
-        for ci, cj in coarse:
-            i, j = ci * f + f // 2, cj * f + f // 2
-            band[max(i - half, 0):i + half + 1, max(j - half, 0):j + half + 1] = True
-        allowed = allowed & band
-    path = _astar(grid.ground, water, allowed, a, b, axes_only)
+        while True:  # the band around the coarse path widens until a route fits or it covers the grid
+            band = np.zeros((nx, nz), dtype=bool)
+            for ci, cj in coarse:
+                i, j = ci * f + f // 2, cj * f + f // 2
+                band[max(i - half, 0):i + half + 1, max(j - half, 0):j + half + 1] = True
+            path = _astar(grid.ground, water, allowed & band, a, b, axes_only)
+            if path is not None or band.all():
+                break
+            half *= 2
+    else:
+        path = _astar(grid.ground, water, allowed, a, b, axes_only)
     if path is None:
         raise RouteError(f"no route {what}: null columns, avoid boxes or the grid edge block every path")
     return path
@@ -273,7 +275,9 @@ def _rasterise(points: list[tuple[float, float]]) -> list[tuple[int, int]]:
     return cells
 
 
-def _smooth(path: list[tuple[int, int]], allowed: np.ndarray) -> list[tuple[int, int]]:
+def _smooth(path: list[tuple[int, int]], allowed: np.ndarray, water: np.ndarray) -> list[tuple[int, int]]:
+    """The path smoothed (Chaikin twice, rasterised), or the path itself where the smoothed one would
+    leave its ends, enter a blocked cell or put a cell on a wet column the path does not cross."""
     if len(path) < 3:
         return path
     pts: list[tuple[float, float]] = [(float(i), float(j)) for i, j in path]
@@ -284,6 +288,9 @@ def _smooth(path: list[tuple[int, int]], allowed: np.ndarray) -> list[tuple[int,
     if smooth[0] != path[0] or smooth[-1] != path[-1]:
         return path
     if not all(0 <= i < nx and 0 <= j < nz and allowed[i, j] for i, j in smooth):
+        return path
+    crossed = set(path)
+    if any(water[i, j] and (i, j) not in crossed for i, j in smooth):
         return path
     return smooth
 
@@ -301,7 +308,7 @@ def search_cells(design: LineDesign, grid: Grid) -> tuple[list[tuple[int, int]],
         what = f"from ({labelled[n][1]}, {labelled[n][2]}) to ({labelled[n + 1][1]}, {labelled[n + 1][2]})"
         leg = _leg_path(a, b, grid, blocked, water, axes_only, what)
         if not axes_only:
-            leg = _smooth(leg, ~blocked)
+            leg = _smooth(leg, ~blocked, water)
         path.extend(leg[1:] if path else leg)
     ox, oz = grid.origin
     cells = [(i + ox, j + oz) for i, j in path]
@@ -314,7 +321,6 @@ TUNNEL_COST = 60.0
 SMOOTHING = 0.2
 RAIL_CLIMB_COST = 5.0  # per block of rail rise or fall: climbs carry a booster every 2nd cell
 TERMINUS_CELLS = 11    # a rail terminus's 8 quiet cells and its 3-cell launch group run level
-LEVEL_RANGE = (-60, 315)
 _GRADE_RULE = {"rail": "a rail moves at most 1 block per cell, runs level through a corner and over the "
                        f"{TERMINUS_CELLS} cells at a terminus, and a dip bottoms out over at least 2 level cells",
                "road": "a road moves at most half a block per cell",
@@ -544,7 +550,7 @@ def fit_profile(design: LineDesign, cells: list[tuple[int, int]], corners: list[
         costs[i] = np.inf
         costs[i, k] = keep
     fitted = [float(v) for v in _solve(design, cells, corners, costs, levels, fixed, ground, surface, unit)]
-    return fitted, classify(design, fitted, ground.tolist(), surface.tolist())
+    return fitted, classify(design, fitted, ground.tolist(), surface.tolist(), cells)
 
 
 # ------------------------------------------------------------------ classify
@@ -579,7 +585,15 @@ def _grow(a: int, b: int, length: int, n: int, ok) -> tuple[int, int]:
     return a, b
 
 
-def _merge_tunnels(design: LineDesign, kinds: list[str], depth: np.ndarray) -> None:
+def _stretch(cells: list[tuple[int, int]] | None, a: int, b: int) -> str:
+    """Where a stretch of cells a..b lies: its end coordinates, or the chainage when no cells are known."""
+    if cells is None:
+        return f"at cells {a}-{b}"
+    return f"from {tuple(cells[a])} to {tuple(cells[b])} (chainage {a}-{b})"
+
+
+def _merge_tunnels(design: LineDesign, kinds: list[str], depth: np.ndarray,
+                   cells: list[tuple[int, int]] | None) -> None:
     lim, cover, n = design.limits, _cover(design), len(kinds)
 
     def covered(j: int) -> bool:
@@ -596,7 +610,7 @@ def _merge_tunnels(design: LineDesign, kinds: list[str], depth: np.ndarray) -> N
                 ga, gb = _grow(a, b, lim.min_tunnel, n, covered)
                 if gb - ga + 1 < lim.min_tunnel:
                     raise RouteError(
-                        f"tunnel at cells {a}-{b} is {b - a + 1} long, under min_tunnel {lim.min_tunnel}; "
+                        f"tunnel {_stretch(cells, a, b)} is {b - a + 1} long, under min_tunnel {lim.min_tunnel}; "
                         f"its {deepest:g}-block cut is deeper than 2 * max_cut ({2 * lim.max_cut}) and "
                         "the cover does not allow a longer bore")
                 kinds[ga:gb + 1] = ["tunnel"] * (gb - ga + 1)
@@ -604,11 +618,12 @@ def _merge_tunnels(design: LineDesign, kinds: list[str], depth: np.ndarray) -> N
         i = b + 1
 
 
-def _merge_bridges(design: LineDesign, kinds: list[str]) -> None:
+def _merge_bridges(design: LineDesign, kinds: list[str], levels: np.ndarray, ground: np.ndarray) -> None:
     lim, n = design.limits, len(kinds)
 
     def open_cell(j: int) -> bool:
-        return kinds[j] != "tunnel"
+        """A grade or fill cell whose ground lies at or below the deck (``floor(level) - 1``)."""
+        return kinds[j] in ("grade", "fill") and ground[j] <= math.floor(levels[j]) - 1
 
     i = 0
     while (run := _run_from(kinds, "bridge", i)) is not None:
@@ -619,17 +634,20 @@ def _merge_bridges(design: LineDesign, kinds: list[str]) -> None:
         i = b + 1
 
 
-def classify(design: LineDesign, levels: list[float], ground: list[float], surface: list[float]) -> list[str]:
+def classify(design: LineDesign, levels: list[float], ground: list[float], surface: list[float],
+             cells: list[tuple[int, int]] | None = None) -> list[str]:
     """Class each cell from its level `d = level - (ground + 1)`, then merge short stretches.
 
     bridge: over water (``surface > ground``) or ``d > max_fill``; tunnel: ``d < -max_cut``
     with room for the bore and ``roof`` above it; grade: ``|d| <= 1``; fill: ``d > 1``;
     cut: ``d < -1``. A tunnel shorter than ``min_tunnel`` becomes a cut when its deepest cut
     is at most ``2 * max_cut``, else grows to ``min_tunnel`` where the cover allows. A bridge
-    shorter than ``min_bridge`` grows to it, alternating sides, inside the route.
+    shorter than ``min_bridge`` grows toward it, alternating sides, onto grade and fill cells
+    whose ground lies at or below its deck; where it cannot, it stays short.
 
     Raises:
-        RouteError: naming a short tunnel stretch too deep to cut that cannot grow.
+        RouteError: naming a short tunnel stretch too deep to cut that cannot grow (by its end
+            coordinates when `cells` is given).
     """
     if not len(levels) == len(ground) == len(surface):
         raise ValueError(f"levels, ground and surface differ in length: "
@@ -645,8 +663,8 @@ def classify(design: LineDesign, levels: list[float], ground: list[float], surfa
     kinds[(d < -lim.max_cut) & (-d >= _cover(design))] = "tunnel"
     kinds[water | (d > lim.max_fill)] = "bridge"
     out = [str(k) for k in kinds]
-    _merge_tunnels(design, out, -d)
-    _merge_bridges(design, out)
+    _merge_tunnels(design, out, -d, cells)
+    _merge_bridges(design, out, np.asarray(levels, dtype=float), g)
     return out
 
 
@@ -677,7 +695,7 @@ class Route:
 
 
 HASH_KEYS = ("element", "world", "mode", "route", "from", "to", "via", "avoid", "profile", "limits",
-             "width", "lanes")
+             "width", "lanes", "heights", "tunnels", "sections")
 Y_MIN, Y_MAX = -64, 319
 NETHER_Y_MIN = 0        # the Nether has no blocks below y 0
 TUBE_REACH = 24         # a tube pier must find ground within this many cells below the tube's floor
@@ -689,8 +707,11 @@ def classed_from_reads(design: LineDesign) -> bool:
 
 
 def design_hash(design: LineDesign) -> str:
-    """sha256[:12] of the route-relevant keys of the design file."""
+    """sha256[:12] of the route-relevant keys of the design file and of the heights file's content."""
     part = {k: design.source[k] for k in HASH_KEYS if k in design.source}
+    part["dimension"] = design.dimension        # given, or following from the world's name
+    if design.heights is not None and Path(design.heights).is_file():
+        part["heights content"] = hashlib.sha256(Path(design.heights).read_bytes()).hexdigest()
     return hashlib.sha256(json.dumps(part, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:12]
 
 

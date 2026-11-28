@@ -190,7 +190,7 @@ def test_path_levels_are_whole_blocks(tmp_path):
 
 
 def test_short_deep_tunnel_without_cover_to_grow_is_refused_naming_the_stretch(tmp_path):
-    with pytest.raises(route.RouteError, match=r"tunnel at cells 30-32"):
+    with pytest.raises(route.RouteError, match=r"tunnel from \(30, 4\) to \(32, 4\)"):
         _along_x(tmp_path, [64] * 30 + [95] * 3 + [64] * 30)
 
 

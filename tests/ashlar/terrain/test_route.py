@@ -121,3 +121,36 @@ def test_large_grid_is_searched_coarse_then_refined(tmp_path):
     cells, _ = route.search_cells(d, grid)
     assert cells[0] == (10, 10) and cells[-1] == (580, 430)
     assert all(max(abs(a[0] - b[0]), abs(a[1] - b[1])) == 1 for a, b in pairwise(cells))
+
+
+# ------------------------------------------------------------------ final fix wave
+def test_a_coarse_block_with_a_free_column_stays_open_and_the_band_widens_to_the_gap(tmp_path):
+    ground = np.full((600, 450), 64.0)
+    ground[300, :] = np.nan            # a one-column wall of null columns, its gap across two coarse blocks
+    ground[300, 201:203] = 64.0
+    d = _design(tmp_path, mode="road", start=[10, 65, 10], end=[580, 65, 430])
+    cells, _ = route.search_cells(d, route.grid_from_heights(make_heights(None, (0, 0), ground)))
+    assert cells[0] == (10, 10) and cells[-1] == (580, 430)
+    assert [c for c in cells if c[0] == 300] and all(201 <= z <= 202 for x, z in cells if x == 300)
+
+
+def test_smoothing_never_moves_the_line_onto_a_wet_column(tmp_path):
+    path = [(0, 0), (3, 1), (6, 2), (9, 3)]          # wide steps, so the smoothed raster differs
+    allowed = np.ones((12, 6), bool)
+    dry = np.zeros((12, 6), bool)
+    smooth = route._smooth(path, allowed, dry)
+    added = [c for c in smooth if c not in path]
+    assert added
+    wet = dry.copy()
+    wet[added[0]] = True
+    assert route._smooth(path, allowed, wet) == path
+
+
+def test_a_short_bridge_grows_only_onto_cells_below_its_deck(tmp_path):
+    design = _design(tmp_path, start=[0, None, 0], end=[11, None, 0])
+    levels = [65] * 12
+    ground = [64, 64, 64, 64, 66, 66, 56, 66, 66, 64, 64, 64]      # a cut on both sides of a 1-cell bridge
+    kinds = route.classify(design, levels, ground, list(ground))
+    assert kinds[6] == "bridge" and kinds.count("bridge") == 1 and kinds[4:6] == ["cut", "cut"]
+    ground = [64, 64, 64, 64, 63, 64, 56, 63, 64, 64, 64, 64]      # fill and grade below the deck: it grows
+    assert route.classify(design, levels, ground, list(ground)).count("bridge") == 4

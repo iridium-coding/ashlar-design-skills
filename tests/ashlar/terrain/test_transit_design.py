@@ -58,8 +58,15 @@ def test_nether_world_needs_a_straight_level_line(tmp_path):
 
 
 def test_ice_line_needs_equal_endpoint_levels(tmp_path):
-    with pytest.raises(ValueError, match="level"):
+    with pytest.raises(ValueError, match=r"an ice line \(mode ice\).*set from.at and to.at to one y"):
         td.parse_line(_base(mode="ice", to={"at": [200, 70, 0]}), tmp_path)
+
+
+def test_profile_levels_may_be_negative_within_the_level_range(tmp_path):
+    assert td.parse_line(_base(profile=[[5, -12], [9, -12.5]]), tmp_path).profile == ((5, -12), (9, -12.5))
+    for bad in (400, -70, float("inf")):
+        with pytest.raises(ValueError, match="profile level"):
+            td.parse_line(_base(profile=[[5, bad]]), tmp_path)
 
 
 @pytest.mark.parametrize(("extra", "match"), [

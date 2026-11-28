@@ -250,6 +250,25 @@ def _flags(state):
     )
 
 
+def surface_columns(flags: np.ndarray, y1: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The NO_LEAVES surface a post-build height read measures, per column of a flags grid (x, y, z).
+
+    Returns the highest known full block or liquid of each column (its y; the grid's top where
+    there is none), whether the column has one, and whether a block of unknown shape above it (or
+    anywhere in a column without one) keeps its measured height uncertain.
+    """
+    solid = flags & _SURFACE != 0
+    y2 = y1 + flags.shape[1] - 1
+    top = y2 - np.argmax(solid[:, ::-1, :], axis=1)
+    has = solid.any(axis=1)
+    # The server may count an unknown shape as a solid surface. Do not certify
+    # its height unless a known solid/liquid above it settles the observation.
+    uncertain = flags & _UNKNOWN_HEIGHT != 0
+    levels_y = np.arange(y1, y2 + 1)[None, :, None]
+    unsure = np.any(uncertain & ((levels_y > top[:, None, :]) | ~has[:, None, :]), axis=1)
+    return top, has, unsure
+
+
 def seam_ground(site: Site, x: int, z: int) -> int:
     """Read the terrain bed of one fresh column, ignoring liquid and tree cells."""
     runs = site.columns.get((x, z))
@@ -638,19 +657,14 @@ def _prepare(hf, spec, site, recipe, water, forms, protect, bodies, max_columns,
     surface = expected_surface(hf, water, mass.kept_trunks, (ox, oz), retained=mass.liquid_top)
     # Forms can both remove and add the highest solid. Use the complete projected column.
     projected_field = after[crop[0], :, crop[1]]
-    solid = projected_field & _SURFACE != 0
-    top = site.box[4] - np.argmax(solid[:, ::-1, :], axis=1)
-    surface["top"] = np.where(solid.any(axis=1), top, None).ravel().tolist()
+    top, has, unsure = surface_columns(projected_field, site.box[1])
+    surface["top"] = np.where(has, top, None).ravel().tolist()
     top_flags = np.take_along_axis(projected_field, (top - site.box[1])[:, None, :], axis=1)[:, 0, :]
     visible_water = np.where(top_flags & (_SURFACE | _WATER) == (_SURFACE | _WATER), top, np.nan)
     skip = np.asarray(surface["skip"]).reshape(hf.h.shape)
     skip[protected[crop]] = 1
-    # The server may count an unknown shape as a solid surface. Do not certify
-    # its height unless a known solid/liquid above it settles the observation.
-    uncertain = after[crop[0], :, crop[1]] & _UNKNOWN_HEIGHT != 0
     # Actual leaves are known to be ignored by NO_LEAVES; they can still take water.
-    levels_y = np.arange(site.box[1], site.box[4] + 1)[None, :, None]
-    skip[np.any(uncertain & ((levels_y > top[:, None, :]) | ~solid.any(axis=1)[:, None, :]), axis=1)] = 1
+    skip[unsure] = 1
     lips = {tuple(b["pos"]) for b in flow["blocks"]}
     for x, y, z in reach:
         if (x, y, z) not in lips and ox <= x < ox + hf.nx and oz <= z < oz + hf.nz:

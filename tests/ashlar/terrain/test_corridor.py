@@ -4,7 +4,7 @@ import numpy as np
 from sitegen import make_site
 from terrain import corridor
 from terrain import transit_design as td
-from terrain.ashlar_emit import emit_field
+from terrain.ashlar_emit import emit_field, seam_ground
 from terrain.route import Route, Section
 from terrain.site import surfaces
 
@@ -96,9 +96,15 @@ def test_graded_site_passes_emit_field_preview(tmp_path):
     assert top == 65
 
 
+def _seam_rows(design, r, section, site, plan=None, occupied=frozenset()):
+    plan = plan or corridor.corridor_plan(design, r, section, site)
+    graded = corridor.graded_site(design, r, section, site)[0]
+    return corridor.outer_seam_rows(design, r, section, plan, graded, occupied)[0], graded
+
+
 def test_outer_seam_rows_skip_section_boundaries(tmp_path):
     design, r, section, site = _flat_line(tmp_path, ground=70, level=65, length=90)
-    rows = corridor.outer_seam_rows(design, r, section, corridor.corridor_plan(design, r, section, site))
+    rows, _ = _seam_rows(design, r, section, site)
     half = td.formation_half(design)
     assert rows and all(abs(p[1] - 20) > half for row in rows for p in (row["from"], row["to"]))
     assert not any((row["from"][1] - 20) * (row["to"][1] - 20) < 0 for row in rows)   # none crosses the line
@@ -195,8 +201,86 @@ def test_cornered_route_is_graded_at_the_corner_with_outward_seams(tmp_path):
     plan = corridor.corridor_plan(design, r, section, site)
     assert plan.field.h[30 - box[0], 20 - box[2]] == 60 and not plan.protect[30 - box[0], 20 - box[2]]
     assert plan.field.h[30 - box[0], 35 - box[2]] == 60
-    rows = corridor.outer_seam_rows(design, r, section, plan)
+    rows, _ = _seam_rows(design, r, section, site, plan)
     assert {row["outward"] for row in rows} == {"x", "-x", "z", "-z"}
     for row in rows:
         for x, z in (row["from"], row["to"]):
             assert {"z": z > 20, "-z": z < 20, "x": x > 30, "-x": x < 30}[row["outward"]]
+
+
+# ------------------------------------------------------------------ final fix wave
+_STEPS = {"x": (1, 0), "-x": (-1, 0), "z": (0, 1), "-z": (0, -1)}
+
+
+def _worst_step(site, row):
+    """The largest seam step on `site` as ``terrain.py seam --site`` measures it."""
+    dx, dz = _STEPS[row["outward"]]
+    (x, z), (ex, ez) = row["from"], row["to"]
+    return max(abs(seam_ground(site, i, j) - seam_ground(site, i + dx, j + dz))
+               for i in range(min(x, ex), max(x, ex) + 1) for j in range(min(z, ez), max(z, ez) + 1))
+
+
+def test_seam_rows_run_at_one_across_coordinate_and_pass_on_the_graded_ground(tmp_path):
+    design, r, section, site = _flat_line(tmp_path, ground=_rolling(), level=65, length=90)
+    rows, graded = _seam_rows(design, r, section, site)
+    assert rows
+    for row in rows:
+        dx, _ = _STEPS[row["outward"]]
+        (x, z), (ex, ez) = row["from"], row["to"]
+        assert x == ex if dx else z == ez, row                     # perpendicular to outward
+        assert _worst_step(graded, row) <= row["max_step"], row
+
+
+def test_seam_rows_keep_off_the_columns_the_line_stands_on(tmp_path):
+    design, r, section, site = _flat_line(tmp_path, ground=70, level=65, length=90)
+    rows, _ = _seam_rows(design, r, section, site)
+    taken = {(x, z) for row in rows for x in range(row["from"][0], row["to"][0] + 1)
+             for z in range(min(row["from"][1], row["to"][1]), max(row["from"][1], row["to"][1]) + 1)}
+    occupied = frozenset(list(taken)[:5])
+    again, _ = _seam_rows(design, r, section, site, occupied=occupied)
+    for row in again:
+        dx, dz = _STEPS[row["outward"]]
+        for x in range(min(row["from"][0], row["to"][0]), max(row["from"][0], row["to"][0]) + 1):
+            for z in range(min(row["from"][1], row["to"][1]), max(row["from"][1], row["to"][1]) + 1):
+                assert (x, z) not in occupied and (x + dx, z + dz) not in occupied
+
+
+def _cliff_line(tmp_path):
+    """A line at grade on a flat valley floor with an earth cliff 20 high from 17 blocks off its south side."""
+    design, r, section, site = _flat_line(tmp_path, ground=64, level=65)
+    x1, _, _, x2, _, z2 = site.box
+    cliff = {(x, y, z): "minecraft:dirt" for x in range(x1, x2 + 1) for z in range(Z0 + 17, z2 + 1)
+             for y in range(60, 84)}
+    cliff.update({(x, 84, z): "minecraft:grass_block[snowy=false]" for x in range(x1, x2 + 1)
+                  for z in range(Z0 + 17, z2 + 1)})
+    from sitegen import make_site
+
+    return design, r, section, make_site(tmp_path / "cliff", site.box, ground=64, cells=cliff, world="world")
+
+
+def test_grading_stops_where_the_slope_meets_the_ground(tmp_path):
+    design, r, section, site = _cliff_line(tmp_path)
+    plan = corridor.corridor_plan(design, r, section, site)
+    x1, _, z1 = site.box[:3]
+    assert not [(i, j) for i, j in np.argwhere(plan.changed) if z1 + j >= Z0 + 17]
+    assert all(plan.field.h[x - x1, z - z1] == 84 for x in range(40) for z in (Z0 + 17, Z0 + 18))
+
+
+def test_a_cliff_beyond_the_catch_point_passes_the_emitter(tmp_path):
+    design, r, section, site = _cliff_line(tmp_path)
+    plan = corridor.corridor_plan(design, r, section, site)
+    if not plan.protect.all():
+        emit_field(plan.field, plan.spec, site, tmp_path, element="t-s01", first_phase=1, protect=plan.protect,
+                   require_relief=False, check_terraces=False, preview=True)
+
+
+def test_a_coarse_dirt_ring_is_capped_with_plain_dirt(tmp_path):
+    design, r, section, site = _layered(tmp_path, "minecraft:coarse_dirt", "minecraft:coarse_dirt")
+    w = _weights(corridor.corridor_plan(design, r, section, site))
+    assert w["minecraft:coarse_dirt"] <= 0.85 + 1e-9 and w["minecraft:dirt"] > 0
+
+
+def test_a_stone_ring_is_capped_with_another_rock(tmp_path):
+    design, r, section, site = _layered(tmp_path, "minecraft:stone", "minecraft:stone")
+    w = _weights(corridor.corridor_plan(design, r, section, site))
+    assert w["minecraft:stone"] <= 0.85 + 1e-9 and w["minecraft:andesite"] > 0

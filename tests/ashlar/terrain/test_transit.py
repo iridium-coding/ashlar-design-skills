@@ -664,3 +664,21 @@ def test_a_spoke_ending_at_a_landing_doorway_clears_it_and_touches_no_landing_bl
     report = transit.emit_line(design, project, first_phase=1, preview=True).report
     assert report["check"]["ok"], _failing(report["check"])
     assert report["built"]["count"] == 0, report["built"]["items"]
+
+
+def _pit(x, z):
+    """Ground 64 with a pit 20 deep over x 78..114, z -20..30."""
+    return 44 if 78 <= x <= 114 and -20 <= z <= 30 else 64
+
+
+def test_a_cliff_past_the_outside_of_a_corner_on_a_valley_floor_is_left_alone(tmp_path):
+    # The line drops to the pit floor and turns there; the pit wall stands 19 blocks past the corner,
+    # straight ahead of the incoming leg (bridge_corner.py).
+    data = {"element": "pit", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 65, 0]}, "via": [[96, 0]], "to": {"at": [96, 65, 50]}, "heights": "heights.json"}
+    design, project, r = _line_project(tmp_path, data, _pit)
+    result = transit.emit_line(design, project, first_phase=1)         # no edge_match refusal
+    assert result.report["check"]["ok"], _failing(result.report["check"])
+    built = _built_sections(project, "pit", r)
+    for z in (-1, 0, 1):
+        assert built["s02"].block(115, 64, z) == "minecraft:grass_block[snowy=false]", z

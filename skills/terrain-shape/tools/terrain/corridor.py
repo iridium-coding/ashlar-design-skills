@@ -2,20 +2,24 @@
 
 Inside the formation the top block sits at ``floor(level) - 1``; beyond it a cut slope climbs
 (and a fill slope descends) to meet the natural ground. Seeded noise on the slope ratio and
-the toe line keeps the edges uneven. Only grade, cut and fill cells are graded; bridge, tunnel
-and tube columns, columns beyond the section and columns the grading leaves unchanged are
+the toe line keeps the edges uneven. Each cross-section is graded from the formation edge out
+to its catch point, the first column where the slope plane meets the ground; the ground beyond
+is left alone, however it rises or falls. Only grade, cut and fill cells are graded; bridge,
+tunnel and tube columns, columns beyond the section and columns the grading leaves unchanged are
 protected, so the emitter keeps its liquid, gravity and seam checks and repaints nothing else.
 """
 from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import numpy as np
 
 from . import blocks
 from .apron import _SURFACE
+from .ashlar_emit import seam_ground
 from .field import Centerline, HeightField
 from .live import LiveWrite, materialize_live
 from .materialize import MaterialSpec
@@ -34,7 +38,8 @@ RING = 6            # width of the unchanged ring sampled for the surface palett
 MAX_SINGLE = 0.85   # heaviest surface block; the emitter's monoculture check allows 92%
 SUPPORT = {"minecraft:sand": "minecraft:sandstone", "minecraft:red_sand": "minecraft:red_sandstone",
            "minecraft:snow_block": "minecraft:stone"}
-SEAM_DEVIATION = 1  # how far a seam row's points may stray from its straight line
+SOIL_SUPPORT = "minecraft:coarse_dirt"  # what any other top shows in its faces; plain dirt under coarse dirt
+ROCK_SUPPORT = {"minecraft:stone": "minecraft:andesite"}    # any other rock shows stone
 
 
 @dataclass
@@ -109,10 +114,25 @@ def _surface_weights(site: Site, ground: np.ndarray, changed: np.ndarray) -> dic
     top, share = max(weights.items(), key=lambda kv: kv[1])
     if share > MAX_SINGLE:
         # A cut or fill face shows the layer under the surface, so the cap's remainder goes to it.
-        support = under[top].most_common(1)[0][0] if under.get(top) else SUPPORT.get(top, "minecraft:coarse_dirt")
         weights[top] = MAX_SINGLE
+        support = _support(top, under.get(top))
         weights[support] = weights.get(support, 0.0) + share - MAX_SINGLE
     return weights
+
+
+def _support(top: str, under: Counter[str] | None) -> str:
+    """The block a cut or fill face shows under the surface block `top`, never `top` itself.
+
+    The commonest other block found under it, else the family table (`SUPPORT`), else another
+    rock for a rock top, else coarse dirt (plain dirt under a coarse dirt top).
+    """
+    if under:
+        return under.most_common(1)[0][0]
+    if top in SUPPORT:
+        return SUPPORT[top]
+    if top in ROCK:
+        return ROCK_SUPPORT.get(top, "minecraft:stone")
+    return SOIL_SUPPORT if top != SOIL_SUPPORT else "minecraft:dirt"
 
 
 def corridor_plan(design: LineDesign, route: Route, section: Section, site: Site) -> CorridorPlan:
@@ -126,6 +146,10 @@ def corridor_plan(design: LineDesign, route: Route, section: Section, site: Site
     line, idx, pts = _centerline(route, section)
     s, perp = line.query(X, Z)
     cum = line.cumlen
+    # The distance to the line. `perp` is the offset from the nearest segment's own line, which reads 0
+    # beyond a vertex along a segment's extension (past the outside of a corner); there the nearest
+    # point is the vertex itself.
+    across = np.hypot(X - np.interp(s, cum, pts[:, 0]), Z - np.interp(s, cum, pts[:, 1]))
     near = np.rint(np.interp(s, cum, idx)).astype(int)
     levels = np.array([route.levels[min(max(int(i), 0), len(route.levels) - 1)] for i in idx])
     level = np.interp(s, cum, levels)
@@ -138,7 +162,7 @@ def corridor_plan(design: LineDesign, route: Route, section: Section, site: Site
     n_ratio = noise.sample(X * FREQUENCY, Z * FREQUENCY) * 2 - 1
     n_toe = ValueNoise2D(design.seed + 101).sample(X * FREQUENCY, Z * FREQUENCY) * 2 - 1
     half = formation_half(design)
-    reach = np.maximum(np.abs(perp) + TOE_NOISE * n_toe - half, 0.0)
+    reach = np.maximum(across + TOE_NOISE * n_toe - half, 0.0)
 
     lim = design.limits
     fill_ratio = lim.fill_ratio * (1 + RATIO_NOISE * n_ratio)
@@ -151,7 +175,15 @@ def corridor_plan(design: LineDesign, route: Route, section: Section, site: Site
     cut_ratio = np.where(rock, rock_ratio, soil_ratio)
     lo = f - reach / fill_ratio
     hi = f + reach / cut_ratio
-    target = np.where(graded, np.rint(np.minimum(np.maximum(base, lo), hi)), base)
+    slope = np.rint(np.minimum(np.maximum(base, lo), hi))
+    # Each cross-section (the columns nearest one route cell, on one side) is graded out to its
+    # catch point: the nearest column beyond the formation the slope leaves as it is.
+    beyond = across > half
+    key = (near - near.min()) * 2 + (perp > 0)
+    catch = np.full(int(key.max()) + 1, np.inf)
+    daylight = graded & beyond & (slope == base)
+    np.minimum.at(catch, key[daylight], across[daylight])
+    target = np.where(graded & (~beyond | (across < catch[key])), slope, base)
 
     changed = graded & (target != base)
     protect = ~changed
@@ -186,50 +218,62 @@ def graded_site(design: LineDesign, route: Route, section: Section,
 _DIRECTIONS = ("x", "-x", "z", "-z")
 
 
-def _pieces(points: list[tuple[int, int]]) -> list[list[tuple[int, int]]]:
-    """Split ``(along, across)`` points, sorted by along, into runs that stay near a straight line."""
-    out, i = [], 0
-    while i < len(points):
-        j = i + 1
-        while j < len(points) and points[j][0] - points[j - 1][0] == 1 and _straight(points[i:j + 1]):
-            j += 1
-        out.append(points[i:j])
-        i = j
-    return out
+def outer_seam_rows(design: LineDesign, route: Route, section: Section, plan: CorridorPlan, final: Site,
+                    occupied: Collection[tuple[int, int]] = frozenset()) -> tuple[list[dict], int]:
+    """Seam rows where the graded ground meets the natural ground, measured on the projected `final`.
 
-
-def _straight(run: list[tuple[int, int]]) -> bool:
-    (a0, v0), (a1, v1) = run[0], run[-1]
-    return all(abs(v - (v0 + (v1 - v0) * (a - a0) / (a1 - a0))) <= SEAM_DEVIATION for a, v in run)
-
-
-def outer_seam_rows(design: LineDesign, route: Route, section: Section, plan: CorridorPlan) -> list[dict]:
-    """Seam rows along the outermost changed columns on each side of the corridor.
-
-    The ends of the section are not seamed: the next section grades the same ground."""
+    On each side, the outermost changed column whose outward neighbour is unchanged meets the
+    natural ground. A row runs along x or z at one across coordinate, perpendicular to its
+    outward direction as ``terrain.py seam`` requires (a row of one column is allowed), over such
+    columns where neither the column nor its outward neighbour is one the line stands on
+    (`occupied`: its formation, kerbs, lamps, platforms and decks). Each row's ``max_step`` is the
+    largest step ``seam_ground`` finds on `final` along it (at least 1). A point whose ground
+    cannot be certified there (an unknown shape on top, or a neighbour outside the read) is left
+    out; their count comes back with the rows. The ends of the section are not seamed: the next
+    section grades the same ground.
+    """
     changed, outward = plan.changed, plan.outward
     if changed is None or outward is None or not changed.any():
-        return []
+        return [], 0
     ox, oz = plan.origin
     nx, nz = changed.shape
-    rows = []
+    rows: list[dict] = []
+    dropped = 0
     for code, name in enumerate(_DIRECTIONS):
         along_x = name in ("z", "-z")        # the seam runs along x when it faces z
-        step = (1 if name[0] != "-" else -1)
+        step = 1 if name[0] != "-" else -1
         dx, dz = (step, 0) if not along_x else (0, step)
         best: dict[int, int] = {}
         for i, j in np.argwhere(changed & (outward == code)):
             ni, nj = i + dx, j + dz
             if not (0 <= ni < nx and 0 <= nj < nz) or changed[ni, nj]:
                 continue
-            key, val = (int(i), int(j)) if along_x else (int(j), int(i))
+            x, z = ox + int(i), oz + int(j)
+            if (x, z) in occupied or (x + dx, z + dz) in occupied:
+                continue
+            key, val = (x, z) if along_x else (z, x)
             if key not in best or (val - best[key]) * step > 0:
                 best[key] = val
-        for piece in _pieces(sorted(best.items())):
-            if len(piece) < 2:
+        runs: list[list[tuple[int, int, int]]] = [[]]   # (key, across value, step) of each row
+        for key in sorted(best):
+            val = best[key]
+            x, z = (key, val) if along_x else (val, key)
+            try:
+                found = abs(seam_ground(final, x, z) - seam_ground(final, x + dx, z + dz))
+            except ValueError:
+                dropped += 1
+                runs.append([])
                 continue
-            (k0, v0), (k1, v1) = piece[0], piece[-1]
-            a = [ox + k0, oz + v0] if along_x else [ox + v0, oz + k0]
-            b = [ox + k1, oz + v1] if along_x else [ox + v1, oz + k1]
-            rows.append({"from": a, "to": b, "max_step": 1, "outward": name})
-    return rows
+            run = runs[-1]
+            if run and (key != run[-1][0] + 1 or val != run[-1][1]):
+                runs.append(run := [])
+            run.append((key, val, found))
+        rows += [_seam_row(run, along_x, name) for run in runs if run]
+    return rows, dropped
+
+
+def _seam_row(run: list[tuple[int, int, int]], along_x: bool, outward: str) -> dict:
+    """The seam row over a run of ``(along, across, step)`` points at one across coordinate."""
+    (k0, v, _), (k1, _, _) = run[0], run[-1]
+    a, b = ([k0, v], [k1, v]) if along_x else ([v, k0], [v, k1])
+    return {"from": a, "to": b, "max_step": max(1, *(t for _, _, t in run)), "outward": outward}

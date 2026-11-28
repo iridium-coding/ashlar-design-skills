@@ -20,7 +20,13 @@ from pathlib import Path
 import numpy as np
 
 from . import blocks, corridor, portals, structures, track, transit_checks, verify
-from .ashlar_emit import EmitResult, check_form_layers, emit_field, plan_rows_toon
+from .ashlar_emit import (
+    EmitResult,
+    check_form_layers,
+    emit_field,
+    plan_rows_toon,
+    surface_columns,
+)
 from .emit import VerifyError
 from .live import LiveWrite, greedy_fills
 from .route import (
@@ -209,6 +215,34 @@ def _project(route: Route, reads: dict[str, Site], writes: dict[str, list[tuple[
     return out
 
 
+def _columns(writes: Sequence[tuple[str, LiveWrite]]) -> set[tuple[int, int]]:
+    """Every (x, z) column a write puts a block in."""
+    out: set[tuple[int, int]] = set()
+    for _, write in writes:
+        ox, _, oz = write.origin
+        out |= {(ox + int(i), oz + int(k)) for i, k in np.argwhere(write.codes.any(axis=1))}
+    return out
+
+
+def _built_surface(path: Path, final: Site) -> None:
+    """Rewrite a section's expected surface (F6) for the line as built.
+
+    The grading writes the graded ground's surface, but the bed, platforms, kerbs, lamps and the
+    neighbours' writes change what a post-build height read measures. The tops come from the
+    projected `final` by the emitter's own rule (the highest known full block or liquid of each
+    column), and a column with a block of unknown shape above that is skipped as well.
+    """
+    surface = json.loads(path.read_text(encoding="utf-8"))
+    (ox, oz), (nx, nz) = surface["origin"], surface["size"]
+    x1, y1, z1 = final.box[:3]
+    flags = blocks.site_flags(final)[ox - x1:ox - x1 + nx, :, oz - z1:oz - z1 + nz]
+    top, has, unsure = surface_columns(flags, y1)
+    skip = (np.asarray(surface["skip"]).reshape(nx, nz) != 0) | unsure
+    surface["top"] = np.where(has, top, None).ravel().tolist()
+    surface["skip"] = skip.astype(int).ravel().tolist()
+    path.write_text(json.dumps(surface, ensure_ascii=False, allow_nan=False) + "\n", encoding="utf-8")
+
+
 def _why(design: LineDesign, route: Route) -> Callable[[str, Cell], str]:
     """Why a layer changes a cell: what goes there, at the chainage of the nearest route cell."""
     xz = np.asarray(route.cells, dtype=float)
@@ -343,6 +377,8 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
     planned: list[_Planned] = []
     refused: list[dict] = []
     seen: set[Cell] = set()
+    occupied = _columns([layer for name in built for layer in built[name][0]])
+    seam_notes: list[str] = []
     for s in route.sections:
         site, mass, plan = reads[s.name], masses[s.name], plans[s.name]
         layers, stats = built[s.name]
@@ -351,11 +387,15 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
         if mass is not None:
             # Checked as a preview here; written only once the whole line passes (below). The
             # terrace check is off: it would judge the existing ground the corridor runs through.
+            seams, dropped = corridor.outer_seam_rows(design, route, s, plan, finals[s.name], occupied)
+            if dropped:
+                seam_notes.append(f"{s.name}: {dropped} seam points left out: their ground cannot be certified on "
+                                  "the projected build (a block of unknown shape on top)")
             grading = emit_field(plan.field, plan.spec, site, project, element=f"{element}-{s.name}",
                                  first_phase=first_phase + start, protect=plan.protect,
-                                 require_relief=False, check_terraces=False,
-                                 seam_rows=corridor.outer_seam_rows(design, route, s, plan),
+                                 require_relief=False, check_terraces=False, seam_rows=seams,
                                  max_columns=max_columns, preview=True)
+            _built_surface(grading.surface_file, finals[s.name])
             rows.extend(grading.phases)
         try:
             tiles = check_form_layers(graded[s.name], layers, max_columns=max_columns)
@@ -431,6 +471,7 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
     notes.append("projected check: " + "; ".join(f"{c['name']} {'ok' if c['ok'] else 'FAILS'}: {c['detail']}"
                                                  for c in check["checks"]))
     notes += [f"{r['section']}: the emitter refuses its layers: {r['error']}" for r in refused]
+    notes += seam_notes
     blocks_text = ", ".join(f"{n} {b}" for b, n in by_block.items())
     if touched:
         notes.append(f"touches {len(touched)} player blocks ({blocks_text}); approval token {token}; "
@@ -492,6 +533,7 @@ def emit_line(design: LineDesign, project: Path, *, first_phase: int, preview: b
                             seam_rows=p.grading.quality["seam"], max_columns=max_columns)
         if result.phases != p.grading.phases:
             raise RuntimeError(f"section {p.section.name}: the grading phases changed between the check and the write")
+        _built_surface(result.surface_file, p.final)
         written.append(result)
     gather(written)
     for path, payload in payloads:

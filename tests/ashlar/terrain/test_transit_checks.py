@@ -269,6 +269,16 @@ def test_rails_do_not_stand_on_fences(tmp_path):
     assert "support" in _failed(transit_checks.check_line(design, r, fenced))
 
 
+def test_a_lamp_post_over_air_fails_support(tmp_path):
+    design, r, sites = _built(tmp_path, kind="path")
+    x, z = r.cells[10][0], Z0 + 4
+    post, lamp = next(iter(design.palette["lamp_post"])), next(iter(design.palette["lamp"]))
+    standing = _write(sites, {(x, 65, z): post, (x, 66, z): post, (x, 67, z): lamp})
+    assert "support" not in _failed(transit_checks.check_line(design, r, standing))
+    floating = _write(sites, {(x, 66, z): post, (x, 67, z): post, (x, 68, z): lamp})
+    assert [x, 66, z] in _failed(transit_checks.check_line(design, r, floating))["support"]["cells"]
+
+
 def test_a_hanging_lantern_needs_a_block_above(tmp_path):
     design, r, sites = _built(tmp_path, kind="path")
     x, z = r.cells[10][0], Z0 + 4

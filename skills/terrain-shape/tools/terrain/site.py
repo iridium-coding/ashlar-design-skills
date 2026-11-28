@@ -97,6 +97,14 @@ PLANTS: frozenset[str] = _mc(
                                "cherry")),
     *_FLOWERS, *_CORALS)
 
+# Growth that carries nothing: plants, leaves, what hangs on trees, cave growth and the Nether's
+# roots, fungi and vines. A pier, a post or a floor never stands on it.
+GROWTH: frozenset[str] = PLANTS | LEAVES | ATTACHED | _mc(
+    "cobweb", "glow_lichen", "sculk_vein", "pointed_dripstone", "powder_snow", "amethyst_cluster",
+    "small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud", "crimson_roots", "warped_roots",
+    "nether_sprouts", "crimson_fungus", "warped_fungus", "weeping_vines", "weeping_vines_plant",
+    "twisting_vines", "twisting_vines_plant")
+
 _WATER_PLANTS = _mc("kelp", "kelp_plant", "seagrass", "tall_seagrass")
 _WATER = _mc("water", "bubble_column")
 _LAVA = _mc("lava")

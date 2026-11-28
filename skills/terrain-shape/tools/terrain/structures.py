@@ -15,17 +15,14 @@ Layers are ``(mode, LiveWrite)`` pairs with the modes of `track`: ``carve``, ``b
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from itertools import pairwise
 
 from .blocks import full_cube
 from .live import LiveWrite
-from .route import Route, RouteError, Section
+from .route import TUBE_REACH, Route, RouteError, Section
 from .site import (
     _AIR,
-    ATTACHED,
-    LEAVES,
-    PLANTS,
-    TRUNK,
     Site,
     base_id,
     is_still,
@@ -38,10 +35,14 @@ from .track import (
     footprint,
     heading,
     inside,
+    keeps_built,
     lamp_column,
     live_layers,
     pick,
+    pier_ground,
+    platform_cells,
     rail_cells,
+    rail_set,
     side_cell,
     slab,
 )
@@ -51,15 +52,7 @@ Cell = tuple[int, int, int]
 
 ARCH_SPAN = 32          # cells per arch span (spans stay under 40)
 BEAM_MAX = 16           # auto picks a beam up to this many cells
-TUBE_REACH = 24         # a tube pier must find ground within this many cells below
 ROOM = (5, 4, 5)        # width, height and length of a room around the end cell
-PLATFORM = (2, 8)       # width and length of a terminus platform
-
-_VEGETATION = PLANTS | LEAVES | ATTACHED | TRUNK | frozenset(f"minecraft:{b}" for b in (
-    "cobweb", "glow_lichen", "sculk_vein", "pointed_dripstone", "powder_snow", "amethyst_cluster",
-    "small_amethyst_bud", "medium_amethyst_bud", "large_amethyst_bud", "crimson_roots", "warped_roots",
-    "nether_sprouts", "crimson_fungus", "warped_fungus", "weeping_vines", "weeping_vines_plant",
-    "twisting_vines", "twisting_vines_plant"))
 
 
 # ------------------------------------------------------------------ helpers
@@ -89,18 +82,6 @@ def _host(design: LineDesign, state: str) -> bool:
 
 def _carvable(design: LineDesign, state: str) -> bool:
     return carvable(state, natural_for(design.dimension))
-
-
-def pier_ground(state: str, dimension: str) -> bool:
-    """Whether a block is ground a pier stands on in `dimension`.
-
-    A full cube, or a natural block of the dimension, that is not air, a liquid, a plant or
-    another growth (vines, roots, lichen, cobweb, dripstone).
-    """
-    block = base_id(state)
-    if _is_air(state) or liquid_kind(state) is not None or block in _VEGETATION:
-        return False
-    return block in natural_for(dimension) or full_cube(state)
 
 
 def _runs(route: Route, kind: str) -> list[tuple[int, int]]:
@@ -191,18 +172,22 @@ def bridge_layers(design: LineDesign, route: Route, section: Section, site: Site
     """Deck, railings, lamps and piers of the bridge cells in `section`, and tube piers.
 
     Returns ``(layers, stats)`` with stats ``piers`` (walls stood), ``displaced_water`` (still
-    water cells a pier replaced) and ``unsupported_tube`` (tube piers with no ground within 24
-    cells below, left out). Raises `RouteError` when a pier would stand in flowing water or
-    lava, or in still water without ``bridges.piers_in_water``.
+    water cells a pier replaced), ``unsupported_tube`` (tube piers with no ground within
+    ``TUBE_REACH`` cells below, left out) and ``tube_read_floor`` (the read's floor y, when it
+    ended the search for such a pier short of ``TUBE_REACH``; else None). Railings and lamps
+    keep off the running width of every route cell within the deck's reach, this section's or a
+    neighbour's (a deck corner reaches two cells along both legs), and off every rail cell.
+    Raises `RouteError` when a pier would stand in flowing water or lava, or in still water
+    without ``bridges.piers_in_water``.
     """
     spacing = design.lights.spacing if light_spacing is None else light_spacing
-    stats = {"piers": 0, "displaced_water": 0, "unsupported_tube": 0}
+    stats: dict = {"piers": 0, "displaced_water": 0, "unsupported_tube": 0, "tube_read_floor": None}
     first, last = section.start, section.end
     width = round(2 * formation_half(design)) + 2
     lo, hi = _span(width)
     reserved = _boosters(design, route)
+    rails = rail_set(design, route)
     deck: dict[tuple[int, int], tuple[int, bool]] = {}
-    inner: set[tuple[int, int]] = set()
     for i in range(first, last + 1):
         if route.kinds[i] != "bridge":
             continue
@@ -210,23 +195,27 @@ def bridge_layers(design: LineDesign, route: Route, section: Section, site: Site
         y, half = math.floor(level) - 1, level != math.floor(level)
         for xz in footprint(route, i, lo, hi):
             deck[xz] = (y, half)
-        inner |= footprint(route, i, lo + 1, hi - 1)
+    inner: set[tuple[int, int]] = set()
+    for j in range(max(0, first - hi), min(len(route.cells), last + hi + 1)):
+        inner |= footprint(route, j, lo + 1, hi - 1)
     build: dict[Cell, str] = {}
     for (x, z), (y, half) in deck.items():
         if (x, y, z) not in reserved:
             build[(x, y, z)] = pick(design, "deck", x, y, z)
         if half:
             build[(x, y + 1, z)] = slab(pick(design, "deck", x, y + 1, z))
-        if design.bridges.railings and (x, z) not in inner:
-            build[(x, y + 1 + half, z)] = pick(design, "railing", x, y + 1 + half, z)
+        top = (x, y + 1 + half, z)
+        if design.bridges.railings and (x, z) not in inner and top not in rails:
+            build[top] = pick(design, "railing", *top)
     light: dict[Cell, str] = {}
     for i in range(first, last + 1):
         if route.kinds[i] != "bridge" or i % spacing:
             continue
         x, z = side_cell(route, i, lo if (i // spacing) % 2 else hi)
-        if (x, z) in deck:
+        if (x, z) in deck and (x, z) not in inner:
             y, half = deck[(x, z)]
-            lamp_column(design, (x, z), y + 1 + half, light)
+            if not {(x, y + 1 + half + k, z) for k in range(3)} & rails:
+                lamp_column(design, (x, z), y + 1 + half, light)
     piers: dict[Cell, str] = {}
     for run in _runs(route, "bridge"):
         length = run[1] - run[0] + 1
@@ -289,6 +278,8 @@ def _tube_piers(design: LineDesign, route: Route, section: Section, site: Site, 
                         piers[(x, y, z)] = pick(design, "pier", x, y, z)
             else:
                 stats["unsupported_tube"] += 1
+                if site.box[1] > top - TUBE_REACH + 1:      # the read ended the search before TUBE_REACH
+                    stats["tube_read_floor"] = site.box[1]
 
 
 # ------------------------------------------------------------------ tunnels and tubes
@@ -311,12 +302,15 @@ def _section_cells(design: LineDesign, route: Route, i: int) -> tuple[set[Cell],
 
 
 def enclose(design: LineDesign, site: Site, bore: set[Cell], shell: dict[Cell, str], *,
-             reserved: set[Cell], lamps: set[Cell]) -> list[tuple[str, LiveWrite]]:
+            reserved: set[Cell], lamps: set[Cell], rails: frozenset[Cell] = frozenset(),
+            kept: Callable[[Cell], bool] | None = None) -> list[tuple[str, LiveWrite]]:
     """Carve the bore, line the shell where it is natural or air, light the `lamps` cells.
 
-    Existing non-natural solid blocks are kept (never written over). Water or lava in the bore
-    or shell raises `RouteError` naming the cell. A shell cell's role is a palette role, ``edge``
-    (a full mouth block) or ``slab`` (a bottom slab floor, see `floor_slab`).
+    Existing non-natural solid blocks are kept (never written over), and so is every shell cell
+    `kept` names (a line's ``open`` stop keeps what is built there). No cell of `rails` is
+    carved or lined. Water or lava in the bore or shell raises `RouteError` naming the cell. A
+    shell cell's role is a palette role, ``edge`` (a full mouth block) or ``slab`` (a bottom slab
+    floor, see `floor_slab`).
     """
     carve: dict[Cell, str] = {}
     build: dict[Cell, str] = {}
@@ -328,11 +322,14 @@ def enclose(design: LineDesign, site: Site, bore: set[Cell], shell: dict[Cell, s
         kind = liquid_kind(state)
         if kind:
             raise RouteError(f"{'bore' if cell in bore else 'lining'} cell {cell} holds {kind}")
+        if cell in rails:
+            continue
         if cell in bore:
             if _carvable(design, state):
                 carve[cell] = AIR
             continue
-        if cell in reserved or not (_is_air(state) or _host(design, state) or not full_cube(state)):
+        if cell in reserved or (kept is not None and kept(cell)) or not (
+                _is_air(state) or _host(design, state) or not full_cube(state)):
             continue
         x, y, z = cell
         role = shell[cell]
@@ -354,6 +351,12 @@ def tunnel_layers(design: LineDesign, route: Route, section: Section, site: Site
     ``lights.block``, alternating sides; where that cannot reach ``lights.minimum`` on the far side
     (``14 - width < minimum``) both walls get a lamp at the first standing height instead, and
     so does each mouth. `light_spacing` ``None`` means ``design.lights.spacing``.
+
+    The shell keeps out of the running space (the bore's cross-section at its own level) of every
+    route cell within the shell's reach, this section's or a neighbour's, whatever its kind: a
+    corner's shell reaches two cells along both legs, which may belong to the previous section.
+    It keeps out of a ``room`` at the line's end too (the room lines itself). No rail cell is
+    carved or lined.
     """
     spacing = design.lights.spacing if light_spacing is None else light_spacing
     lo, hi = _span(design.tunnels.width)
@@ -383,7 +386,18 @@ def tunnel_layers(design: LineDesign, route: Route, section: Section, site: Site
                 lamps.add((x, _base(route, i) + 1, z))
     for cell in bore:
         shell.pop(cell, None)
-    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
+    reach = max(1 - lo, hi + 1)
+    for j in range(max(0, section.start - reach), min(len(route.cells), section.end + reach + 1)):
+        base = _base(route, j)
+        for x, z in footprint(route, j, lo, hi):
+            for y in range(base, base + design.tunnels.height):
+                shell.pop((x, y, z), None)
+    for i, outward in _room_ends(design, route):      # a room at the line's end owns its cells
+        room_bore, room_shell, _ = _room_parts(design, route, i, outward)
+        for cell in room_bore | set(room_shell):
+            shell.pop(cell, None)
+    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps,
+                   rails=rail_set(design, route), kept=keeps_built(design, site))
 
 
 def nether_kinds(design: LineDesign, route: Route, section: Section, site: Site) -> list[str]:
@@ -405,9 +419,43 @@ def nether_kinds(design: LineDesign, route: Route, section: Section, site: Site)
 
 
 # ------------------------------------------------------------------ stops
+def _running(design: LineDesign) -> tuple[int, int]:
+    """Offsets across the line of the cells its rail, ice lane or walking surface runs on."""
+    if design.mode == "rail":
+        return 0, 0
+    if design.mode == "ice":
+        return 0, 1
+    return _span(4 * design.lanes if design.mode == "road" else design.width)
+
+
+def _room_ends(design: LineDesign, route: Route) -> list[tuple[int, tuple[int, int]]]:
+    """(end cell, outward heading) of each ``room`` stop of the line."""
+    n = len(route.cells)
+    out = []
+    for end, stop in ((False, design.start.stop), (True, design.end.stop)):
+        if stop == "room":
+            i = n - 1 if end else 0
+            hx, hz = heading(route, i)
+            out.append((i, (hx, hz) if end else (-hx, -hz)))
+    return out
+
+
 def _room(design: LineDesign, route: Route, site: Site, i: int,
           outward: tuple[int, int]) -> list[tuple[str, LiveWrite]]:
     """A lined, lit room around cell i, open at the side the line comes from."""
+    bore, shell, lamps = _room_parts(design, route, i, outward)
+    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps,
+                   rails=rail_set(design, route))
+
+
+def _room_parts(design: LineDesign, route: Route, i: int,
+                outward: tuple[int, int]) -> tuple[set[Cell], dict[Cell, str], set[Cell]]:
+    """The bore, shell and lamp cells of the room around end cell i.
+
+    In the Nether, where hoglins and magma cubes spawn at any light, every standing cell of the
+    room is a bottom ``edge`` slab nothing spawns on, except the cells the line itself runs on
+    (its rails, lane or walking surface).
+    """
     width, height, length = ROOM
     dx, dz = (outward[0], 0) if outward[0] else (0, outward[1])
     px, pz = -dz, dx
@@ -417,6 +465,11 @@ def _room(design: LineDesign, route: Route, site: Site, i: int,
     half_w, half_l = width // 2, length // 2
     bore_lo, bore_hi = _span(design.tunnels.width)
     door_lo, door_hi = max(bore_lo, -half_w), min(bore_hi, half_w)
+    own: set[tuple[int, int]] = set()
+    if design.dimension == "nether":
+        run_lo, run_hi = _running(design)
+        for j in range(max(0, i - length), min(len(route.cells), i + length + 1)):
+            own |= footprint(route, j, run_lo, run_hi)
     bore: set[Cell] = set()
     shell: dict[Cell, str] = {}
     lamps: set[Cell] = set()
@@ -424,8 +477,11 @@ def _room(design: LineDesign, route: Route, site: Site, i: int,
         for s in range(-half_w - 1, half_w + 2):
             x, z = x0 + t * dx + s * px, z0 + t * dz + s * pz
             if abs(t) <= half_l and abs(s) <= half_w:
-                bore |= {(x, y, z) for y in range(base, base + height)}
+                slab_floor = design.dimension == "nether" and (x, z) not in own
+                bore |= {(x, y, z) for y in range(base + slab_floor, base + height)}
                 shell[(x, floor_y, z)] = shell[(x, base + height, z)] = "lining"
+                if slab_floor:
+                    shell[(x, base, z)] = "slab"
             else:
                 door = t == -half_l - 1 and door_lo <= s <= door_hi
                 for y in range(floor_y, base + height + 1):
@@ -440,7 +496,7 @@ def _room(design: LineDesign, route: Route, site: Site, i: int,
         for t, s in ((half_l + 1, -1), (half_l + 1, 1), (-1, -half_w - 1), (1, -half_w - 1),
                      (-1, half_w + 1), (1, half_w + 1)):
             lamps.add((x0 + t * dx + s * px, base + height - 2, z0 + t * dz + s * pz))
-    return enclose(design, site, bore, shell, reserved=_boosters(design, route), lamps=lamps)
+    return bore, shell, lamps
 
 
 def _terminus(design: LineDesign, route: Route, site: Site, end: bool, spacing: int
@@ -456,23 +512,19 @@ def _terminus(design: LineDesign, route: Route, site: Site, end: bool, spacing: 
     build: dict[Cell, str] = {(x + hx, y, z + hz): pick(design, "end_block", x + hx, y, z + hz)}
     carve: dict[Cell, str] = {}
     light: dict[Cell, str] = {}
-    edge = -(math.ceil(formation_half(design)) - 1)
-    width, length = PLATFORM
-    indices = range(n - length, n) if end else range(length)
-    for j in indices:
-        if not 0 <= j < n:
-            continue
+    rails = rail_set(design, route)
+    for j, px, pz, outer in platform_cells(design, route, end):
         py = _base(route, j)
-        for off in range(edge - width + 1, edge + 1):
-            px, pz = side_cell(route, j, off)
-            build[(px, py, pz)] = pick(design, "platform", px, py, pz)
-            if inside(site, px, py - 1, pz) and _is_air(site.block(px, py - 1, pz)):
-                build[(px, py - 1, pz)] = pick(design, "platform", px, py - 1, pz)
-            for above in (py + 1, py + 2):
-                if inside(site, px, above, pz) and _carvable(design, site.block(px, above, pz)):
-                    carve[(px, above, pz)] = AIR
-        if (n - 1 - j if end else j) % spacing == 0:
-            px, pz = side_cell(route, j, edge - width + 1)
+        if (px, py, pz) in rails:
+            continue
+        build[(px, py, pz)] = pick(design, "platform", px, py, pz)
+        if inside(site, px, py - 1, pz) and _is_air(site.block(px, py - 1, pz)):
+            build[(px, py - 1, pz)] = pick(design, "platform", px, py - 1, pz)
+        for above in (py + 1, py + 2):
+            if (px, above, pz) not in rails and inside(site, px, above, pz) and _carvable(
+                    design, site.block(px, above, pz)):
+                carve[(px, above, pz)] = AIR
+        if outer and (n - 1 - j if end else j) % spacing == 0:
             lamp_column(design, (px, pz), py + 1, light)
     return live_layers(site, carve=carve, build=build, light=light)
 
@@ -490,11 +542,9 @@ def stop_layers(design: LineDesign, route: Route, section: Section, site: Site, 
     n = len(route.cells)
     for end, stop in ((False, design.start.stop), (True, design.end.stop)):
         i = n - 1 if end else 0
-        if not section.start <= i <= section.end:
-            continue
-        if stop == "terminus":
+        if section.start <= i <= section.end and stop == "terminus":
             out += _terminus(design, route, site, end, spacing)
-        elif stop == "room":
-            hx, hz = heading(route, i)
-            out += _room(design, route, site, i, (hx, hz) if end else (-hx, -hz))
+    for i, outward in _room_ends(design, route):
+        if section.start <= i <= section.end:
+            out += _room(design, route, site, i, outward)
     return out

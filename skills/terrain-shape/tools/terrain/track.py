@@ -13,16 +13,30 @@ ice lane is offsets 0 and +1 with guards at -1 and +2.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
 
-from .blocks import cells_write
+from .blocks import cells_write, full_cube
 from .live import LiveWrite
 from .route import TERMINUS_CELLS, Route, Section
-from .site import _AIR, _LAVA, NATURAL, Site, base_id, is_water_state, natural_for
-from .transit_design import LineDesign
+from .site import (
+    _AIR,
+    _LAVA,
+    GROWTH,
+    NATURAL,
+    TRUNK,
+    Site,
+    base_id,
+    is_water_state,
+    liquid_kind,
+    natural_for,
+)
+from .transit_design import LineDesign, formation_half
+
+Cell = tuple[int, int, int]
 
 _DIRS = {(1, 0): "east", (-1, 0): "west", (0, 1): "south", (0, -1): "north"}
 AIR = "minecraft:air"
@@ -32,6 +46,8 @@ LIT_KINDS = ("grade", "cut", "fill")
 TERMINUS_QUIET = 8      # cells next to a terminus end without boosters
 LAUNCH = (TERMINUS_QUIET, TERMINUS_CELLS)   # launch group: the 9th to 11th cells from a terminus end
 CLEARANCE = 3
+POST_REACH = 6          # a lamp post reaches at most this many cells down to the ground
+PLATFORM = (2, 8)       # width and length of a terminus platform
 _SALT = {"ballast": 1, "surface": 2, "edge": 3, "guard": 4, "lamp_post": 5, "lamp": 6, "end_block": 7,
          "ice": 8, "width": 9, "deck": 10, "pier": 11, "lining": 12, "railing": 13, "platform": 14}
 
@@ -120,6 +136,59 @@ def _rail_state(cell: RailCell) -> str:
     return f"minecraft:rail[shape={cell.shape}]"
 
 
+def rail_set(design: LineDesign, route: Route) -> frozenset[Cell]:
+    """Every rail cell of the whole line: no lining, railing, lamp or carve of any section replaces one."""
+    if design.mode != "rail":
+        return frozenset()
+    return frozenset((c.x, c.y, c.z) for c in rail_cells(design, route))
+
+
+def pier_ground(state: str, dimension: str) -> bool:
+    """Whether a block is ground a pier or a lamp post stands on in `dimension`.
+
+    A full cube, or a natural block of the dimension, that is not air, a liquid, a plant, a
+    tree or another growth (vines, roots, lichen, cobweb, dripstone).
+    """
+    block = base_id(state)
+    if block in _AIR or liquid_kind(state) is not None or block in GROWTH or block in TRUNK:
+        return False
+    return block in natural_for(dimension) or full_cube(state)
+
+
+def platform_cells(design: LineDesign, route: Route, end: bool) -> list[tuple[int, int, int, bool]]:
+    """(route index, x, z, on the outer edge) of the platform of a terminus at the line's start or end.
+
+    The platform is ``PLATFORM`` 2 wide and 8 long on the left of travel, its inner edge at
+    offset ``-(ceil(formation_half) - 1)``.
+    """
+    n = len(route.cells)
+    width, length = PLATFORM
+    edge = -(math.ceil(formation_half(design)) - 1)
+    indices = range(n - length, n) if end else range(length)
+    return [(j, *side_cell(route, j, off), off == edge - width + 1) for j in indices if 0 <= j < n
+            for off in range(edge - width + 1, edge + 1)]
+
+
+def platform_columns(design: LineDesign, route: Route) -> set[tuple[int, int]]:
+    """The columns of every terminus platform of the line: the stop lights them, not the line's lamps."""
+    return {(x, z) for end, stop in ((False, design.start.stop), (True, design.end.stop)) if stop == "terminus"
+            for _, x, z, _ in platform_cells(design, route, end)}
+
+
+def keeps_built(design: LineDesign, site: Site) -> Callable[[Cell], bool]:
+    """Whether a bed, surface or shell cell is left as it is: a line with an ``open`` stop ends at
+    something built (a landing doorway), and writes no bed, surface or shell where the read holds a
+    block that is not natural."""
+    if "open" not in (design.start.stop, design.end.stop):
+        return lambda cell: False
+    natural = natural_for(design.dimension)
+
+    def kept(cell: Cell) -> bool:
+        return inside(site, *cell) and base_id(site.block(*cell)) not in natural
+
+    return kept
+
+
 # ------------------------------------------------------------------ helpers
 def heading(route: Route, i: int, *, incoming: bool = False) -> tuple[int, int]:
     cells = route.cells
@@ -197,12 +266,12 @@ def carvable(state: str, natural: frozenset[str] = NATURAL) -> bool:
 
 
 def _carve(site: Site, columns: dict[tuple[int, int], int], height: int = CLEARANCE, *,
-           natural: frozenset[str] = NATURAL) -> dict:
-    """Air for the natural, non-liquid blocks `height` cells up from each column's lowest y."""
+           natural: frozenset[str] = NATURAL, rails: frozenset[Cell] = frozenset()) -> dict:
+    """Air for the natural, non-liquid blocks `height` cells up from each column's lowest y, never on `rails`."""
     out = {}
     for (x, z), y0 in columns.items():
         for y in range(y0, y0 + height):
-            if inside(site, x, y, z) and carvable(site.block(x, y, z), natural):
+            if (x, y, z) not in rails and inside(site, x, y, z) and carvable(site.block(x, y, z), natural):
                 out[(x, y, z)] = AIR
     return out
 
@@ -222,30 +291,68 @@ def live_layers(site: Site, **layers: dict) -> list[tuple[str, LiveWrite]]:
 
 
 def lamp_column(design: LineDesign, cell: tuple[int, int], base: int,
-                out: dict[tuple[int, int, int], str]) -> None:
+                out: dict[tuple[int, int, int], str], bottom: int | None = None) -> None:
+    """A lamp post from `bottom` (default `base`) up to ``base + 1`` with the lamp on top."""
     x, z = cell
-    out[(x, base, z)] = pick(design, "lamp_post", x, base, z)
-    out[(x, base + 1, z)] = pick(design, "lamp_post", x, base + 1, z)
+    for y in range(base if bottom is None else bottom, base + 2):
+        out[(x, y, z)] = pick(design, "lamp_post", x, y, z)
     out[(x, base + 2, z)] = pick(design, "lamp", x, base + 2, z)
 
 
-def _lights(design: LineDesign, route: Route, section: Section, spacing: int, lo: int, hi: int,
-            base: Callable[[int], int], kinds: tuple[str, ...], out: dict[tuple[int, int, int], str]) -> None:
-    """Lamp posts every `spacing` cells just outside offsets lo..hi, alternating sides."""
+def post_column(design: LineDesign, site: Site, cell: tuple[int, int], base: int,
+                out: dict[tuple[int, int, int], str], laid: dict[Cell, str]) -> bool:
+    """A lamp column beside the line, its post reaching down to the ground.
+
+    The post runs from the first block below `base` it can stand on up to ``base + 1``, the lamp
+    on top: a block the line itself lays there (`laid`, such as a kerb slab), else ground in the
+    site (`pier_ground`), at most ``POST_REACH`` below. Nothing is written, and False returned,
+    when there is no such block that close.
+    """
+    x, z = cell
+    for y in range(base - 1, base - POST_REACH - 1, -1):
+        state = laid.get((x, y, z))
+        if state is None and not inside(site, x, y, z):
+            break
+        if (state is not None and base_id(state) not in _AIR) or (
+                state is None and pier_ground(site.block(x, y, z), design.dimension)):
+            lamp_column(design, cell, base, out, bottom=y + 1)
+            return True
+    return False
+
+
+def _lights(design: LineDesign, route: Route, section: Section, site: Site, spacing: int, lo: int, hi: int,
+            base: Callable[[int], int], kinds: tuple[str, ...], out: dict[tuple[int, int, int], str],
+            laid: dict[Cell, str], skipped: list[Cell] | None) -> None:
+    """Lamp posts every `spacing` cells just outside offsets lo..hi, alternating sides.
+
+    No lamp stands on the line's formation or on a terminus platform (the stop lights it); a
+    lamp whose post finds nothing to stand on close below is left out and added to `skipped`.
+    """
     n = len(route.cells)
+    platform = platform_columns(design, route)
     for i in range(section.start, section.end + 1):
         if i % spacing or route.kinds[i] not in kinds:
             continue
         side = lo - 1 if (i // spacing) % 2 else hi + 1
         cell = side_cell(route, i, side)
         near = set().union(*(footprint(route, j, lo, hi) for j in range(max(0, i - 3), min(n, i + 4))))
-        if cell not in near:
-            lamp_column(design, cell, base(i), out)
+        if cell not in near and cell not in platform and not post_column(design, site, cell, base(i), out, laid) \
+                and skipped is not None:
+            skipped.append((cell[0], base(i) + 2, cell[1]))
 
 
 # ------------------------------------------------------------------ rail
-def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
+def _bed(design: LineDesign, site: Site, x: int, y: int, z: int) -> str:
+    """The ballast of a bed cell, or the lining role where the cell below is no ground (a cave): no gravel falls."""
+    if inside(site, x, y - 1, z) and not pier_ground(site.block(x, y - 1, z), design.dimension):
+        return pick(design, "lining", x, y, z)
+    return pick(design, "ballast", x, y, z)
+
+
+def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacing: int,
+          skipped: list[Cell] | None):
     rails = rail_cells(design, route)
+    kept = keeps_built(design, site)
     carve_at: dict[tuple[int, int], int] = {}
     build: dict[tuple[int, int, int], str] = {}
     power: dict[tuple[int, int, int], str] = {}
@@ -255,20 +362,24 @@ def _rail(design: LineDesign, route: Route, section: Section, site: Site, spacin
         foot = footprint(route, i, -1, 1)
         for x, z in foot:
             _lower(carve_at, x, z, rc.y + 1)
-            if route.kinds[i] in BED_KINDS:
-                build[(x, rc.y - 1, z)] = pick(design, "ballast", x, rc.y - 1, z)
+            if route.kinds[i] in BED_KINDS and not kept((x, rc.y - 1, z)):
+                build[(x, rc.y - 1, z)] = _bed(design, site, x, rc.y - 1, z)
         if rc.booster:
             power[(rc.x, rc.y - 1, rc.z)] = REDSTONE_BLOCK
         track[(rc.x, rc.y, rc.z)] = _rail_state(rc)
     light: dict[tuple[int, int, int], str] = {}
-    _lights(design, route, section, spacing, -1, 1, lambda i: rails[i].y, LIT_KINDS, light)
+    _lights(design, route, section, site, spacing, -1, 1, lambda i: rails[i].y, LIT_KINDS, light,
+            {**build, **track}, skipped)
     build.update(power)     # every bed first, so no ballast replaces a booster's redstone block
     natural = natural_for(design.dimension)
-    return live_layers(site, carve=_carve(site, carve_at, natural=natural), build=build, track=track, light=light)
+    carve = _carve(site, carve_at, natural=natural, rails=rail_set(design, route))
+    return live_layers(site, carve=carve, build=build, track=track, light=light)
 
 
 # ------------------------------------------------------------------ road
-def _road(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
+def _road(design: LineDesign, route: Route, section: Section, site: Site, spacing: int,
+          skipped: list[Cell] | None):
+    kept = keeps_built(design, site)
     width = 4 * design.lanes
     lo, hi = -((width - 1) // 2), width // 2
     idx = range(section.start, section.end + 1)
@@ -295,9 +406,10 @@ def _road(design: LineDesign, route: Route, section: Section, site: Site, spacin
             track[(x, base - 1, z)] = block
             if route.levels[i] != base:
                 track[(x, base, z)] = slab(block)
+    track = {c: v for c, v in track.items() if not kept(c)}
     light: dict[tuple[int, int, int], str] = {}
-    _lights(design, route, section, spacing, lo, hi, lambda i: int(np.floor(route.levels[i])) + 1,
-            LIT_KINDS, light)
+    _lights(design, route, section, site, spacing, lo, hi, lambda i: int(np.floor(route.levels[i])) + 1,
+            LIT_KINDS, light, track, skipped)
     natural = natural_for(design.dimension)
     return live_layers(site, carve=_carve(site, carve_at, natural=natural), track=track, light=light)
 
@@ -310,7 +422,9 @@ def _path_span(design: LineDesign, i: int) -> tuple[int, int]:
     return -((width - 1) // 2), width // 2
 
 
-def _path(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
+def _path(design: LineDesign, route: Route, section: Section, site: Site, spacing: int,
+          skipped: list[Cell] | None):
+    kept = keeps_built(design, site)
     idx = range(section.start, section.end + 1)
     spans = {i: _path_span(design, i) for i in range(max(0, section.start - 3), min(len(route.cells), section.end + 4))}
     carve_at: dict[tuple[int, int], int] = {}
@@ -319,7 +433,7 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
         level = int(route.levels[i])
         for x, z in footprint(route, i, *spans[i]):
             _lower(carve_at, x, z, level)
-            if route.kinds[i] in BED_KINDS:
+            if route.kinds[i] in BED_KINDS and not kept((x, level - 1, z)):
                 track[(x, level - 1, z)] = pick(design, "surface", x, level - 1, z)
     for i in idx:
         if route.kinds[i] not in BED_KINDS:
@@ -329,24 +443,30 @@ def _path(design: LineDesign, route: Route, section: Section, site: Site, spacin
             if 0 <= j < len(route.cells) and int(route.levels[j]) == level - 1:
                 facing = _facing(route.cells[j], route.cells[i])
                 for x, z in footprint(route, i, *spans[i]):
-                    if not base_id(track[(x, level - 1, z)]).endswith("_stairs"):
-                        track[(x, level - 1, z)] = _stairs(track[(x, level - 1, z)], facing)
+                    cell = (x, level - 1, z)
+                    if cell in track and not base_id(track[cell]).endswith("_stairs"):
+                        track[cell] = _stairs(track[cell], facing)
                 break
     light: dict[tuple[int, int, int], str] = {}
+    platform = platform_columns(design, route)
     for i in idx:
         if i % spacing or route.kinds[i] not in LIT_KINDS:
             continue
         lo, hi = spans[i]
         cell = side_cell(route, i, lo - 1 if (i // spacing) % 2 else hi + 1)
         near = set().union(*(footprint(route, j, *spans[j]) for j in spans if abs(j - i) <= 3))
-        if cell not in near:
-            lamp_column(design, cell, int(route.levels[i]), light)
+        level = int(route.levels[i])
+        if cell not in near and cell not in platform and not post_column(design, site, cell, level, light, track) \
+                and skipped is not None:
+            skipped.append((cell[0], level + 2, cell[1]))
     natural = natural_for(design.dimension)
     return live_layers(site, carve=_carve(site, carve_at, natural=natural), track=track, light=light)
 
 
 # ------------------------------------------------------------------ ice
-def _ice(design: LineDesign, route: Route, section: Section, site: Site, spacing: int):
+def _ice(design: LineDesign, route: Route, section: Section, site: Site, spacing: int,
+         skipped: list[Cell] | None):
+    kept = keeps_built(design, site)
     idx = range(section.start, section.end + 1)
     lane = set().union(*(footprint(route, i, 0, 1) for i in idx))
     carve_at: dict[tuple[int, int], int] = {}
@@ -367,6 +487,7 @@ def _ice(design: LineDesign, route: Route, section: Section, site: Site, spacing
         x, z = side_cell(route, i, 2 if (i // spacing) % 2 else -1)
         if (x, z) not in lane:
             light[(x, level, z)] = design.lights.block
+    track = {c: v for c, v in track.items() if not kept(c)}
     natural = natural_for(design.dimension)
     return live_layers(site, carve=_carve(site, carve_at, CLEARANCE + 1, natural=natural), track=track, light=light)
 
@@ -375,11 +496,13 @@ _MODES = {"rail": _rail, "road": _road, "path": _path, "ice": _ice}
 
 
 def track_layers(design: LineDesign, route: Route, section: Section, site: Site, *,
-                 light_spacing: int | None = None) -> list[tuple[str, LiveWrite]]:
+                 light_spacing: int | None = None, skipped: list[Cell] | None = None) -> list[tuple[str, LiveWrite]]:
     """Live layers for the cells of `section`, in order, omitting empty ones.
 
     Returns ``("carve", clearance)``, ``("build", bed)``, ``("track", rails or surface)`` and
-    ``("light", lamps)``. `light_spacing` ``None`` means ``design.lights.spacing``.
+    ``("light", lamps)``. `light_spacing` ``None`` means ``design.lights.spacing``. A lamp post
+    beside the line reaches down to the ground (at most ``POST_REACH``); a lamp with no ground
+    that close is left out and its lamp cell added to `skipped` when given.
     """
     spacing = design.lights.spacing if light_spacing is None else light_spacing
-    return _MODES[design.mode](design, route, section, site, spacing)
+    return _MODES[design.mode](design, route, section, site, spacing, skipped)

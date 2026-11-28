@@ -168,10 +168,12 @@ def test_overworld_landing_is_a_platform_three_deep_on_both_faces(tmp_path):
 def test_nether_landing_is_lit_to_twelve_and_keeps_doorways_open(tmp_path):
     design, sites = _pair_sites(tmp_path, doorways=[[13, 71, 9, "south"]])
     after = sites["nether"]
-    assert after.block(13, 71, 9) == AIR and after.block(13, 72, 9) == AIR
-    assert after.block(13, 71, 11) == AIR and after.block(13, 72, 11) == AIR    # through the wall
-    assert after.block(12, 72, 11).endswith("[type=double,waterlogged=false]")      # the mouth is framed in edge
-    assert after.block(12, 71, 11).endswith("[type=double,waterlogged=false]")
+    assert all(after.block(13, y, 9) == AIR for y in (71, 72, 73))          # three high, as the room inside
+    assert all(after.block(13, y, 11) == AIR for y in (71, 72, 73))         # through the wall
+    assert after.block(13, 74, 11).endswith("[type=double,waterlogged=false]")      # the lintel
+    assert after.block(13, 70, 11).endswith("[type=double,waterlogged=false]")      # the sill
+    for y in (71, 72, 73):                                                      # the mouth is framed in edge
+        assert after.block(12, y, 11).endswith("[type=double,waterlogged=false]")
     assert _min_floor_light(after, design) >= 12
 
 
@@ -399,6 +401,13 @@ def test_a_refused_run_leaves_no_build_report(tmp_path):
     assert (project / "terrain/previews/east-gate.portal-report.json").exists()
 
 
+def test_a_doorway_too_high_for_the_room_is_refused(tmp_path):
+    design = _design(tmp_path, nether_at=[10, 70, 5], doorways=[[13, 73, 9, "south"]])
+    site = _bare_sites(tmp_path, design)["nether"]
+    with pytest.raises(ValueError, match=r"doorway \[13, 73, 9, 'south'\].*roof"):
+        portals.portal_layers(design, "nether", site)
+
+
 def test_a_doorway_below_the_standing_level_is_refused(tmp_path):
     design = _design(tmp_path, nether_at=[10, 70, 5], doorways=[[13, 70, 9, "south"]])
     site = _bare_sites(tmp_path, design)["nether"]
@@ -516,7 +525,8 @@ def test_a_z_axis_pair_end_to_end(tmp_path):
 def test_a_doorway_opens_a_z_axis_wall(tmp_path):
     design, sites = _pair_sites(tmp_path, axis="z", doorways=[[14, 71, 7, "east"]])
     after = sites["nether"]
-    assert after.block(14, 71, 7) == AIR and after.block(16, 71, 7) == AIR and after.block(16, 72, 7) == AIR
+    assert after.block(14, 71, 7) == AIR and all(after.block(16, y, 7) == AIR for y in (71, 72, 73))
+    assert after.block(16, 74, 7).endswith("[type=double,waterlogged=false]")
     assert after.block(16, 71, 6).endswith("[type=double,waterlogged=false]")
     assert portals.check_portal(design, sites)["ok"]
 

@@ -109,3 +109,12 @@ def test_section_floor_reaches_the_lowest_ground_under_the_box(tmp_path):
     site = make_site(tmp_path / "site", section.box, ground=columns, world="world")
     _, mass, _ = corridor.graded_site(design, r, section, site)      # no "read lower to find the ground"
     assert mass is not None
+
+
+def test_a_line_classed_from_its_reads_reads_deep_enough_for_tube_piers(tmp_path):
+    for world, floor in (("world", -64), ("world_nether", 0)):    # the Nether has no blocks below y 0
+        data = {"element": "deep-line", "seed": 1, "world": world, "mode": "rail", "route": "straight",
+                "from": {"at": [0, 20, 0]}, "to": {"at": [30, 20, 0]}}
+        design = td.parse_line(data, tmp_path)
+        r = route.plan_route(design, None)
+        assert r.sections[0].box[1] == max(20 - 1 - (route.TUBE_REACH + 2), floor), world

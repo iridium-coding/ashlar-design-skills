@@ -233,8 +233,12 @@ def _weights(value, key: str) -> dict[str, int]:
     return {_block(b, key): _int(w, f"{key} weight", minimum=1) for b, w in weights.items()}
 
 
+NETHER_BORE_MAX = 6     # wall lamp pairs light a Nether bore to 12 up to this width
+
+
 def _default_tunnel(mode: str, lanes: int, width: int) -> tuple[int, int]:
-    return {"rail": (3, 4), "road": (4 * lanes + 2, 5), "path": (max(3, width + 2), 3), "ice": (3, 3)}[mode]
+    """Bore width and height by mode; an ice bore is 4 wide so it holds the guards at offsets -1 and +2."""
+    return {"rail": (3, 4), "road": (4 * lanes + 2, 5), "path": (max(3, width + 2), 3), "ice": (4, 3)}[mode]
 
 
 # ------------------------------------------------------------------ parse
@@ -329,6 +333,9 @@ def parse_line(data: dict, project_dir: Path) -> LineDesign:
     if tun.pop("lining") is not None:
         palette["lining"] = _weights(data["tunnels"]["lining"], "tunnels.lining")
     nether = dimension == "nether"
+    if nether and tun["width"] > NETHER_BORE_MAX:
+        raise ValueError(f"tunnels.width must be at most {NETHER_BORE_MAX} in the Nether, got {tun['width']}: "
+                         "the lamp pairs in its walls cannot light a wider bore to 12")
     lit = _fields(data, "lights", {"block": "minecraft:shroomlight", "spacing": 4 if nether else 12,
                                    "min": 12 if nether else 1},
                   {"block": _block, "spacing": lambda v, k: _int(v, k, minimum=1),

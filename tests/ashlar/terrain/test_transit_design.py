@@ -23,6 +23,15 @@ def test_defaults_follow_the_spec(tmp_path):
     assert d.end.stop == "terminus" and d.start.stop is None
 
 
+def test_a_nether_tunnel_wider_than_six_is_refused(tmp_path):
+    nether = {"world": "world_nether", "route": "straight"}
+    assert td.parse_line(_base(**nether, tunnels={"width": 6}), tmp_path).tunnels.width == 6
+    with pytest.raises(ValueError, match=r"tunnels.width.*at most 6.*Nether"):
+        td.parse_line(_base(**nether, tunnels={"width": 7}), tmp_path)
+    with pytest.raises(ValueError, match=r"tunnels.width.*at most 6"):
+        td.parse_line(_base(**nether, mode="road", lanes=2), tmp_path)      # its default bore is 10 wide
+
+
 def test_nether_world_needs_a_straight_level_line(tmp_path):
     with pytest.raises(ValueError, match="straight"):
         td.parse_line(_base(world="world_nether"), tmp_path)
@@ -83,7 +92,7 @@ def test_file_keys_follow_the_spec(tmp_path):
 @pytest.mark.parametrize(("extra", "size"), [
     ({}, (3, 4)), ({"mode": "road"}, (6, 5)), ({"mode": "road", "lanes": 2}, (10, 5)),
     ({"mode": "path"}, (5, 3)), ({"mode": "path", "width": 1}, (3, 3)),
-    ({"mode": "ice"}, (3, 3))])
+    ({"mode": "ice"}, (4, 3))])        # 4 wide: the bore holds the guards at offsets -1 and +2
 def test_tunnel_defaults_per_mode(tmp_path, extra, size):
     d = td.parse_line(_base(**extra), tmp_path)
     assert (d.tunnels.width, d.tunnels.height) == size

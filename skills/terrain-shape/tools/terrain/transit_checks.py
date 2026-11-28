@@ -33,8 +33,17 @@ from .site import (
     liquid_kind,
     natural_for,
 )
-from .structures import PLATFORM, ROOM, pier_ground
-from .track import RailCell, footprint, heading, inside, rail_cells, side_cell
+from .structures import ROOM
+from .track import (
+    PLATFORM,
+    RailCell,
+    footprint,
+    heading,
+    inside,
+    pier_ground,
+    rail_cells,
+    side_cell,
+)
 from .transit_design import LineDesign, formation_half
 
 CHECKS = ("continuity", "support", "boosters", "clearance", "walk", "light", "deck", "seal", "grade")
@@ -314,6 +323,25 @@ def _corridor(line: _Line) -> dict[tuple[int, int], tuple[int, int, int]]:
     return strip
 
 
+def _holds_post(state: str) -> bool:
+    """What a lamp post may stand on: anything but air, a liquid or growth (a bottom slab will do)."""
+    return base_id(state) not in _AIR and liquid_kind(state) is None and base_id(state) not in _SOFT
+
+
+def _post_bases(line: _Line, site: Site, x: int, z: int, lo: int, hi: int) -> list[int]:
+    """The y of the lowest block of every stack of lamp-post blocks in column (x, z) that reaches lo..hi."""
+    posts = frozenset(line.design.palette["lamp_post"])
+    out, bottom = [], None
+    for rlo, rhi, state in sorted(site.columns[(x, z)]):
+        if base_id(state) in posts:
+            bottom = rlo if bottom is None else bottom
+            if rhi >= lo and bottom <= hi and (not out or out[-1] != bottom):
+                out.append(bottom)
+        else:
+            bottom = None
+    return out
+
+
 def _support(line: _Line) -> _Outcome:
     out = _Outcome([], 0, "items without a block to stand on or hang from")
     for i, rc in enumerate(line.rails):
@@ -329,6 +357,13 @@ def _support(line: _Line) -> _Outcome:
         site = next((s for s in line.owners(i) if (x, z) in s.columns), None)
         if site is None:
             continue
+        for y in _post_bases(line, site, x, z, lo, hi):
+            below = line.state(i, x, y - 1, z)
+            if below is None:
+                continue
+            out.checked += 1
+            if not _holds_post(below):
+                out.add((x, y, z))
         for rlo, rhi, state in site.columns[(x, z)]:
             if rhi < lo or rlo > hi or not any(k in state for k in ("lantern", "torch", "carpet")):
                 continue

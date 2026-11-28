@@ -679,6 +679,13 @@ class Route:
 HASH_KEYS = ("element", "world", "mode", "route", "from", "to", "via", "avoid", "profile", "limits",
              "width", "lanes")
 Y_MIN, Y_MAX = -64, 319
+NETHER_Y_MIN = 0        # the Nether has no blocks below y 0
+TUBE_REACH = 24         # a tube pier must find ground within this many cells below the tube's floor
+
+
+def classed_from_reads(design: LineDesign) -> bool:
+    """A Nether line, or a straight line without heights: its tunnels and tubes come from the reads."""
+    return design.dimension == "nether" or (design.route == "straight" and design.heights is None)
 
 
 def design_hash(design: LineDesign) -> str:
@@ -691,12 +698,15 @@ def make_sections(design: LineDesign, route: Route, grid: Grid | None) -> list[S
     """Split a route into sections of ``section_length`` cells, each with its read box.
 
     With a heights grid, a box's floor lies 6 below the lowest ground under the whole box (or
-    below the line, if that is lower), so every column of the read reaches its ground.
+    below the line, if that is lower), so every column of the read reaches its ground. A line
+    classed from its reads (`classed_from_reads`) may stand tubes on piers, so its box also
+    reaches ``TUBE_REACH + 2`` below the section's lowest floor row, down to the world's floor.
     """
     lim, tun = design.limits, design.tunnels
     reach = math.ceil(formation_half(design) + max(lim.max_fill * lim.fill_ratio,
                                                    lim.max_cut * lim.cut_ratio, tun.width) + 8)
     n, length = len(route.cells), design.section_length
+    floor = NETHER_Y_MIN if design.dimension == "nether" else Y_MIN
     sections = []
     for k in range((n + length - 1) // length):
         a, b = k * length, min((k + 1) * length, n) - 1
@@ -719,8 +729,10 @@ def make_sections(design: LineDesign, route: Route, grid: Grid | None) -> list[S
             window = window[~np.isnan(window)]
             top = float(window.max()) if window.size else -math.inf
             y2 = math.ceil(max(top + 2, max(levels) + tun.height + tun.roof + 2))
+        if classed_from_reads(design):
+            y1 = min(y1, math.floor(min(levels)) - 1 - (TUBE_REACH + 2))
         sections.append(Section(f"s{k + 1:02d}", a, b,
-                                (x1, max(y1, Y_MIN), z1, x2, min(y2, Y_MAX), z2), design.world))
+                                (x1, max(y1, floor), z1, x2, min(y2, Y_MAX), z2), design.world))
     return sections
 
 

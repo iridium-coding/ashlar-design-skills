@@ -208,7 +208,8 @@ def test_tunnel_bore_is_air_lined_and_lit(tmp_path):
     design, r, section, site = _hill_tunnel(tmp_path)
     after = blocks.apply_writes(site, structures.tunnel_layers(design, r, section, site, light_spacing=6))
     x, z = r.cells[10]
-    assert all(after.block(x, y, z) == "minecraft:air" for y in range(65, 69))
+    assert all(after.block(x, y, z) == "minecraft:air" for y in range(66, 69))     # the track lays the rail at 65
+    assert after.block(x, 65, z) == site.block(x, 65, z) and after.block(x, 65, z + 1) == "minecraft:air"
     assert any(after.block(x2, 66, z2) == design.lights.block for x2, z2 in _wall_cells(r, 6, 18))
     assert base_id(after.block(x, 64, z)) in design.palette["lining"]
     assert base_id(after.block(x, 69, z + 1)) in design.palette["lining"]
@@ -241,7 +242,8 @@ def test_tunnel_refuses_liquid_in_the_shell_or_bore(tmp_path, liquid, cell):
 def test_netherrack_is_host_rock_in_the_nether(tmp_path):
     design, r, section, site = _nether_line(tmp_path, host=NETHERRACK)
     after = blocks.apply_writes(site, structures.tunnel_layers(design, r, section, site, light_spacing=4))
-    assert all(after.block(10, y, 1) == "minecraft:air" for y in range(70, 74))
+    assert all(after.block(10, y, 1) == "minecraft:air" for y in range(71, 74))      # the track lays the rail at 70
+    assert after.block(10, 70, 2) == "minecraft:air"
     assert base_id(after.block(10, 74, 1)) in design.palette["lining"]
 
 
@@ -480,3 +482,24 @@ def test_the_nether_style_lamp_is_a_lantern(tmp_path):
 ])
 def test_pier_ground(state, dimension, ground):
     assert structures.pier_ground(state, dimension) is ground
+
+
+# ------------------------------------------------------------------ final fix wave
+def test_a_nether_room_floor_is_a_bottom_slab_except_under_the_rails(tmp_path):
+    line = _row(14)
+    design, r, section, site = _build(tmp_path, line, [65] * 14, ["tunnel"] * 14, end_stop="room",
+                                      ground=90, extra=_NETHER)
+    sites = _composed(design, r, section, site, 4)
+    after = sites[section.name]
+    x_end = r.cells[-1][0]
+    rails = {(x, z) for x, z in r.cells}
+    for x in range(x_end - 2, x_end + 3):
+        for z in range(Z0 - 2, Z0 + 3):
+            state = after.block(x, 65, z)
+            if (x, z) in rails:
+                assert base_id(state) in ("minecraft:rail", "minecraft:powered_rail"), (x, z, state)
+            else:
+                assert base_id(state) in design.palette["edge"] and "type=bottom" in state, (x, z, state)
+    check = _light_check(design, r, sites)
+    assert check["ok"], check
+    assert int(check["detail"].split()[0]) > 0        # the light check still checks the tunnel floor

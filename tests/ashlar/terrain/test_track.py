@@ -306,3 +306,42 @@ def test_nether_rail_clearance_carves_netherrack(tmp_path):
     after = blocks.apply_writes(site, track.track_layers(design, r, section, site))
     assert after.block(10, 66, Z0) == "minecraft:air"
     assert after.block(10, 67, Z0) == "minecraft:air"
+
+
+# ------------------------------------------------------------------ final fix wave
+def _lamps(design, after, cells):
+    """(x, lamp y, z) of every lamp beside `cells` (route cells), within 4 across."""
+    lamps = set(design.palette["lamp"])
+    return [(x, y, z) for x0, z0 in cells for x in (x0,) for z in range(z0 - 4, z0 + 5)
+            for y in range(40, 100) if base_id(after.block(x, y, z)) in lamps]
+
+
+def test_a_lamp_post_beside_an_embankment_reaches_down_to_the_ground(tmp_path):
+    low = {(x, z): 61 for x in range(-10, 40) for z in (Z0 - 2, Z0 + 2)}       # the ground falls away beside the bed
+    design, r, section, site = _line(tmp_path, "rail", [(x, Z0) for x in range(30)], [65] * 30, ground=low)
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site, light_spacing=6))
+    posts = set(design.palette["lamp_post"])
+    found = _lamps(design, after, r.cells)
+    assert found
+    for x, y, z in found:
+        assert y == 67 and all(base_id(after.block(x, k, z)) in posts for k in range(62, 67)), (x, z)
+        assert after.block(x, 61, z) == "minecraft:grass_block[snowy=false]"
+
+
+def test_a_lamp_with_no_ground_within_six_below_its_post_is_skipped(tmp_path):
+    low = {(x, Z0 + 2): 50 for x in range(-10, 40)}
+    design, r, section, site = _line(tmp_path, "rail", [(x, Z0) for x in range(30)], [65] * 30, ground=low)
+    skipped: list = []
+    after = blocks.apply_writes(site, track.track_layers(design, r, section, site, light_spacing=6,
+                                                         skipped=skipped))
+    assert skipped and all(z == Z0 + 2 for _, _, z in skipped)
+    assert not [c for c in _lamps(design, after, r.cells) if c[2] == Z0 + 2]
+    assert [c for c in _lamps(design, after, r.cells) if c[2] == Z0 - 2]
+
+
+def test_a_line_lamp_never_replaces_a_terminus_platform_block(tmp_path):
+    design, r, section, site = _rail_line(tmp_path, levels=[65] * 40, end_stop="terminus")
+    light = dict(track.track_layers(design, r, section, site, light_spacing=2))["light"]
+    platform = {(x, z) for x in range(32, 40) for z in (Z0 - 2, Z0 - 1)}
+    ox, _, oz = light.origin
+    assert not {(ox + int(i), oz + int(k)) for i, _, k in np.argwhere(light.codes)} & platform

@@ -60,6 +60,7 @@ LANDING_LIGHT, LANDING_LAMP = 12, "minecraft:shroomlight"
 PAD = 1                     # landing cells beside the frame, each side
 PLATFORM_DEPTH = 3          # Overworld platform cells in front of each face
 ROOM_DEPTH, ROOM_HEIGHT = 5, 4
+DOORWAY_HEIGHT = 3          # a doorway is as high as a line's clearance (the room is 4 high inside)
 MIN_SIZE, MAX_SIZE = (4, 5), (23, 23)
 ARRIVAL_MARGIN = 3
 Cell = tuple[int, int, int]
@@ -453,20 +454,24 @@ def _nether_room(design: PortalDesign) -> _Room:
             lamps.add(_at(origin, axis, a, p, oy))
     room = _Room(bore, shell, lamps, walls, standing)
     for doorway in design.doorways:
-        _open_doorway(room, doorway, stand)
+        _open_doorway(room, doorway, stand, oy + height)
     return room
 
 
-def _open_doorway(room: _Room, doorway: tuple[int, int, int, str], stand: int) -> None:
-    """Leave a doorway open 2 high through the wall it faces, framed in the edge block.
+def _open_doorway(room: _Room, doorway: tuple[int, int, int, str], stand: int, top: int) -> None:
+    """Leave a doorway open ``DOORWAY_HEIGHT`` (3) high through the wall it faces, framed in the edge block.
 
-    The doorway cell is the first open cell: its row and the one above stay air from there out
-    through the wall, and the wall cells round the mouth become the edge block.
+    The doorway cell is the first open cell: its row and the two above stay air from there out
+    through the wall, under a lintel 3 above it, and the wall cells round the mouth become the
+    edge block. `top` is the room's highest open row.
     """
     x, y, z, facing = doorway
     if y < stand:
         raise ValueError(f"doorway {list(doorway)} is below the standing level {stand}: it would cut through the "
                          f"floor; its y is the first open cell, at least frame y + 1")
+    if y + DOORWAY_HEIGHT - 1 > top:
+        raise ValueError(f"doorway {list(doorway)} would cut the roof: it is {DOORWAY_HEIGHT} high and the room's "
+                         f"highest open row is {top}, so its y is at most {top - DOORWAY_HEIGHT + 1}")
     dx, dz = FACINGS[facing]
     inner = room.bore | set(room.shell)
     path = []
@@ -479,15 +484,15 @@ def _open_doorway(room: _Room, doorway: tuple[int, int, int, str], stand: int) -
     if mouth is None:
         raise ValueError(f"doorway {[x, y, z, facing]} does not reach a wall of the landing: it must start "
                          f"inside the room or in the wall, facing the wall it opens")
-    opened = {(x + k * dx, y + j, z + k * dz) for k in path for j in (0, 1)}
+    opened = {(x + k * dx, y + j, z + k * dz) for k in path for j in range(DOORWAY_HEIGHT)}
     for cell in opened:
         room.shell.pop(cell, None)
         room.lamps.discard(cell)
     room.bore |= opened
     px, pz = (0, 1) if dx else (1, 0)
     mx, mz = x + mouth * dx, z + mouth * dz
-    ring = {(mx + t * px, y + j, mz + t * pz) for t in (-1, 1) for j in (0, 1)}
-    ring |= {(mx + t * px, yy, mz + t * pz) for t in (-1, 0, 1) for yy in (y - 1, y + 2)}
+    ring = {(mx + t * px, y + j, mz + t * pz) for t in (-1, 1) for j in range(DOORWAY_HEIGHT)}
+    ring |= {(mx + t * px, yy, mz + t * pz) for t in (-1, 0, 1) for yy in (y - 1, y + DOORWAY_HEIGHT)}
     for cell in ring & room.walls:
         room.shell[cell] = "edge"
         room.lamps.discard(cell)

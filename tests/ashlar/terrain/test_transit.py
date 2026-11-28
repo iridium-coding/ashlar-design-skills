@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from sitegen import make_heights, make_site
-from terrain import blocks, route, transit, transit_checks
+from terrain import blocks, portals, route, transit, transit_checks
 from terrain import transit_design as td
 from terrain.emit import VerifyError
 from terrain.live import decode
@@ -464,3 +464,203 @@ def test_the_design_is_copied_where_the_transit_row_points(tmp_path):
     assert json.loads((project / DESIGN).read_text(encoding="utf-8")) == design.source
     assert any("copied" in n and DESIGN in n for n in notes)
     assert not any("copied" in n for n in transit.emit_line(design, project, first_phase=1).notes)
+
+
+# ------------------------------------------------------------------ final fix wave: sections, structures, stops
+def _section_reads(project, element, r, ground, cells=None):
+    """A read of every section box: `ground` gives each column's grass level, `cells` overrides cells."""
+    for s in r.sections:
+        x1, _, z1, x2, _, z2 = s.box
+        columns = {(x, z): ground(x, z) for x in range(x1, x2 + 1) for z in range(z1, z2 + 1)}
+        make_site(project / f"site/{element}-{s.name}", s.box, ground=columns, cells=cells or {}, world="world")
+
+
+def _line_project(tmp_path, data, ground, *, cells=None, surface=None):
+    """The design `data` with its route and every section read; heights from `ground` unless it has none."""
+    project = tmp_path / "line"
+    (project / "terrain").mkdir(parents=True)
+    element = data["element"]
+    if "heights" in data:
+        nx, nz = SIZE
+        g = np.array([[ground(ORIGIN[0] + i, ORIGIN[1] + j) for j in range(nz)] for i in range(nx)], float)
+        s = None if surface is None else np.array(
+            [[surface(ORIGIN[0] + i, ORIGIN[1] + j) for j in range(nz)] for i in range(nx)], float)
+        make_heights(project / data["heights"], ORIGIN, g, surface=s)
+    path = project / f"terrain/{element}.line.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    design = td.load_line(path, project)
+    transit.run_route(design, project)
+    r = route.load_route(project / f"terrain/{element}.route.json")
+    _section_reads(project, element, r, ground, cells)
+    return design, project, r
+
+
+def _built_sections(project, element, r):
+    """Every phase applied, in phase order, to each section read: what fresh reads of the build would hold."""
+    cells: dict = {}
+    for path in sorted((project / "phases").glob("*.json"), key=lambda p: int(p.name.split("-")[0])):
+        cells.update(decode(json.loads(path.read_text(encoding="utf-8"))["fills"]))
+    built = {}
+    for s in r.sections:
+        site = load_site(project / f"site/{element}-{s.name}")
+        x1, y1, z1, x2, y2, z2 = site.box
+        inside = {c: v for c, v in cells.items() if x1 <= c[0] <= x2 and y1 <= c[1] <= y2 and z1 <= c[2] <= z2}
+        built[s.name] = blocks.apply_writes(site, [("build", blocks.cells_write(inside))])
+    return built
+
+
+def _failing(report):
+    return [(c["name"], c["detail"], c["cells"][:3]) for c in report["checks"] if not c["ok"]]
+
+
+@pytest.mark.parametrize("corner", [pytest.param(20, id="first-cell"), pytest.param(21, id="second-cell")])
+def test_a_tunnel_corner_at_a_section_start_keeps_every_rail(tmp_path, corner):
+    data = {"element": "deep", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 40, 0]}, "via": [[corner, 0]], "to": {"at": [corner, 40, 39 - corner]},
+            "sections": {"length": 20}}
+    design, project, r = _line_project(tmp_path, data, lambda x, z: 90)
+    assert r.corners == [corner] and r.sections[1].start == 20
+    result = transit.emit_line(design, project, first_phase=1)
+    assert result.report["check"]["ok"], _failing(result.report["check"])
+    post = transit_checks.check_line(design, r, _built_sections(project, "deep", r))
+    assert post["ok"], _failing(post)
+
+
+def _lake(x, z):
+    return 6 <= x <= 30 and -12 <= z <= 14
+
+
+def test_a_bridge_corner_at_a_section_start_keeps_every_rail(tmp_path):
+    data = {"element": "span", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 65, 0]}, "via": [[20, 0]], "to": {"at": [20, 65, 19]}, "heights": "heights.json",
+            "bridges": {"piers_in_water": True}, "sections": {"length": 20}}
+    water = {(x, y, z): "minecraft:water[level=0]" for x in range(-30, 70) for z in range(-30, 50)
+             if _lake(x, z) for y in (61, 62)}
+    design, project, r = _line_project(tmp_path, data, lambda x, z: 60 if _lake(x, z) else 64, cells=water,
+                                       surface=lambda x, z: 62 if _lake(x, z) else 64)
+    assert r.corners == [20] and r.sections[1].start == 20 and r.kinds[18:23] == ["bridge"] * 5
+    result = transit.emit_line(design, project, first_phase=1)
+    assert result.report["check"]["ok"], _failing(result.report["check"])
+    post = transit_checks.check_line(design, r, _built_sections(project, "span", r))
+    assert post["ok"], _failing(post)
+
+
+def test_overworld_lamp_spacing_holds_across_section_boundaries(tmp_path):
+    data = {"element": "plain", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 65, 0]}, "to": {"at": [99, 65, 0]}, "heights": "heights.json",
+            "sections": {"length": 25}}
+    design, project, _ = _line_project(tmp_path, data, lambda x, z: 64)
+    report = transit.emit_line(design, project, first_phase=1, preview=True).report
+    assert report["check"]["ok"], _failing(report["check"])
+    assert [s["light_spacing"] for s in report["sections"]] == [design.lights.spacing] * 4
+
+
+def _ditches(x, z):
+    """Flat ground with two ditches the line dips into (the embankment beside it falls away)."""
+    return 59 if 44 <= x <= 48 else 60 if 92 <= x <= 96 else 64
+
+
+def test_lamp_posts_beside_an_embankment_reach_the_ground(tmp_path):
+    data = {"element": "dip", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [10, 65, Z0], "stop": "terminus"}, "to": {"at": [140, 65, Z0], "stop": "terminus"},
+            "heights": "heights.json"}
+    design, project, r = _line_project(tmp_path, data, _ditches)
+    result = transit.emit_line(design, project, first_phase=1)
+    assert result.report["check"]["ok"], _failing(result.report["check"])
+    built = _built_sections(project, "dip", r)
+    posts, lamps = set(design.palette["lamp_post"]), set(design.palette["lamp"])
+    seen = 0
+    for s in r.sections:
+        site = built[s.name]
+        for (x, z), runs in site.columns.items():
+            for lo, _, state in runs:
+                if base_id(state) in lamps:
+                    y = lo - 1
+                    while base_id(site.block(x, y, z)) in posts:
+                        y -= 1
+                    seen += 1
+                    assert base_id(site.block(x, y, z)) not in ("minecraft:air", "minecraft:cave_air"), (x, y, z)
+    assert seen
+    assert transit_checks.check_line(design, r, built)["ok"]
+
+
+def test_a_tube_read_reaches_the_ground_its_piers_stand_on(tmp_path):
+    data = {"element": "hall", "seed": 1, "world": "world_nether", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 60, 0]}, "to": {"at": [60, 60, 0]}}
+    project = tmp_path / "hall"
+    (project / "terrain").mkdir(parents=True)
+    (project / "terrain/hall.line.json").write_text(json.dumps(data), encoding="utf-8")
+    design = td.load_line(project / "terrain/hall.line.json", project)
+    transit.run_route(design, project)
+    r = route.load_route(project / "terrain/hall.route.json")
+    for s in r.sections:              # open air down to a floor 12 below the line, read exactly the box
+        make_site(project / f"site/hall-{s.name}", s.box, ground=48, world="world_nether")
+    result = transit.emit_line(design, project, first_phase=1, preview=True)
+    assert result.report["sections"][0]["kinds"] == {"tube": 61}
+    assert result.report["unsupported_tube"] == 0 and result.report["sections"][0]["piers"] > 0
+
+
+def test_a_rail_tunnel_over_a_cave_beds_on_lining_rather_than_gravel(tmp_path):
+    data = {"element": "deep", "seed": 1, "world": "world", "mode": "rail", "route": "straight",
+            "from": {"at": [0, 40, 0]}, "to": {"at": [40, 40, 0]}}
+    cave = {(x, y, z): "minecraft:cave_air" for x in range(15, 25) for y in (36, 37, 38) for z in range(-3, 4)}
+    design, project, r = _line_project(tmp_path, data, lambda x, z: 90, cells=cave)
+    result = transit.emit_line(design, project, first_phase=1)
+    assert result.report["check"]["ok"], _failing(result.report["check"])
+    built = _built_sections(project, "deep", r)["s01"]
+    lining = set(design.palette["lining"])
+    for x in range(15, 25):
+        for z in (-1, 0, 1):
+            below = base_id(built.block(x, 39, z))
+            assert below in lining or below == "minecraft:redstone_block", (x, z, below)
+
+
+def test_a_form_refusal_is_reported_in_a_preview_and_refuses_a_write_after_the_report(tmp_path):
+    data = {"element": "walk", "seed": 1, "world": "world", "mode": "path", "route": "straight",
+            "from": {"at": [0, 65, 0]}, "to": {"at": [30, 65, 0]}, "heights": "heights.json",
+            "palette": {"surface": "minecraft:gravel"}}
+    hollow = {(x, 63, z): "minecraft:air" for x in range(10, 20) for z in range(-3, 4)}
+    design, project, _ = _line_project(tmp_path, data, lambda x, z: 64, cells=hollow)
+    result = transit.emit_line(design, project, first_phase=1, preview=True)
+    refused = result.report["refused"]
+    assert refused and refused[0]["section"] == "s01" and "gravity" in refused[0]["error"]
+    assert any("gravity" in n for n in result.notes)
+    report_path = project / "terrain/walk.line-report.json"
+    report_path.unlink()
+    with pytest.raises(VerifyError, match="gravity"):
+        transit.emit_line(design, project, first_phase=1)
+    assert report_path.exists() and not (project / "phases").exists()
+
+
+def _landing(tmp_path):
+    """A built Nether landing with a doorway facing south at (13, 71, 9), read as a whole."""
+    pair = portals.parse_portal({"element": "hub", "overworld": {"world": "world", "at": [80, 70, 40]},
+                                 "nether": {"world": "world_nether", "at": [10, 70, 5]}, "size": [4, 5],
+                                 "doorways": [[13, 71, 9, "south"]]}, tmp_path)
+    big = make_site(tmp_path / "big", (-30, 30, -30, 60, 100, 80), ground=95, world="world_nether")
+    return blocks.apply_writes(big, portals.portal_layers(pair, "nether", big))
+
+
+def _crop(site, box):
+    cols = {(x, z): [(max(lo, box[1]), min(hi, box[4]), s) for lo, hi, s in runs if lo <= box[4] and hi >= box[1]]
+            for (x, z), runs in site.columns.items() if box[0] <= x <= box[3] and box[2] <= z <= box[5]}
+    return Site(box=box, world=site.world, columns=cols)
+
+
+@pytest.mark.parametrize("mode", ["rail", "path"])
+def test_a_spoke_ending_at_a_landing_doorway_clears_it_and_touches_no_landing_block(tmp_path, mode):
+    landed = _landing(tmp_path)
+    project = tmp_path / "spoke"
+    (project / "terrain").mkdir(parents=True)
+    data = {"element": "spoke", "seed": 1, "world": "world_nether", "mode": mode, "route": "straight",
+            "from": {"at": [13, 71, 45]}, "to": {"at": [13, 71, 11], "stop": "open"}}
+    if mode == "path":
+        data["width"] = 1
+    (project / "terrain/spoke.line.json").write_text(json.dumps(data), encoding="utf-8")
+    design = td.load_line(project / "terrain/spoke.line.json", project)
+    transit.run_route(design, project)
+    for s in route.load_route(project / "terrain/spoke.route.json").sections:
+        write_site(project / f"site/spoke-{s.name}", _crop(landed, s.box))
+    report = transit.emit_line(design, project, first_phase=1, preview=True).report
+    assert report["check"]["ok"], _failing(report["check"])
+    assert report["built"]["count"] == 0, report["built"]["items"]

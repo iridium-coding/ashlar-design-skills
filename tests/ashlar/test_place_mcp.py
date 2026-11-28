@@ -2,7 +2,11 @@
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+import ashlar_place as ap
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 PLACER = REPO / "skills" / "exec-ashlar" / "scripts" / "ashlar_place.py"
@@ -222,3 +226,135 @@ def test_non_utf8_child_output_does_not_break_the_pumps(tmp_path):
     proc = run("check", "--config", str(path))
     assert proc.returncode == 5 and "Traceback" not in proc.stderr
     assert "bad" in proc.stderr
+
+
+# ------------------------------------------------ MCP eras (spec 2026-07-28)
+
+MODERN = "2026-07-28"
+PV = "io.modelcontextprotocol/protocolVersion"
+CAPS = "io.modelcontextprotocol/clientCapabilities"
+INFO = "io.modelcontextprotocol/clientInfo"
+
+
+def client(tmp_path, probe_timeout=5.0, **fake_env):
+    env = {"MC_PLUGIN_URL": URL, "MC_PLUGIN_TOKEN": TOKEN,
+           "FAKE_META_LOG": str(tmp_path / "meta.jsonl"), **fake_env}
+    entry = ap.ServerEntry(command=sys.executable, args=[str(FAKE)], env=env, source="test")
+    return ap.McpClient(entry, start_timeout=20.0, call_timeout=20.0, probe_timeout=probe_timeout)
+
+
+def requests(tmp_path):
+    log = tmp_path / "meta.jsonl"
+    return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+
+
+def status(c):
+    try:
+        return c.call("mc_status", {})
+    finally:
+        c.close()
+
+
+def test_a_legacy_server_is_reached_through_initialize_after_the_probe(tmp_path):
+    c = client(tmp_path)
+    assert (c.era, c.protocol_version) == ("legacy", "2025-06-18")
+    assert status(c) == ("Plugin version: 0.4.9\nServer: fake", False)
+    sent = requests(tmp_path)
+    assert [r["method"] for r in sent] == ["server/discover", "initialize", "tools/call"]
+    assert sent[0]["meta"][PV] == MODERN and CAPS in sent[0]["meta"] and INFO in sent[0]["meta"]
+    assert sent[2]["meta"] is None  # legacy requests carry no per-request metadata
+
+
+@pytest.mark.parametrize("code", [-32601, -32602, -32600, -32603, -32000],
+                         ids=["method-not-found", "invalid-params", "invalid-request",
+                              "internal", "server-defined"])
+def test_the_legacy_fallback_is_not_keyed_to_one_error_code(tmp_path, code):
+    c = client(tmp_path, FAKE_DISCOVER_CODE=str(code))
+    assert c.era == "legacy"
+    assert status(c)[0].startswith("Plugin version")
+
+
+def test_a_silent_legacy_server_falls_back_after_the_probe_timeout(tmp_path):
+    started = time.monotonic()
+    c = client(tmp_path, probe_timeout=0.5, FAKE_ERA="legacy-silent")
+    assert c.era == "legacy" and time.monotonic() - started < 10
+    assert status(c)[0].startswith("Plugin version")
+
+
+def test_a_modern_server_gets_metadata_on_every_request_and_no_handshake(tmp_path):
+    c = client(tmp_path, FAKE_ERA="modern")
+    assert (c.era, c.protocol_version) == ("modern", MODERN)
+    assert status(c) == ("Plugin version: 0.4.9\nServer: fake", False)
+    sent = requests(tmp_path)
+    assert [r["method"] for r in sent] == ["server/discover", "tools/call"]
+    meta = sent[1]["meta"]
+    assert meta[PV] == MODERN and meta[CAPS] == {}
+    assert meta[INFO] == {"name": "ashlar-place", "version": ap.CLIENT_VERSION}
+
+
+def test_a_dual_era_server_stays_modern(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_SUPPORTED", f"{MODERN},2025-06-18")
+    c = client(tmp_path, FAKE_ERA="dual")
+    assert c.era == "modern"
+    status(c)
+    assert "initialize" not in [r["method"] for r in requests(tmp_path)]
+
+
+def test_a_discover_result_offering_only_the_legacy_version_gets_the_handshake(tmp_path,
+                                                                             monkeypatch):
+    monkeypatch.setenv("FAKE_SUPPORTED", "2025-06-18")
+    c = client(tmp_path, FAKE_ERA="dual")
+    assert (c.era, c.protocol_version) == ("legacy", "2025-06-18")
+    assert status(c)[0].startswith("Plugin version")
+    assert [r["method"] for r in requests(tmp_path)] == ["server/discover", "initialize",
+                                                          "tools/call"]
+
+
+# Values in the server entry's env are redacted as secrets, so knobs whose values
+# must appear in a message are set in the process environment instead.
+
+def test_a_discover_result_with_no_shared_version_names_the_versions(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_SUPPORTED", "2027-03-01")
+    with pytest.raises(ap.PlacerError, match=r"2027-03-01") as err:
+        client(tmp_path, FAKE_ERA="modern")
+    assert err.value.code == ap.EXIT_SERVER
+    assert "initialize" not in [r["method"] for r in requests(tmp_path)]
+
+
+def test_an_unsupported_version_error_on_the_probe_never_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_SUPPORTED", "2027-03-01")
+    with pytest.raises(ap.PlacerError, match=r"supports MCP 2027-03-01"):
+        client(tmp_path, FAKE_ERA="modern", FAKE_DISCOVER_VALIDATES="1")
+    assert [r["method"] for r in requests(tmp_path)] == ["server/discover"]
+
+
+def test_a_missing_capability_error_is_modern_and_names_the_capability(tmp_path):
+    with pytest.raises(ap.PlacerError, match=r"elicitation"):
+        client(tmp_path, FAKE_ERA="modern-capability")
+    assert "initialize" not in [r["method"] for r in requests(tmp_path)]
+
+
+def test_a_late_discover_reply_beats_a_rejected_initialize(tmp_path):
+    c = client(tmp_path, probe_timeout=0.5, FAKE_ERA="modern", FAKE_DISCOVER_DELAY="1.5")
+    assert (c.era, c.protocol_version) == ("modern", MODERN)
+    assert status(c)[0].startswith("Plugin version")
+
+
+@pytest.mark.parametrize("kind", ["input_required", "something_new"])
+def test_a_result_that_is_not_complete_is_refused(tmp_path, monkeypatch, kind):
+    monkeypatch.setenv("FAKE_RESULT_TYPE", kind)
+    c = client(tmp_path, FAKE_ERA="modern")
+    try:
+        with pytest.raises(ap.PlacerError, match=kind):
+            c.call("mc_status", {})
+    finally:
+        c.close()
+
+
+@pytest.mark.parametrize(("era", "line"), [("legacy", "MCP 2025-06-18 (legacy handshake)"),
+                                           ("modern", f"MCP {MODERN} (per-request metadata)")])
+def test_check_names_the_protocol_it_used(tmp_path, era, line):
+    proc = run("check", "--config", str(config(tmp_path, FAKE_ERA=era)))
+    assert proc.returncode == 0, proc.stderr
+    assert line in proc.stdout
+    assert_no_secrets(proc)

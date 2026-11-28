@@ -37,17 +37,102 @@ Environment knobs:
     minecraft:plains) in FAKE_WORLD, or in memory when it is not set. Place feature,
     fillbiome and execute if biome in a chunk that is not force-loaded reply
     "That position is not loaded".
+  FAKE_ERA            which MCP era the fake speaks (MCP 2026-07-28 "Versioning"):
+                      unset or "legacy": `initialize` handshake; any other method before
+                        it, `server/discover` included, gets FAKE_DISCOVER_CODE (default
+                        -32601 "no such method")
+                      "legacy-silent": like legacy, but never answers server/discover
+                      "modern": answers server/discover, rejects `initialize`, and needs
+                        `io.modelcontextprotocol/protocolVersion` (one of
+                        FAKE_SUPPORTED, comma-separated, default 2026-07-28) and
+                        `io.modelcontextprotocol/clientCapabilities` in every request's
+                        `_meta`: a missing field gets -32602, an unknown version -32022
+                        with data.supported; results carry resultType FAKE_RESULT_TYPE
+                        (default "complete") and serverInfo in `_meta`
+                      "dual": modern, and `initialize` also works
+                      "modern-capability": server/discover gets -32021
+                        (MissingRequiredClientCapabilityError)
+  FAKE_DISCOVER_DELAY seconds to wait before answering server/discover (modern eras)
+  FAKE_DISCOVER_VALIDATES when set, server/discover in a modern era checks `_meta` too
+                      (an unknown version gets -32022)
+  FAKE_META_LOG       append one JSON line per request: {"method": ..., "meta": ...}
 Like the real server it logs "connecting to <MC_PLUGIN_URL>" on stderr.
 """
 import json
 import os
 import re
 import sys
+import threading
+import time
+
+PV, CAPS = "io.modelcontextprotocol/protocolVersion", "io.modelcontextprotocol/clientCapabilities"
+SERVER_INFO = {"io.modelcontextprotocol/serverInfo": {"name": "fake-ashlar", "version": "0"}}
+_LOCK = threading.Lock()
 
 
 def send(message):
-    sys.stdout.write(json.dumps(message) + "\n")
-    sys.stdout.flush()
+    with _LOCK:
+        sys.stdout.write(json.dumps(message) + "\n")
+        sys.stdout.flush()
+
+
+def era():
+    return os.environ.get("FAKE_ERA", "legacy")
+
+
+def supported():
+    return os.environ.get("FAKE_SUPPORTED", "2026-07-28").split(",")
+
+
+def error(rid, code, message, data=None):
+    body = {"code": code, "message": message}
+    if data is not None:
+        body["data"] = data
+    send({"jsonrpc": "2.0", "id": rid, "error": body})
+
+
+def discover_result():
+    return {"resultType": "complete", "supportedVersions": supported(),
+            "capabilities": {"tools": {}}, "ttlMs": 0, "cacheScope": "private",
+            "_meta": dict(SERVER_INFO)}
+
+
+def answer_discover(rid, meta):
+    """Answer server/discover the way the configured era does; False when it stays silent."""
+    kind = era()
+    if kind == "legacy-silent":
+        return False
+    if kind in ("legacy",):
+        error(rid, int(os.environ.get("FAKE_DISCOVER_CODE", "-32601")), "no such method")
+        return True
+    if kind == "modern-capability":
+        error(rid, -32021, "Missing required client capability",
+              {"requiredCapabilities": {"elicitation": {}}})
+        return True
+    if os.environ.get("FAKE_DISCOVER_VALIDATES") and modern_meta_error(rid, meta):
+        return True
+    delay = float(os.environ.get("FAKE_DISCOVER_DELAY", "0") or 0)
+
+    def reply():
+        time.sleep(delay)
+        send({"jsonrpc": "2.0", "id": rid, "result": discover_result()})
+    if delay:
+        threading.Thread(target=reply, daemon=True).start()
+    else:
+        reply()
+    return True
+
+
+def modern_meta_error(rid, meta):
+    """Reply with the modern validation error for `meta`; True when the request was rejected."""
+    if not isinstance(meta, dict) or PV not in meta or CAPS not in meta:
+        error(rid, -32602, "missing required _meta fields")
+        return True
+    if meta[PV] not in supported():
+        error(rid, -32022, "Unsupported protocol version",
+              {"supported": supported(), "requested": meta[PV]})
+        return True
+    return False
 
 
 def text(body, error=False):
@@ -284,13 +369,27 @@ def main():
         if "id" not in message:
             continue
         rid, method = message["id"], message.get("method")
+        meta = (message.get("params") or {}).get("_meta")
+        if os.environ.get("FAKE_META_LOG"):
+            with open(os.environ["FAKE_META_LOG"], "a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"method": method, "meta": meta}) + "\n")
         if os.environ.get("FAKE_SERVER_REQUEST"):
             send({"jsonrpc": "2.0", "id": rid, "method": "ping"})
+        modern = era() in ("modern", "dual")
+        if method == "server/discover":
+            answer_discover(rid, meta)
+            continue
         if method == "initialize":
+            if era() == "modern":
+                error(rid, -32601, "initialize is not supported; this server speaks MCP "
+                      + ", ".join(supported()))
+                continue
             send({"jsonrpc": "2.0", "id": rid, "result": {
                 "protocolVersion": message["params"]["protocolVersion"],
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "fake-ashlar", "version": "0"}}})
+            continue
+        if modern and (era() == "modern" or meta is not None) and modern_meta_error(rid, meta):
             continue
         if method != "tools/call":
             send({"jsonrpc": "2.0", "id": rid,
@@ -340,6 +439,11 @@ def main():
             result = survey_matrix(arguments)
         else:
             result = text(f"unknown tool {name}", error=True)
+        if modern and meta is not None:
+            kind = os.environ.get("FAKE_RESULT_TYPE", "complete")
+            if kind != "complete":
+                result = {"requestState": "opaque"}
+            result = {"resultType": kind, **result, "_meta": dict(SERVER_INFO)}
         send({"jsonrpc": "2.0", "id": rid, "result": result})
 
 

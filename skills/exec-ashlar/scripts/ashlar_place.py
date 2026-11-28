@@ -495,15 +495,64 @@ def warnings_of(text: str) -> list[str]:
 
 # ------------------------------------------------------------------- client
 
+# MCP eras (spec 2026-07-28, "Versioning"): modern versions carry the protocol
+# version, client identity and capabilities in every request's `_meta`; legacy
+# versions open a session with the `initialize` handshake.
+MODERN_VERSIONS = ("2026-07-28",)
+LEGACY_VERSION = "2025-06-18"
+CLIENT_VERSION = "1"
+CLIENT_INFO = {"name": "ashlar-place", "version": CLIENT_VERSION}
+PROBE_TIMEOUT = 15.0
+_UNSUPPORTED_VERSION, _MISSING_CAPABILITY = -32022, -32021
+_MODERN_ERRORS = (_UNSUPPORTED_VERSION, _MISSING_CAPABILITY)
+_SPOKEN = " and ".join((*MODERN_VERSIONS, LEGACY_VERSION))
+
+
+def _meta(version: str) -> dict[str, Any]:
+    """The per-request `_meta` fields of a modern request."""
+    return {"io.modelcontextprotocol/protocolVersion": version,
+            "io.modelcontextprotocol/clientInfo": dict(CLIENT_INFO),
+            "io.modelcontextprotocol/clientCapabilities": {}}
+
+
+def _probe_params(version: str) -> dict[str, Any]:
+    return {"_meta": _meta(version)}
+
+
+class _RpcError(PlacerError):
+    """A JSON-RPC error reply, with its code and data."""
+
+    def __init__(self, message: str, rpc_code: Any, data: Any) -> None:
+        super().__init__(message, EXIT_SERVER)
+        self.rpc_code = rpc_code
+        self.data = data
+
+
+class _NoReply(PlacerError):
+    """No reply arrived in time."""
+
+
 class McpClient:
-    """Minimal MCP client for one stdio server process."""
+    """Minimal MCP client for one stdio server process, for both MCP eras.
+
+    It probes with `server/discover` (spec 2026-07-28, stdio "Backward
+    Compatibility"): a DiscoverResult means a modern server, so every request
+    then carries `_meta`; a recognised modern error (unsupported version,
+    missing capability) is reported and never falls back; any other error, or
+    no reply within `probe_timeout`, means a legacy server, which gets the
+    `initialize` handshake. The era is kept for the life of the process.
+    """
 
     def __init__(self, entry: ServerEntry, start_timeout: float = 120.0,
-                 call_timeout: float = 600.0) -> None:
+                 call_timeout: float = 600.0, probe_timeout: float = PROBE_TIMEOUT) -> None:
         self.secrets = secrets_of(entry)
         self.call_timeout = call_timeout
+        self.era: str | None = None
+        self.protocol_version: str | None = None
         self._stderr: deque[str] = deque(maxlen=40)
         self._lines: queue.Queue[str | None] = queue.Queue()
+        self._replies: dict[int, dict[str, Any]] = {}
+        self._pending: set[int] = set()
         self._next_id = 0
         try:
             self.proc = subprocess.Popen(
@@ -519,13 +568,81 @@ class McpClient:
         self._out.start()
         self._err.start()
         try:
-            self._request("initialize", {
-                "protocolVersion": "2025-06-18", "capabilities": {},
-                "clientInfo": {"name": "ashlar-place", "version": "1"}}, start_timeout)
-            self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            self._negotiate(start_timeout, probe_timeout)
         except PlacerError:
             self.close()
             raise
+
+    # -------------------------------------------------------- negotiation
+
+    def _negotiate(self, start_timeout: float, probe_timeout: float) -> None:
+        deadline = time.monotonic() + start_timeout
+        probe = self._start("server/discover", _probe_params(MODERN_VERSIONS[0]))
+        try:
+            found = self._await(probe, "server/discover", min(probe_timeout, start_timeout))
+        except _NoReply:
+            found = None                    # silent: legacy, unless a late reply says otherwise
+        except _RpcError as exc:
+            if exc.rpc_code in _MODERN_ERRORS:
+                raise self._refusal(exc) from None
+            self._pending.discard(probe)    # any other error: a legacy server
+            found = None
+        if found is not None:
+            self._choose(found.get("supportedVersions"))
+            return
+        try:
+            self._legacy_handshake(max(deadline - time.monotonic(), 1.0))
+        except PlacerError as failure:
+            if probe not in self._pending:
+                raise
+            # A slow modern server answers the probe late and rejects `initialize`.
+            try:
+                late = self._await(probe, "server/discover", max(deadline - time.monotonic(), 1.0))
+            except _RpcError as exc:
+                if exc.rpc_code in _MODERN_ERRORS:
+                    raise self._refusal(exc) from None
+                raise failure from None
+            except _NoReply:
+                raise failure from None
+            self._choose(late.get("supportedVersions"), legacy_ok=False)
+            return
+        self._pending.discard(probe)
+        self._replies.pop(probe, None)
+
+    def _legacy_handshake(self, timeout: float) -> None:
+        self._request("initialize", {
+            "protocolVersion": LEGACY_VERSION, "capabilities": {},
+            "clientInfo": dict(CLIENT_INFO)}, timeout)
+        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        self.era, self.protocol_version = "legacy", LEGACY_VERSION
+
+    def _choose(self, versions: Any, legacy_ok: bool = True) -> None:
+        """Pick a shared version from a DiscoverResult's `supportedVersions`."""
+        offered = [v for v in versions if isinstance(v, str)] if isinstance(versions, list) else []
+        shared = [v for v in MODERN_VERSIONS if v in offered]
+        if shared:
+            self.era, self.protocol_version = "modern", shared[0]
+            return
+        if legacy_ok and LEGACY_VERSION in offered:
+            self._legacy_handshake(self.call_timeout)
+            return
+        raise PlacerError(self.redact(
+            f"the MCP server supports MCP {', '.join(offered) or 'no listed version'}; "
+            f"this placer speaks {_SPOKEN}; update ashlar_place.py"), EXIT_SERVER)
+
+    def _refusal(self, exc: _RpcError) -> PlacerError:
+        """The error for a recognised modern refusal of the probe."""
+        data = exc.data if isinstance(exc.data, dict) else {}
+        if exc.rpc_code == _UNSUPPORTED_VERSION:
+            offered = [str(v) for v in data.get("supported") or []]
+            text = (f"the MCP server supports MCP {', '.join(offered) or 'no listed version'}, "
+                    f"not {data.get('requested', MODERN_VERSIONS[0])}; this placer speaks "
+                    f"{_SPOKEN}; update ashlar_place.py")
+        else:
+            needed = data.get("requiredCapabilities")
+            names = ", ".join(needed) if isinstance(needed, (dict, list)) else str(needed)
+            text = f"the MCP server needs client capabilities this placer does not offer: {names}"
+        return PlacerError(self.redact(text), EXIT_SERVER)
 
     def _pump_stdout(self) -> None:
         assert self.proc.stdout is not None
@@ -560,17 +677,25 @@ class McpClient:
         except OSError:
             raise self._died("the MCP server exited early") from None
 
-    def _request(self, method: str, params: dict[str, Any],
-                 timeout: float) -> dict[str, Any]:
+    def _start(self, method: str, params: dict[str, Any]) -> int:
+        """Send a request (with the modern `_meta` once the era is modern); return its id."""
         self._next_id += 1
         request_id = self._next_id
+        if self.era == "modern" and self.protocol_version:
+            params = {**params, "_meta": {**(params.get("_meta") or {}),
+                                          **_meta(self.protocol_version)}}
+        self._pending.add(request_id)
         self._send({"jsonrpc": "2.0", "id": request_id, "method": method,
                     "params": params})
+        return request_id
+
+    def _await(self, request_id: int, method: str, timeout: float) -> dict[str, Any]:
+        """Wait for the reply to `request_id`, keeping replies to our other open requests."""
         deadline = time.monotonic() + timeout
-        while True:
+        while request_id not in self._replies:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise PlacerError(f"timed out waiting for {method}", EXIT_SERVER)
+                raise _NoReply(f"timed out waiting for {method}", EXIT_SERVER)
             try:
                 line = self._lines.get(timeout=remaining)
             except queue.Empty:
@@ -581,14 +706,23 @@ class McpClient:
                 message = json.loads(line)
             except ValueError:
                 continue
-            if (not isinstance(message, dict) or "method" in message
-                    or message.get("id") != request_id):
-                continue  # server requests, notifications, anything not our reply
-            if "error" in message:
-                detail = str((message.get("error") or {}).get("message"))
-                raise PlacerError(f"{method} failed: {self.redact(detail)}",
-                                  EXIT_SERVER)
-            return message.get("result") or {}
+            if not isinstance(message, dict) or "method" in message:
+                continue  # server requests and notifications
+            if message.get("id") in self._pending:
+                self._replies[message["id"]] = message
+        self._pending.discard(request_id)
+        message = self._replies.pop(request_id)
+        if "error" in message:
+            error = message.get("error") or {}
+            detail = str(error.get("message")) if isinstance(error, dict) else str(error)
+            raise _RpcError(f"{method} failed: {self.redact(detail)}",
+                            error.get("code") if isinstance(error, dict) else None,
+                            error.get("data") if isinstance(error, dict) else None)
+        return message.get("result") or {}
+
+    def _request(self, method: str, params: dict[str, Any],
+                 timeout: float) -> dict[str, Any]:
+        return self._await(self._start(method, params), method, timeout)
 
     def call(self, tool: str, arguments: dict[str, Any]) -> tuple[str, bool]:
         """Call a tool; return its raw text and whether it reported an error.
@@ -597,6 +731,12 @@ class McpClient:
         before it is printed, logged or put in a message."""
         result = self._request("tools/call", {"name": tool, "arguments": arguments},
                                self.call_timeout)
+        kind = result.get("resultType", "complete")  # absent means complete (older servers)
+        if kind != "complete":
+            why = ("it asks for input the placer cannot give" if kind == "input_required"
+                   else "the placer does not know that result type")
+            raise PlacerError(self.redact(f"{tool} returned resultType {kind!r}: {why}"),
+                              EXIT_SERVER)
         text = "\n".join(item.get("text", "") for item in result.get("content") or []
                          if isinstance(item, dict) and item.get("type") == "text")
         return text, bool(result.get("isError"))
@@ -912,6 +1052,8 @@ def cmd_check(ns: argparse.Namespace) -> int:
     finally:
         client.close()
     print(f"server entry {ns.server!r} from {entry.source}")
+    how = "legacy handshake" if client.era == "legacy" else "per-request metadata"
+    print(f"MCP {client.protocol_version} ({how})")
     print(client.redact(text))
     return EXIT_SERVER if is_error else EXIT_OK
 
